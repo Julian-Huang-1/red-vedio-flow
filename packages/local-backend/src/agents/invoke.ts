@@ -1,10 +1,25 @@
-import { spawn } from 'node:child_process'
-import { AGENTS, buildArgv, envFor, resolveAgentBin } from './agents.mjs'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { AGENTS, buildArgv, envFor, resolveAgentBin } from './registry.js'
 
-export function buildNodePrompt({ nodeKind, prompt, upstream = [], currentNode }) {
+export type AgentEvent =
+  | { type: 'start'; agentId: string; bin: string; argv: string[] }
+  | { type: 'delta'; text: string }
+  | { type: 'stderr'; text: string }
+  | { type: 'done'; code: number | null; output: string }
+  | { type: 'error'; message: string }
+
+export type InvokeAgentInput = {
+  agentId: string
+  prompt: string
+  model?: string
+  cwd?: string
+  onEvent: (event: AgentEvent) => void
+}
+
+export function buildNodePrompt({ nodeKind, prompt, upstream = [], currentNode }: any) {
   const upstreamText = upstream.length
     ? upstream
-        .map((node, index) => {
+        .map((node: any, index: number) => {
           const value = node?.data?.value ?? node?.value ?? {}
           const title = node?.data?.title ?? node?.title ?? `上游节点 ${index + 1}`
           if (value.text) return `- ${title}（文本）:\n${value.text}`
@@ -29,10 +44,10 @@ export function buildNodePrompt({ nodeKind, prompt, upstream = [], currentNode }
   ].join('\n')
 }
 
-function extractTextFromJson(value) {
-  const parts = []
+function extractTextFromJson(value: unknown) {
+  const parts: string[] = []
 
-  const visit = (item, key = '') => {
+  const visit = (item: any, key = '') => {
     if (item == null) return
     if (typeof item === 'string') {
       if (
@@ -60,7 +75,7 @@ function extractTextFromJson(value) {
   return parts.join('')
 }
 
-function parseOutputChunk(agentId, buffer, emit) {
+function parseOutputChunk(agentId: string, buffer: string, emit: (text: string) => void) {
   let rest = buffer
   let nl
   while ((nl = rest.indexOf('\n')) !== -1) {
@@ -79,7 +94,7 @@ function parseOutputChunk(agentId, buffer, emit) {
   return rest
 }
 
-export function invokeAgent({ agentId, prompt, model, cwd, onEvent }) {
+export function invokeAgent({ agentId, prompt, model, cwd, onEvent }: InvokeAgentInput): ChildProcessWithoutNullStreams {
   const def = AGENTS.find((agent) => agent.id === agentId)
   if (!def) throw new Error(`unknown agent: ${agentId}`)
   if (def.protocol === 'acp' || def.protocol === 'pi-rpc') {
@@ -111,7 +126,7 @@ export function invokeAgent({ agentId, prompt, model, cwd, onEvent }) {
   let fullOutput = ''
 
   child.stdout.setEncoding('utf8')
-  child.stdout.on('data', (chunk) => {
+  child.stdout.on('data', (chunk: string) => {
     if (agentId === 'openclaw') {
       stdoutBuffer += chunk
       return
@@ -125,7 +140,7 @@ export function invokeAgent({ agentId, prompt, model, cwd, onEvent }) {
   })
 
   child.stderr.setEncoding('utf8')
-  child.stderr.on('data', (text) => {
+  child.stderr.on('data', (text: string) => {
     onEvent({ type: 'stderr', text })
   })
 
@@ -147,9 +162,8 @@ export function invokeAgent({ agentId, prompt, model, cwd, onEvent }) {
         onEvent({ type: 'delta', text: stdoutBuffer })
       }
     } else if (stdoutBuffer.trim()) {
-      const text = stdoutBuffer
-      fullOutput += text
-      onEvent({ type: 'delta', text })
+      fullOutput += stdoutBuffer
+      onEvent({ type: 'delta', text: stdoutBuffer })
     }
     onEvent({ type: 'done', code, output: fullOutput.trim() })
   })

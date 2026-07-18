@@ -29,6 +29,8 @@ export function WorkflowCanvas() {
   const openAddNodeMenu = useWorkflowStore((state) => state.openAddNodeMenu)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const beginEditNode = useWorkflowStore((state) => state.beginEditNode)
+  const closeCanvasPanel = useWorkflowStore((state) => state.closeCanvasPanel)
+  const closeWorkspacePanel = useWorkflowStore((state) => state.closeWorkspacePanel)
 
   const composerNode = useMemo(
     () => nodes.find((node) => node.id === composerNodeId),
@@ -37,15 +39,16 @@ export function WorkflowCanvas() {
 
   const shouldShowComposer = composerNode && editingNodeId !== composerNode.id
 
-  const handlePaneDoubleClick = useCallback(
+  const handlePaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
+      event.preventDefault()
       const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       openAddNodeMenu({ x: event.clientX, y: event.clientY }, flowPosition)
     },
     [openAddNodeMenu, screenToFlowPosition],
   )
 
-  const handleCanvasDoubleClick = useCallback(
+  const handleCanvasContextMenu = useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
       const target = event.target as HTMLElement
       const interactiveTarget = target.closest(
@@ -53,9 +56,9 @@ export function WorkflowCanvas() {
       )
 
       if (interactiveTarget) return
-      handlePaneDoubleClick(event)
+      handlePaneContextMenu(event)
     },
-    [handlePaneDoubleClick],
+    [handlePaneContextMenu],
   )
 
   const handleNodeClick: NodeMouseHandler = useCallback(
@@ -79,7 +82,7 @@ export function WorkflowCanvas() {
   )
 
   return (
-    <section className="absolute inset-0" onDoubleClick={handleCanvasDoubleClick}>
+    <section className="absolute inset-0" onContextMenu={handleCanvasContextMenu}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -90,22 +93,23 @@ export function WorkflowCanvas() {
         onPaneClick={(event) => {
           const target = event.target as HTMLElement
           if (target.closest('[data-node-composer="true"]')) return
-          selectNode(undefined)
+          closeCanvasPanel()
+          closeWorkspacePanel()
+          if (!composerNodeId) selectNode(undefined)
         }}
         onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
-        fitView
         zoomOnDoubleClick={false}
         minZoom={0.15}
         maxZoom={1.6}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.88 }}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="#2d2d2d" />
       </ReactFlow>
       {nodes.length === 0 ? (
         <div className="pointer-events-none absolute left-1/2 top-[32%] z-10 -translate-x-1/2 text-sm text-zinc-500">
-          双击画布生成节点
+          右击画布生成节点
         </div>
       ) : null}
       <AddNodeMenu />

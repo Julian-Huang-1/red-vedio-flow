@@ -16,10 +16,26 @@ import {
   type AgentStatus,
   type LocalAgent,
   type MaterialType,
+  type WorkflowDocument,
 } from '@red-video-flow/workflow-core'
-import { fetchLocalAgents, runNodeWithAgent, runVisualNode, uploadAsset } from '@red-video-flow/workflow-client'
+import {
+  createWorkflow as createWorkflowDocument,
+  deleteWorkflow as deleteWorkflowDocument,
+  fetchLocalAgents,
+  fetchWorkflow,
+  fetchWorkflows,
+  runNodeWithAgent,
+  runVisualNode,
+  saveWorkflow,
+  uploadAsset,
+} from '@red-video-flow/workflow-client'
 import { runWorkflowNode } from '@red-video-flow/workflow-runtime'
-import { createFlowNode, type AddNodeMenuState, type FlowNode } from '../workflowPresentation'
+import { createFlowNode, toFlowNode, toMaterialNode, type AddNodeMenuState, type FlowNode } from '../workflowPresentation'
+
+type PersistenceStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error'
+type WorkflowListStatus = 'idle' | 'loading' | 'ready' | 'error'
+export type CanvasPanel = 'toolbox' | 'assets' | 'characters' | 'history' | 'shortcuts'
+export type WorkspacePanel = 'agent' | 'assetManager'
 
 type WorkflowStore = {
   nodes: FlowNode[]
@@ -31,12 +47,26 @@ type WorkflowStore = {
   selectedAgentId?: string
   agentStatus: AgentStatus
   agentError?: string
+  workflowId: string
+  workflowTitle: string
+  workflows: WorkflowDocument[]
+  workflowListStatus: WorkflowListStatus
+  workflowListError?: string
+  hasLoadedWorkflow: boolean
+  persistenceStatus: PersistenceStatus
+  persistenceError?: string
+  activeCanvasPanel?: CanvasPanel
+  openWorkspacePanels: WorkspacePanel[]
   addNodeMenu: AddNodeMenuState
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   connectNodes: (connection: Connection) => void
   openAddNodeMenu: (screen: { x: number; y: number }, flow: XYPosition) => void
   closeAddNodeMenu: () => void
+  toggleCanvasPanel: (panel: CanvasPanel) => void
+  closeCanvasPanel: () => void
+  toggleWorkspacePanel: (panel: WorkspacePanel) => void
+  closeWorkspacePanel: (panel?: WorkspacePanel) => void
   createNode: (materialType: MaterialType, position?: XYPosition) => void
   selectNode: (nodeId?: string) => void
   closeComposer: () => void
@@ -46,6 +76,11 @@ type WorkflowStore = {
   loadAgents: () => Promise<void>
   selectAgent: (agentId: string) => void
   runNode: (nodeId: string, prompt: string, agentId?: string) => Promise<void>
+  loadWorkflows: () => Promise<void>
+  loadWorkflow: (workflowId?: string) => Promise<void>
+  createWorkflow: () => Promise<WorkflowDocument | undefined>
+  deleteWorkflow: (workflowId: string) => Promise<void>
+  saveWorkflow: () => Promise<void>
 }
 
 const initialMenu: AddNodeMenuState = {
@@ -66,6 +101,16 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   selectedAgentId: undefined,
   agentStatus: 'idle',
   agentError: undefined,
+  workflowId: 'default',
+  workflowTitle: '默认工作流',
+  workflows: [],
+  workflowListStatus: 'idle',
+  workflowListError: undefined,
+  hasLoadedWorkflow: false,
+  persistenceStatus: 'idle',
+  persistenceError: undefined,
+  activeCanvasPanel: undefined,
+  openWorkspacePanels: [],
   addNodeMenu: initialMenu,
 
   onNodesChange: (changes) => {
@@ -105,11 +150,42 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         flowX: flow.x,
         flowY: flow.y,
       },
+      activeCanvasPanel: undefined,
     })
   },
 
   closeAddNodeMenu: () => {
     set({ addNodeMenu: initialMenu })
+  },
+
+  toggleCanvasPanel: (panel) => {
+    set({
+      activeCanvasPanel: get().activeCanvasPanel === panel ? undefined : panel,
+      addNodeMenu: initialMenu,
+    })
+  },
+
+  closeCanvasPanel: () => {
+    set({ activeCanvasPanel: undefined })
+  },
+
+  toggleWorkspacePanel: (panel) => {
+    const openPanels = get().openWorkspacePanels
+    set({
+      openWorkspacePanels: openPanels.includes(panel)
+        ? openPanels.filter((item) => item !== panel)
+        : [...openPanels, panel],
+      activeCanvasPanel: undefined,
+      addNodeMenu: initialMenu,
+    })
+  },
+
+  closeWorkspacePanel: (panel) => {
+    set({
+      openWorkspacePanels: panel
+        ? get().openWorkspacePanels.filter((item) => item !== panel)
+        : [],
+    })
   },
 
   createNode: (materialType, position) => {
@@ -121,6 +197,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       selectedNodeId: node.id,
       editingNodeId: undefined,
       composerNodeId: undefined,
+      activeCanvasPanel: undefined,
       addNodeMenu: initialMenu,
     })
   },
@@ -133,6 +210,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       selectedNodeId: nodeId,
       editingNodeId: nodeId && editingNodeId === nodeId ? editingNodeId : undefined,
       composerNodeId: canShowComposer ? nodeId : undefined,
+      activeCanvasPanel: undefined,
       addNodeMenu: initialMenu,
     })
   },
@@ -256,6 +334,150 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set({ selectedAgentId: agentId })
   },
 
+  loadWorkflows: async () => {
+    set({ workflowListStatus: 'loading', workflowListError: undefined })
+    try {
+      const response = await fetchWorkflows()
+      set({ workflows: response.workflows, workflowListStatus: 'ready' })
+    } catch (error) {
+      set({
+        workflowListStatus: 'error',
+        workflowListError: error instanceof Error ? error.message : String(error),
+      })
+    }
+  },
+
+  loadWorkflow: async (workflowId = 'default') => {
+    set({ persistenceStatus: 'loading', persistenceError: undefined })
+    try {
+      const document = await fetchWorkflow(workflowId)
+      set({
+        workflowId: document.id,
+        workflowTitle: document.title,
+        nodes: document.graph.nodes.map(toFlowNode),
+        edges: document.graph.edges,
+        selectedNodeId: undefined,
+        editingNodeId: undefined,
+        composerNodeId: undefined,
+        activeCanvasPanel: undefined,
+        openWorkspacePanels: [],
+        addNodeMenu: initialMenu,
+        hasLoadedWorkflow: true,
+        persistenceStatus: 'saved',
+      })
+      void get().loadWorkflows()
+    } catch (error) {
+      set({
+        hasLoadedWorkflow: false,
+        persistenceStatus: 'error',
+        persistenceError: error instanceof Error ? error.message : String(error),
+      })
+    }
+  },
+
+  createWorkflow: async () => {
+    const nextIndex = get().workflows.length + 1
+    set({ persistenceStatus: 'saving', persistenceError: undefined })
+    try {
+      const document = await createWorkflowDocument({ title: nextIndex === 1 ? '未命名工作区' : `工作流 ${nextIndex}` })
+      set({
+        workflowId: document.id,
+        workflowTitle: document.title,
+        nodes: document.graph.nodes.map(toFlowNode),
+        edges: document.graph.edges,
+        selectedNodeId: undefined,
+        editingNodeId: undefined,
+        composerNodeId: undefined,
+        activeCanvasPanel: undefined,
+        openWorkspacePanels: [],
+        addNodeMenu: initialMenu,
+        hasLoadedWorkflow: true,
+        persistenceStatus: 'saved',
+        workflows: [document, ...get().workflows.filter((workflow) => workflow.id !== document.id)],
+        workflowListStatus: 'ready',
+      })
+      return document
+    } catch (error) {
+      set({
+        persistenceStatus: 'error',
+        persistenceError: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
+  },
+
+  deleteWorkflow: async (workflowId) => {
+    set({ persistenceStatus: 'saving', persistenceError: undefined })
+    try {
+      await deleteWorkflowDocument(workflowId)
+      const remainingWorkflows = get()
+        .workflows.filter((workflow) => workflow.id !== workflowId)
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+
+      set({
+        workflows: remainingWorkflows,
+        workflowListStatus: 'ready',
+      })
+
+      if (workflowId !== get().workflowId) {
+        set({ persistenceStatus: 'saved' })
+        return
+      }
+
+      const nextWorkflow = remainingWorkflows[0]
+      if (nextWorkflow) {
+        await get().loadWorkflow(nextWorkflow.id)
+        return
+      }
+
+      set({
+        workflowId: 'default',
+        workflowTitle: '默认工作流',
+        nodes: [],
+        edges: [],
+        selectedNodeId: undefined,
+        editingNodeId: undefined,
+        composerNodeId: undefined,
+        activeCanvasPanel: undefined,
+        openWorkspacePanels: [],
+        addNodeMenu: initialMenu,
+        hasLoadedWorkflow: false,
+        persistenceStatus: 'saved',
+      })
+    } catch (error) {
+      set({
+        persistenceStatus: 'error',
+        persistenceError: error instanceof Error ? error.message : String(error),
+      })
+    }
+  },
+
+  saveWorkflow: async () => {
+    const { workflowId, workflowTitle, nodes, edges, hasLoadedWorkflow } = get()
+    if (!hasLoadedWorkflow) return
+    set({ persistenceStatus: 'saving', persistenceError: undefined })
+    try {
+      const document = await saveWorkflow({
+        id: workflowId,
+        title: workflowTitle,
+        graph: {
+          nodes: nodes.map(toMaterialNode),
+          edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
+        },
+      })
+      set({
+        workflowTitle: document.title,
+        workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
+        persistenceStatus: 'saved',
+      })
+    } catch (error) {
+      set({
+        persistenceStatus: 'error',
+        persistenceError: error instanceof Error ? error.message : String(error),
+      })
+    }
+  },
+
   runNode: async (nodeId, prompt, agentId) => {
     const { nodes, edges, selectedAgentId, agents } = get()
     const target = nodes.find((node) => node.id === nodeId)
@@ -322,5 +544,6 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         }
       }),
     })
+    void get().saveWorkflow()
   },
 }))

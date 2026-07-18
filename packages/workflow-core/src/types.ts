@@ -51,3 +51,15 @@ export type WorkflowEdge = {
   source: string
   target: string
 }
+
+export type WorkflowDocument = {
+  schemaVersion: 1
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  graph: {
+    nodes: MaterialNode[]
+    edges: WorkflowEdge[]
+  }
+}

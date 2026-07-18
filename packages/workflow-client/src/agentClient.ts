@@ -1,4 +1,5 @@
 import type { LocalAgent, MaterialNode, WorkflowEdge } from '@red-video-flow/workflow-core'
+import { getWorkflowClientTransport, readJsonResponse } from './transport'
 
 export type AgentListResponse = {
   agents: LocalAgent[]
@@ -51,19 +52,17 @@ export type VisualRunResult = {
 }
 
 export async function fetchLocalAgents() {
-  const response = await fetch('/api/agents')
-  if (!response.ok) throw new Error('本地 Agent 服务不可用')
-  return (await response.json()) as AgentListResponse
+  const response = await getWorkflowClientTransport().request('/api/agents')
+  return readJsonResponse<AgentListResponse>(response, '本地 Agent 服务不可用')
 }
 
 export async function fetchVisualModels() {
-  const response = await fetch('/api/visual-models')
-  if (!response.ok) throw new Error('本地视觉模型服务不可用')
-  return (await response.json()) as VisualModelListResponse
+  const response = await getWorkflowClientTransport().request('/api/visual-models')
+  return readJsonResponse<VisualModelListResponse>(response, '本地视觉模型服务不可用')
 }
 
 export async function uploadAsset(file: File) {
-  const response = await fetch(
+  const response = await getWorkflowClientTransport().request(
     `/api/upload-asset?fileName=${encodeURIComponent(file.name)}&mimeType=${encodeURIComponent(file.type)}`,
     {
       method: 'POST',
@@ -77,7 +76,7 @@ export async function uploadAsset(file: File) {
 }
 
 export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & { modelId?: string }) {
-  const response = await fetch('/api/run-visual-node', {
+  const response = await getWorkflowClientTransport().request('/api/run-visual-node', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -132,7 +131,7 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
 }
 
 export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeEvents = {}) {
-  const response = await fetch('/api/run-node', {
+  const response = await getWorkflowClientTransport().request('/api/run-node', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

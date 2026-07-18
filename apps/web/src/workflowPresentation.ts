@@ -43,6 +43,16 @@ export function toFlowNode(node: MaterialNode): FlowNode {
   }
 }
 
+export function toMaterialNode(node: FlowNode): MaterialNode {
+  return {
+    id: node.id,
+    position: node.position,
+    width: node.width,
+    height: node.height,
+    data: node.data,
+  }
+}
+
 function createNodeId(materialType: MaterialType) {
   return `${materialType}-${Date.now()}-${Math.round(Math.random() * 1000)}`
 }

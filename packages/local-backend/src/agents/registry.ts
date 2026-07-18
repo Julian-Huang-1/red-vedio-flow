@@ -4,7 +4,18 @@ import path from 'node:path'
 
 export const DEFAULT_MODEL = { id: 'default', label: 'Default (CLI config)' }
 
-export const AGENTS = [
+export type AgentDefinition = {
+  id: string
+  label: string
+  bin: string
+  fallbackBins?: string[]
+  envOverride: string
+  vendor: string
+  protocol: 'stdin' | 'argv-message' | 'argv' | 'acp' | 'pi-rpc'
+  fallbackModels: Array<{ id: string; label: string }>
+}
+
+export const AGENTS: AgentDefinition[] = [
   {
     id: 'claude',
     label: 'Claude Code',
@@ -51,81 +62,14 @@ export const AGENTS = [
     protocol: 'stdin',
     fallbackModels: [DEFAULT_MODEL, { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro' }],
   },
-  {
-    id: 'copilot',
-    label: 'GitHub Copilot CLI',
-    bin: 'copilot',
-    envOverride: 'COPILOT_BIN',
-    vendor: 'GitHub',
-    protocol: 'stdin',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'bob',
-    label: 'IBM Bob Shell',
-    bin: 'bob',
-    envOverride: 'BOB_BIN',
-    vendor: 'IBM',
-    protocol: 'stdin',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'opencode',
-    label: 'OpenCode',
-    bin: 'opencode-cli',
-    fallbackBins: ['opencode'],
-    envOverride: 'OPENCODE_BIN',
-    vendor: 'Open',
-    protocol: 'stdin',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'qwen',
-    label: 'Qwen Coder',
-    bin: 'qwen',
-    envOverride: 'QWEN_BIN',
-    vendor: 'Alibaba',
-    protocol: 'stdin',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'qoder',
-    label: 'Qoder CLI',
-    bin: 'qodercli',
-    envOverride: 'QODER_BIN',
-    vendor: 'Qoder',
-    protocol: 'stdin',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'codewhale',
-    label: 'CodeWhale',
-    bin: 'codewhale',
-    fallbackBins: ['deepseek-tui'],
-    envOverride: 'CODEWHALE_BIN',
-    vendor: 'CodeWhale',
-    protocol: 'argv',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'deepseek-tui',
-    label: 'DeepSeek TUI',
-    bin: 'deepseek-tui',
-    fallbackBins: ['codewhale'],
-    envOverride: 'DEEPSEEK_TUI_BIN',
-    vendor: 'DeepSeek',
-    protocol: 'argv',
-    fallbackModels: [DEFAULT_MODEL],
-  },
-  {
-    id: 'aider',
-    label: 'Aider',
-    bin: 'aider',
-    envOverride: 'AIDER_BIN',
-    vendor: 'Aider',
-    protocol: 'stdin',
-    fallbackModels: [DEFAULT_MODEL],
-  },
+  { id: 'copilot', label: 'GitHub Copilot CLI', bin: 'copilot', envOverride: 'COPILOT_BIN', vendor: 'GitHub', protocol: 'stdin', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'bob', label: 'IBM Bob Shell', bin: 'bob', envOverride: 'BOB_BIN', vendor: 'IBM', protocol: 'stdin', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'opencode', label: 'OpenCode', bin: 'opencode-cli', fallbackBins: ['opencode'], envOverride: 'OPENCODE_BIN', vendor: 'Open', protocol: 'stdin', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'qwen', label: 'Qwen Coder', bin: 'qwen', envOverride: 'QWEN_BIN', vendor: 'Alibaba', protocol: 'stdin', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'qoder', label: 'Qoder CLI', bin: 'qodercli', envOverride: 'QODER_BIN', vendor: 'Qoder', protocol: 'stdin', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'codewhale', label: 'CodeWhale', bin: 'codewhale', fallbackBins: ['deepseek-tui'], envOverride: 'CODEWHALE_BIN', vendor: 'CodeWhale', protocol: 'argv', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'deepseek-tui', label: 'DeepSeek TUI', bin: 'deepseek-tui', fallbackBins: ['codewhale'], envOverride: 'DEEPSEEK_TUI_BIN', vendor: 'DeepSeek', protocol: 'argv', fallbackModels: [DEFAULT_MODEL] },
+  { id: 'aider', label: 'Aider', bin: 'aider', envOverride: 'AIDER_BIN', vendor: 'Aider', protocol: 'stdin', fallbackModels: [DEFAULT_MODEL] },
   { id: 'hermes', label: 'Hermes', bin: 'hermes', envOverride: 'HERMES_BIN', vendor: 'Mature', protocol: 'acp', fallbackModels: [DEFAULT_MODEL] },
   { id: 'kimi', label: 'Kimi CLI', bin: 'kimi', envOverride: 'KIMI_BIN', vendor: 'Moonshot', protocol: 'acp', fallbackModels: [DEFAULT_MODEL] },
   { id: 'devin', label: 'Devin CLI', bin: 'devin', envOverride: 'DEVIN_BIN', vendor: 'Cognition', protocol: 'acp', fallbackModels: [DEFAULT_MODEL] },
@@ -152,7 +96,7 @@ const extraPathDirs = [
   '/usr/local/bin',
 ]
 
-function expandHome(value) {
+function expandHome(value: string) {
   return value.startsWith('~/') ? path.join(homedir(), value.slice(2)) : value
 }
 
@@ -167,7 +111,7 @@ export function getSearchPath() {
   return [...dirs]
 }
 
-export function resolveOnPath(bin) {
+export function resolveOnPath(bin?: string | null) {
   if (!bin) return null
   if (path.isAbsolute(bin)) return existsSync(bin) ? bin : null
   for (const dir of getSearchPath()) {
@@ -177,7 +121,7 @@ export function resolveOnPath(bin) {
   return null
 }
 
-export function resolveAgentBin(def) {
+export function resolveAgentBin(def: AgentDefinition) {
   if (def.envOverride && process.env[def.envOverride]) {
     const fromEnv = resolveOnPath(process.env[def.envOverride])
     if (fromEnv) return fromEnv
@@ -201,7 +145,7 @@ export function detectAgents() {
   })
 }
 
-export function buildArgv(agentId, opts = {}) {
+export function buildArgv(agentId: string, opts: { model?: string } = {}) {
   const modelArgs = opts.model && opts.model !== 'default' ? ['--model', opts.model] : []
 
   switch (agentId) {
@@ -235,7 +179,7 @@ export function buildArgv(agentId, opts = {}) {
   }
 }
 
-export function envFor(agentId) {
+export function envFor(agentId: string) {
   const env = { ...process.env }
   if (agentId === 'gemini') env.GEMINI_CLI_TRUST_WORKSPACE = 'true'
   return env

@@ -25,6 +25,13 @@ const statusLabel: Record<MaterialNodeData['status'], string> = {
   error: '异常',
 }
 
+const textStarterActions = [
+  '自己编写内容',
+  '文生视频',
+  '图片反推提示词',
+  '文字生音乐',
+]
+
 export function MaterialNode({ id, data, selected }: NodeProps<MaterialNodeData>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const attachFile = useWorkflowStore((state) => state.attachFileToNode)
@@ -119,16 +126,20 @@ export function MaterialNode({ id, data, selected }: NodeProps<MaterialNodeData>
         {isTextEditing ? (
           <textarea
             ref={textareaRef}
-            className={styles.inlineEditor}
+            className={`${styles.inlineEditor} nodrag nopan`}
             value={data.value.text ?? ''}
             placeholder="输入文本内容"
             onChange={(event) => updateTextNode(id, event.target.value)}
+            onMouseDown={(event) => event.stopPropagation()}
+            onMouseUp={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.stopPropagation()}
           />
         ) : (
-          renderNodeBody(data, Icon)
+          renderNodeBody(data, Icon, data.materialType === 'text' ? enterTextEdit : undefined)
         )}
       </div>
 
@@ -148,7 +159,7 @@ export function MaterialNode({ id, data, selected }: NodeProps<MaterialNodeData>
   )
 }
 
-function renderNodeBody(data: MaterialNodeData, Icon: ElementType) {
+function renderNodeBody(data: MaterialNodeData, Icon: ElementType, onTextStarterClick?: () => void) {
   if (data.materialType === 'text' && data.value.text) {
     return <p className={styles.textPreview}>{data.value.text}</p>
   }
@@ -186,6 +197,23 @@ function renderNodeBody(data: MaterialNodeData, Icon: ElementType) {
     <div className={styles.emptyState}>
       <Icon size={48} />
       <span>{emptyText[data.materialType]}</span>
+      {data.materialType === 'text' ? (
+        <div className={styles.starterActions}>
+          <small>尝试：</small>
+          {textStarterActions.map((action) => (
+            <button
+              key={action}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                onTextStarterClick?.()
+              }}
+            >
+              {action}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

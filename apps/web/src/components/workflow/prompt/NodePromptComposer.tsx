@@ -1,7 +1,12 @@
 import { type Node, useViewport } from '@xyflow/react'
 import { ArrowUp, Bot, FileText, Image, Play, X } from 'lucide-react'
 import { type ElementType, useEffect, useMemo, useRef, useState } from 'react'
-import type { MaterialNodeData, MaterialType } from '@red-video-flow/workflow-core'
+import {
+  getUpstreamNodes,
+  hasMaterialValue,
+  type MaterialNodeData,
+  type MaterialType,
+} from '@red-video-flow/workflow-core'
 import { fetchVisualModels } from '@red-video-flow/workflow-client'
 import { useWorkflowStore } from '../../../store/workflowStore'
 import styles from './NodePromptComposer.module.less'
@@ -28,16 +33,23 @@ export function NodePromptComposer({ node }: Props) {
   const [visualModelLabel, setVisualModelLabel] = useState('即梦 Dreamina')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const agents = useWorkflowStore((state) => state.agents)
+  const nodes = useWorkflowStore((state) => state.nodes)
+  const edges = useWorkflowStore((state) => state.edges)
   const selectedAgentId = useWorkflowStore((state) => state.selectedAgentId)
   const agentStatus = useWorkflowStore((state) => state.agentStatus)
   const selectAgent = useWorkflowStore((state) => state.selectAgent)
   const loadAgents = useWorkflowStore((state) => state.loadAgents)
   const closeComposer = useWorkflowStore((state) => state.closeComposer)
   const runNode = useWorkflowStore((state) => state.runNode)
-  const Icon = icons[node.data.materialType]
   const availableAgents = agents.filter((agent) => agent.invokable)
   const isVisualNode = node.data.materialType === 'image' || node.data.materialType === 'video'
   const sendDisabled = node.data.status === 'running' || !prompt.trim()
+  const inputMaterials = useMemo(
+    () => getUpstreamNodes(nodes, edges, node.id).filter(hasMaterialValue),
+    [edges, node.id, nodes],
+  )
+  const visibleInputMaterials = inputMaterials.slice(0, 3)
+  const hiddenInputMaterialCount = inputMaterials.length - visibleInputMaterials.length
 
   const style = useMemo(() => {
     const width = Math.max(node.width ?? 520, 520)
@@ -81,10 +93,6 @@ export function NodePromptComposer({ node }: Props) {
   }, [node.id])
 
   useEffect(() => {
-    window.setTimeout(() => textareaRef.current?.focus(), 0)
-  }, [node.id])
-
-  useEffect(() => {
     const focusComposer = (event: Event) => {
       const customEvent = event as CustomEvent<{ nodeId: string }>
       if (customEvent.detail?.nodeId === node.id) {
@@ -111,19 +119,31 @@ export function NodePromptComposer({ node }: Props) {
       <button className={styles.closeButton} title="关闭" onClick={closeComposer}>
         <X size={20} />
       </button>
-      <div className={styles.nodeBadge}>
-        <span className={styles.counter}>1</span>
-        <Icon size={27} />
-      </div>
+      {visibleInputMaterials.length > 0 ? (
+        <div className={styles.inputMaterials} aria-label="输入连接的物料">
+          {visibleInputMaterials.map((inputMaterial, index) => (
+            <div key={inputMaterial.id} className={styles.materialBadge} title={inputMaterial.data.title}>
+              <span className={styles.counter}>{index + 1}</span>
+              <MaterialPreview data={inputMaterial.data} />
+            </div>
+          ))}
+          {hiddenInputMaterialCount > 0 ? (
+            <div className={`${styles.materialBadge} ${styles.moreBadge}`}>+{hiddenInputMaterialCount}</div>
+          ) : null}
+        </div>
+      ) : null}
       <textarea
         ref={textareaRef}
         className={`${styles.promptInput} nodrag nopan`}
         value={prompt}
         placeholder={placeholders[node.data.materialType]}
-        autoFocus
         onMouseDown={(event) => event.stopPropagation()}
+        onMouseUp={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return
@@ -183,4 +203,18 @@ export function NodePromptComposer({ node }: Props) {
       </footer>
     </div>
   )
+}
+
+function MaterialPreview({ data }: { data: MaterialNodeData }) {
+  const Icon = icons[data.materialType]
+
+  if (data.materialType === 'image' && data.value.url) {
+    return <img className={styles.materialPreview} src={data.value.url} alt={data.value.fileName ?? data.title} />
+  }
+
+  if (data.materialType === 'video' && data.value.url) {
+    return <video className={styles.materialPreview} src={data.value.url} muted playsInline preload="metadata" />
+  }
+
+  return <Icon size={27} />
 }

@@ -4,7 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node index.mjs",
-    "start": "node index.mjs"
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@red-video-flow/local-backend": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1"
   }
 }
