@@ -1,0 +1,69 @@
+{
+  "name": "@red-video-flow/electron",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Red Video Flow desktop application",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && tsup",
+    "pack:dir": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --dir",
+    "dist": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage",
+    "dist:mac": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --mac",
+    "dist:win": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --win",
+    "build:app": "pnpm --filter @red-video-flow/web build && pnpm build",
+    "prepare:package": "node scripts/prepare-package.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@red-video-flow/local-server": "workspace:*",
+    "@types/node": "^26.1.1",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
+    "tsup": "^8.5.0",
+    "typescript": "^5.6.3"
+  },
+  "build": {
+    "appId": "com.redvideoflow.desktop",
+    "productName": "Red Video Flow",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web-dist"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "category": "Utility",
+      "target": [
+        "AppImage"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

@@ -4,6 +4,7 @@ export const workflows = sqliteTable('workflows', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   schemaVersion: integer('schema_version').notNull(),
+  revision: integer('revision').notNull(),
   graphJson: text('graph_json').notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
@@ -29,5 +30,6 @@ export const runs = sqliteTable('runs', {
   resultJson: text('result_json'),
   error: text('error'),
   startedAt: integer('started_at').notNull(),
+  heartbeatAt: integer('heartbeat_at').notNull(),
   finishedAt: integer('finished_at'),
 })

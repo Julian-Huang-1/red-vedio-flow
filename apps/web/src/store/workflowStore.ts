@@ -17,6 +17,7 @@ import {
   type LocalAgent,
   type MaterialType,
   type WorkflowDocument,
+  type WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
 import {
   createWorkflow as createWorkflowDocument,
@@ -24,6 +25,7 @@ import {
   fetchLocalAgents,
   fetchWorkflow,
   fetchWorkflows,
+  patchWorkflow,
   runNodeWithAgent,
   runVisualNode,
   saveWorkflow,
@@ -49,6 +51,7 @@ type WorkflowStore = {
   agentError?: string
   workflowId: string
   workflowTitle: string
+  workflowRevision: number
   workflows: WorkflowDocument[]
   workflowListStatus: WorkflowListStatus
   workflowListError?: string
@@ -91,7 +94,88 @@ const initialMenu: AddNodeMenuState = {
   flowY: 0,
 }
 
-export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
+let workflowPatchQueue = Promise.resolve()
+
+export const useWorkflowStore = create<WorkflowStore>((set, get) => {
+  const applyRemoteWorkflow = (document: WorkflowDocument) => {
+    set({
+      workflowId: document.id,
+      workflowTitle: document.title,
+      workflowRevision: document.revision,
+      nodes: document.graph.nodes.map(toFlowNode),
+      edges: document.graph.edges,
+      workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
+      persistenceStatus: 'saved',
+    })
+  }
+
+  const commitWorkflowPatch = async (ops: WorkflowPatchOperation[]) => {
+    const { workflowId, workflowRevision, hasLoadedWorkflow } = get()
+    if (!hasLoadedWorkflow || !ops.length) return undefined
+
+    set({ persistenceStatus: 'saving', persistenceError: undefined })
+    const response = await patchWorkflow(workflowId, { baseRevision: workflowRevision, ops })
+    set({
+      workflowTitle: response.workflow.title,
+      workflowRevision: response.workflow.revision,
+      workflows: get().workflows.map((workflow) => (workflow.id === response.workflow.id ? response.workflow : workflow)),
+      persistenceStatus: 'saved',
+    })
+    return response.workflow
+  }
+
+  const enqueueWorkflowPatch = (ops: WorkflowPatchOperation[]) => {
+    if (!ops.length) return Promise.resolve(undefined)
+
+    const task = workflowPatchQueue.then(() => commitWorkflowPatch(ops))
+    workflowPatchQueue = task.then(
+      () => undefined,
+      (error) => {
+        set({
+          persistenceStatus: 'error',
+          persistenceError: error instanceof Error ? error.message : String(error),
+        })
+      },
+    )
+    return task.catch((error) => {
+      set({
+        persistenceStatus: 'error',
+        persistenceError: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    })
+  }
+
+  const refreshIfAgentPatchedNode = async (nodeId: string, baseRevision: number) => {
+    const currentWorkflowId = get().workflowId
+    const currentNode = get().nodes.find((node) => node.id === nodeId)
+    if (!currentNode) return false
+
+    try {
+      const document = await fetchWorkflow(currentWorkflowId)
+      if (document.revision <= baseRevision) return false
+
+      const remoteNode = document.graph.nodes.find((node) => node.id === nodeId)
+      if (!remoteNode) return false
+
+      const messageCountChanged = remoteNode.data.messages.length > currentNode.data.messages.length
+      const statusChangedFromRunning = remoteNode.data.status !== 'running'
+      const valueChanged = JSON.stringify(remoteNode.data.value) !== JSON.stringify(currentNode.data.value)
+      const agentPatchedNode = messageCountChanged || statusChangedFromRunning || valueChanged
+      if (!agentPatchedNode) return false
+
+      applyRemoteWorkflow(document)
+      return true
+    } catch (error) {
+      set({
+        persistenceStatus: 'error',
+        persistenceError: error instanceof Error ? error.message : String(error),
+      })
+      return false
+    }
+  }
+
+  return {
   nodes: [],
   edges: [],
   selectedNodeId: undefined,
@@ -103,6 +187,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   agentError: undefined,
   workflowId: 'default',
   workflowTitle: '默认工作流',
+  workflowRevision: 0,
   workflows: [],
   workflowListStatus: 'idle',
   workflowListError: undefined,
@@ -114,11 +199,40 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   addNodeMenu: initialMenu,
 
   onNodesChange: (changes) => {
-    set({ nodes: applyNodeChanges(changes, get().nodes) as FlowNode[] })
+    const currentNodes = get().nodes
+    const nextNodes = applyNodeChanges(changes, currentNodes) as FlowNode[]
+    const ops: WorkflowPatchOperation[] = []
+
+    for (const change of changes) {
+      if (change.type === 'remove') {
+        ops.push({ type: 'removeNode', nodeId: change.id })
+      }
+      if (change.type === 'position' && change.position && !change.dragging) {
+        ops.push({ type: 'moveNode', nodeId: change.id, position: change.position })
+      }
+      if (change.type === 'dimensions') {
+        const node = nextNodes.find((item) => item.id === change.id)
+        if (node?.width && node.height) {
+          ops.push({ type: 'resizeNode', nodeId: change.id, size: { width: node.width, height: node.height } })
+        }
+      }
+    }
+
+    set({ nodes: nextNodes })
+    enqueueWorkflowPatch(ops)
   },
 
   onEdgesChange: (changes) => {
+    const currentEdges = get().edges
     set({ edges: applyEdgeChanges(changes, get().edges) })
+    enqueueWorkflowPatch(
+      changes
+        .filter((change) => change.type === 'remove')
+        .map((change) => {
+          const edge = currentEdges.find((item) => item.id === change.id)
+          return { type: 'removeEdge', edgeId: change.id, source: edge?.source, target: edge?.target }
+        }),
+    )
   },
 
   connectNodes: (connection) => {
@@ -129,16 +243,17 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     if (!source || !target || source.id === target.id) return
     if (!canConnectMaterialNodes(source, target)) return
 
-    set({
-      edges: addEdge(
-        {
-          ...connection,
-          animated: true,
-          style: { stroke: '#9fb4c9' },
-        },
-        edges,
-      ),
-    })
+    const edge = {
+      ...connection,
+      id: `edge-${source.id}-${target.id}-${Date.now()}`,
+      source: source.id,
+      target: target.id,
+      animated: true,
+      style: { stroke: '#9fb4c9' },
+    }
+
+    set({ edges: addEdge(edge, edges) })
+    enqueueWorkflowPatch([{ type: 'addEdge', edge: { id: edge.id, source: edge.source, target: edge.target } }])
   },
 
   openAddNodeMenu: (screen, flow) => {
@@ -200,6 +315,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       activeCanvasPanel: undefined,
       addNodeMenu: initialMenu,
     })
+    enqueueWorkflowPatch([{ type: 'addNode', node: toMaterialNode(node) }])
   },
 
   selectNode: (nodeId) => {
@@ -251,22 +367,36 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         set({
           nodes: get().nodes.map((node) => {
             if (node.id !== nodeId) return node
+            const value = {
+              ...node.data.value,
+              url: asset.url,
+              localPath: asset.localPath,
+              fileName: asset.fileName,
+            }
             return {
               ...node,
               data: {
                 ...node.data,
-                value: {
-                  ...node.data.value,
-                  url: asset.url,
-                  localPath: asset.localPath,
-                  fileName: asset.fileName,
-                },
+                value,
               },
             }
           }),
         })
+        const node = get().nodes.find((item) => item.id === nodeId)
+        if (node) {
+          enqueueWorkflowPatch([
+            { type: 'setNodeStatus', nodeId, status: 'ready' },
+            { type: 'setNodeValue', nodeId, value: node.data.value },
+          ])
+        }
       })
       .catch((error) => {
+        const errorMessage = {
+          id: `msg-${Date.now()}-upload-error`,
+          role: 'assistant' as const,
+          text: `素材落盘失败：${error instanceof Error ? error.message : String(error)}`,
+          createdAt: Date.now(),
+        }
         set({
           nodes: get().nodes.map((node) => {
             if (node.id !== nodeId) return node
@@ -277,21 +407,21 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
                 status: 'error',
                 messages: [
                   ...node.data.messages,
-                  {
-                    id: `msg-${Date.now()}-upload-error`,
-                    role: 'assistant',
-                    text: `素材落盘失败：${error instanceof Error ? error.message : String(error)}`,
-                    createdAt: Date.now(),
-                  },
+                  errorMessage,
                 ],
               },
             }
           }),
         })
+        enqueueWorkflowPatch([
+          { type: 'setNodeStatus', nodeId, status: 'error' },
+          { type: 'appendNodeMessage', nodeId, message: errorMessage },
+        ])
       })
   },
 
   updateTextNode: (nodeId, text) => {
+    const status = text.trim() ? 'ready' : 'empty'
     set({
       nodes: get().nodes.map((node) => {
         if (node.id !== nodeId) return node
@@ -300,12 +430,16 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           ...node,
           data: {
             ...node.data,
-            status: text.trim() ? 'ready' : 'empty',
+            status,
             value: { text },
           },
         }
       }),
     })
+    enqueueWorkflowPatch([
+      { type: 'setNodeStatus', nodeId, status },
+      { type: 'setNodeValue', nodeId, value: { text } },
+    ])
   },
 
   loadAgents: async () => {
@@ -354,6 +488,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       set({
         workflowId: document.id,
         workflowTitle: document.title,
+        workflowRevision: document.revision,
         nodes: document.graph.nodes.map(toFlowNode),
         edges: document.graph.edges,
         selectedNodeId: undefined,
@@ -383,6 +518,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       set({
         workflowId: document.id,
         workflowTitle: document.title,
+        workflowRevision: document.revision,
         nodes: document.graph.nodes.map(toFlowNode),
         edges: document.graph.edges,
         selectedNodeId: undefined,
@@ -433,6 +569,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       set({
         workflowId: 'default',
         workflowTitle: '默认工作流',
+        workflowRevision: 0,
         nodes: [],
         edges: [],
         selectedNodeId: undefined,
@@ -460,6 +597,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       const document = await saveWorkflow({
         id: workflowId,
         title: workflowTitle,
+        baseRevision: get().workflowRevision,
         graph: {
           nodes: nodes.map(toMaterialNode),
           edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
@@ -467,6 +605,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       })
       set({
         workflowTitle: document.title,
+        workflowRevision: document.revision,
         workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
         persistenceStatus: 'saved',
       })
@@ -505,6 +644,11 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           : node,
       ),
     })
+    const startWorkflow = await enqueueWorkflowPatch([
+      { type: 'setNodeStatus', nodeId, status: 'running' },
+      { type: 'appendNodeMessage', nodeId, message: userMessage },
+    ])
+    const agentBaseRevision = startWorkflow?.revision ?? get().workflowRevision
 
     const selectedAgent = agents.find((agent) => agent.id === (agentId ?? selectedAgentId) && agent.invokable)
     const result = await runWorkflowNode(
@@ -514,12 +658,23 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         edges,
         prompt,
         selectedAgent,
+        workflowId: get().workflowId,
+        workflowRevision: agentBaseRevision,
       },
       {
         runTextAgent: runNodeWithAgent,
         runVisualModel: runVisualNode,
       },
     )
+
+    if (selectedAgent && (await refreshIfAgentPatchedNode(nodeId, agentBaseRevision))) return
+
+    const assistantMessage = {
+      id: `msg-${Date.now()}-assistant`,
+      role: 'assistant' as const,
+      text: result.assistantMessage,
+      createdAt: Date.now(),
+    }
 
     set({
       nodes: get().nodes.map((node) => {
@@ -533,17 +688,21 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
             value: result.value,
             messages: [
               ...node.data.messages,
-              {
-                id: `msg-${Date.now()}-assistant`,
-                role: 'assistant',
-                text: result.assistantMessage,
-                createdAt: Date.now(),
-              },
+              assistantMessage,
             ],
           },
         }
       }),
     })
-    void get().saveWorkflow()
+    enqueueWorkflowPatch([
+      { type: 'setNodeStatus', nodeId, status: result.status },
+      { type: 'setNodeValue', nodeId, value: result.value },
+      {
+        type: 'appendNodeMessage',
+        nodeId,
+        message: assistantMessage,
+      },
+    ])
   },
-}))
+  }
+})

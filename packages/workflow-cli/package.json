@@ -1,10 +1,10 @@
 {
-  "name": "@red-video-flow/local-server",
+  "name": "@red-video-flow/workflow-cli",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "exports": {
-    ".": "./src/server.ts"
+  "bin": {
+    "rvf": "./src/index.ts"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
@@ -12,7 +12,8 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "@red-video-flow/local-backend": "workspace:*"
+    "@red-video-flow/workflow-client": "workspace:*",
+    "@red-video-flow/workflow-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

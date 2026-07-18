@@ -28,8 +28,14 @@ export type RunNodePayload = {
   agentId: string
   node: MaterialNode
   upstream: MaterialNode[]
+  referencedNodes?: MaterialNode[]
   edges: WorkflowEdge[]
   prompt: string
+  messages?: Array<{ role: 'user' | 'assistant'; text: string }>
+  mode?: 'node' | 'chat'
+  workflowId?: string
+  workflowRevision?: number
+  baseUrl?: string
 }
 
 export type RunNodeEvents = {
@@ -83,8 +89,10 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
       modelId: payload.modelId ?? 'dreamina',
       nodeKind: payload.node.data.materialType,
       prompt: payload.prompt,
+      messages: payload.messages,
       currentNode: payload.node,
       upstream: payload.upstream,
+      referencedNodes: payload.referencedNodes,
       edges: payload.edges,
     }),
   })
@@ -116,13 +124,10 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
 
       if (!dataLine) continue
 
-      const event = JSON.parse(dataLine.slice(6)) as
-        | { type: 'done'; result: VisualRunResult }
-        | { type: 'error'; message: string }
-        | { type: string }
+      const event = JSON.parse(dataLine.slice(6)) as { type?: string; result?: VisualRunResult; message?: string }
 
       if (event.type === 'done') result = event.result
-      if (event.type === 'error') throw new Error(event.message)
+      if (event.type === 'error') throw new Error(event.message ?? '视觉模型调用失败')
     }
   }
 
@@ -136,6 +141,10 @@ export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeE
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       agentId: payload.agentId,
+      workflowId: payload.workflowId,
+      workflowRevision: payload.workflowRevision,
+      baseUrl: payload.baseUrl ?? getBrowserOrigin(),
+      mode: payload.mode,
       nodeKind: payload.node.data.materialType,
       prompt: payload.prompt,
       currentNode: payload.node,
@@ -171,24 +180,31 @@ export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeE
 
       if (!dataLine) continue
 
-      const event = JSON.parse(dataLine.slice(6)) as
-        | { type: 'delta'; text: string }
-        | { type: 'done'; output?: string }
-        | { type: 'error'; message: string }
-        | { type: string }
+      const event = JSON.parse(dataLine.slice(6)) as {
+        type?: string
+        text?: string
+        output?: string
+        message?: string
+        code?: number
+      }
 
-      if (event.type === 'delta') {
+      if (event.type === 'delta' && event.text) {
         output += event.text
         events.onDelta?.(event.text)
       }
 
       if (event.type === 'done' && event.output) output = event.output
-      if (event.type === 'done' && 'code' in event && event.code !== 0 && !output.trim()) {
+      if (event.type === 'done' && event.code !== undefined && event.code !== 0 && !output.trim()) {
         throw new Error(`Agent 退出码 ${event.code}`)
       }
-      if (event.type === 'error') throw new Error(event.message)
+      if (event.type === 'error') throw new Error(event.message ?? '本地 Agent 调用失败')
     }
   }
 
   return output.trim()
+}
+
+function getBrowserOrigin() {
+  if (typeof globalThis.location === 'undefined') return undefined
+  return globalThis.location.origin
 }

@@ -25,6 +25,7 @@ function migrate(sqlite: Database.Database) {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       schema_version INTEGER NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
       graph_json TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -50,6 +51,7 @@ function migrate(sqlite: Database.Database) {
       result_json TEXT,
       error TEXT,
       started_at INTEGER NOT NULL,
+      heartbeat_at INTEGER NOT NULL DEFAULT 0,
       finished_at INTEGER,
       FOREIGN KEY (workflow_id) REFERENCES workflows(id)
     );
@@ -58,4 +60,15 @@ function migrate(sqlite: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_runs_node_id ON runs(node_id);
     CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
   `)
+
+  const columns = sqlite.prepare(`PRAGMA table_info(workflows)`).all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'revision')) {
+    sqlite.exec(`ALTER TABLE workflows ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;`)
+  }
+
+  const runColumns = sqlite.prepare(`PRAGMA table_info(runs)`).all() as Array<{ name: string }>
+  if (!runColumns.some((column) => column.name === 'heartbeat_at')) {
+    sqlite.exec(`ALTER TABLE runs ADD COLUMN heartbeat_at INTEGER NOT NULL DEFAULT 0;`)
+    sqlite.exec(`UPDATE runs SET heartbeat_at = started_at WHERE heartbeat_at = 0;`)
+  }
 }

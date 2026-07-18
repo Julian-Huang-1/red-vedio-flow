@@ -23,6 +23,9 @@ export type RunWorkflowNodeInput = {
   edges: WorkflowEdge[]
   prompt: string
   selectedAgent?: LocalAgent
+  workflowId?: string
+  workflowRevision?: number
+  baseUrl?: string
 }
 
 export type WorkflowRuntimeAdapters = {
@@ -32,6 +35,9 @@ export type WorkflowRuntimeAdapters = {
     upstream: MaterialNode[]
     edges: WorkflowEdge[]
     prompt: string
+    workflowId?: string
+    workflowRevision?: number
+    baseUrl?: string
   }) => Promise<string>
   runVisualModel: (input: {
     node: MaterialNode
@@ -58,7 +64,7 @@ export async function runWorkflowNode(
   input: RunWorkflowNodeInput,
   adapters: WorkflowRuntimeAdapters,
 ): Promise<RunWorkflowNodeResult> {
-  const { node, upstream, edges, prompt, selectedAgent } = input
+  const { node, upstream, edges, prompt, selectedAgent, workflowId, workflowRevision, baseUrl } = input
 
   try {
     if (node.data.materialType === 'image' || node.data.materialType === 'video') {
@@ -88,6 +94,9 @@ export async function runWorkflowNode(
           upstream,
           edges,
           prompt,
+          workflowId,
+          workflowRevision,
+          baseUrl,
         })
       : fallbackGenerate(prompt, upstream)
 

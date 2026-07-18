@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { createDatabase } from './db/client.js'
 import { WorkflowRepository } from './workflows/workflowRepository.js'
 import { WorkflowService } from './workflows/workflowService.js'
+import { RunRepository } from './runs/runRepository.js'
+import { RunService } from './runs/runService.js'
 import { AssetService } from './assets/assetService.js'
 import { AgentService } from './agents/service.js'
 import { VisualService } from './visual/service.js'
@@ -16,13 +18,16 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
   mkdirSync(options.dataDir, { recursive: true })
   const database = createDatabase(join(options.dataDir, 'red-video-flow.sqlite'))
   const workflowRepository = new WorkflowRepository(database)
+  const workflows = new WorkflowService(workflowRepository)
+  const runRepository = new RunRepository(database)
   const assets = new AssetService(options.dataDir)
 
   return {
     dataDir: options.dataDir,
     cwd: options.cwd ?? process.cwd(),
     database,
-    workflows: new WorkflowService(workflowRepository),
+    workflows,
+    runs: new RunService(runRepository, workflows),
     assets,
     agents: new AgentService(),
     visual: new VisualService(),

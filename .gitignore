@@ -1,5 +1,7 @@
 node_modules
 dist
+release
+.electron-stage
 .data
 .DS_Store
 *.local

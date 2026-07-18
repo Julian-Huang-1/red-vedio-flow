@@ -60,9 +60,12 @@ export function NodePromptComposer({ node }: Props) {
     const belowY = node.position.y + nodeHeight + gap
     const aboveY = Math.max(node.position.y - height - gap, 24)
     const y = belowY + height > visibleBottom ? aboveY : belowY
+    const screenX = node.position.x * viewport.zoom + viewport.x
+    const screenY = y * viewport.zoom + viewport.y
 
     return {
-      transform: `translate(${node.position.x}px, ${y}px)`,
+      transform: `translate(${screenX}px, ${screenY}px) scale(${viewport.zoom})`,
+      transformOrigin: 'top left',
       width,
     }
   }, [node.height, node.position.x, node.position.y, node.width, viewport.x, viewport.y, viewport.zoom])

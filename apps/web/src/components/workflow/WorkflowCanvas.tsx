@@ -2,7 +2,6 @@ import {
   Background,
   BackgroundVariant,
   ReactFlow,
-  ViewportPortal,
   type NodeMouseHandler,
   useReactFlow,
 } from '@xyflow/react'
@@ -113,7 +112,7 @@ export function WorkflowCanvas() {
         </div>
       ) : null}
       <AddNodeMenu />
-      <ViewportPortal>{shouldShowComposer ? <NodePromptComposer node={composerNode} /> : null}</ViewportPortal>
+      {shouldShowComposer ? <NodePromptComposer node={composerNode} /> : null}
     </section>
   )
 }

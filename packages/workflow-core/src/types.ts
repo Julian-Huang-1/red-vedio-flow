@@ -56,10 +56,29 @@ export type WorkflowDocument = {
   schemaVersion: 1
   id: string
   title: string
+  revision: number
   createdAt: number
   updatedAt: number
   graph: {
     nodes: MaterialNode[]
     edges: WorkflowEdge[]
   }
+}
+
+export type WorkflowPatchOperation =
+  | { type: 'setWorkflowTitle'; title: string }
+  | { type: 'addNode'; node: MaterialNode }
+  | { type: 'removeNode'; nodeId: string }
+  | { type: 'moveNode'; nodeId: string; position: XYPosition }
+  | { type: 'resizeNode'; nodeId: string; size: NodeSize }
+  | { type: 'setNodeTitle'; nodeId: string; title: string }
+  | { type: 'setNodeStatus'; nodeId: string; status: NodeStatus }
+  | { type: 'setNodeValue'; nodeId: string; value: MaterialValue }
+  | { type: 'appendNodeMessage'; nodeId: string; message: MaterialMessage }
+  | { type: 'addEdge'; edge: WorkflowEdge }
+  | { type: 'removeEdge'; edgeId?: string; source?: string; target?: string }
+
+export type WorkflowPatchInput = {
+  baseRevision: number
+  ops: WorkflowPatchOperation[]
 }

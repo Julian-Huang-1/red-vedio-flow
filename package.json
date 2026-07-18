@@ -3,6 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "volta": {
+    "node": "22.22.1"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -11,8 +17,13 @@
     "dev": "concurrently -k \"pnpm --filter @red-video-flow/local-server dev\" \"pnpm --filter @red-video-flow/web dev\"",
     "dev:web": "pnpm --filter @red-video-flow/web dev",
     "dev:agents": "pnpm --filter @red-video-flow/local-server dev",
+    "dev:electron": "node apps/electron/scripts/dev.mjs",
     "build": "pnpm -r --if-present build",
     "build:web": "pnpm --filter @red-video-flow/web build",
+    "pack:electron": "pnpm --filter @red-video-flow/electron run pack:dir",
+    "dist:electron": "pnpm --filter @red-video-flow/electron dist",
+    "dist:mac": "pnpm --filter @red-video-flow/electron dist:mac",
+    "dist:win": "pnpm --filter @red-video-flow/electron dist:win",
     "start": "pnpm build && pnpm --filter @red-video-flow/local-server start",
     "serve": "pnpm --filter @red-video-flow/local-server start",
     "preview": "pnpm --filter @red-video-flow/web preview"
@@ -20,11 +31,5 @@
   "devDependencies": {
     "concurrently": "^10.0.3",
     "typescript": "^5.6.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "esbuild"
-    ]
   }
 }

@@ -158,6 +158,7 @@
 }
 
 .composer {
+  position: relative;
   border-top: 0;
   padding: 10px 14px 14px;
 
@@ -180,6 +181,61 @@
       color: #777;
     }
   }
+}
+
+.mentionMenu {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 70px;
+  z-index: 2;
+  display: grid;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px;
+  background: #292929;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+}
+
+.mentionOption,
+.mentionOptionActive {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 10px;
+  color: #ededed;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mentionOptionActive {
+  background: #3a3a3a;
+}
+
+.mentionTitle {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mentionMeta {
+  color: #a9a9a9;
+  font-size: 12px;
+}
+
+.mentionEmpty {
+  padding: 10px;
+  color: #9b9b9b;
+  font-size: 13px;
 }
 
 .composerFooter {
