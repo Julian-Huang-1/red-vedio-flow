@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@red-video-flow/workflow-core": ["../../packages/workflow-core/src/index.ts"],
+      "@red-video-flow/workflow-client": ["../../packages/workflow-client/src/index.ts"],
+      "@red-video-flow/workflow-runtime": ["../../packages/workflow-runtime/src/index.ts"]
+    }
+  },
+  "include": ["src", "../../packages/*/src"]
+}

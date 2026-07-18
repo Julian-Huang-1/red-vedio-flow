@@ -1,0 +1,24 @@
+{
+  "name": "red-vedio-flow",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"pnpm --filter @red-video-flow/local-server dev\" \"pnpm --filter @red-video-flow/web dev\"",
+    "dev:web": "pnpm --filter @red-video-flow/web dev",
+    "dev:agents": "pnpm --filter @red-video-flow/local-server dev",
+    "build": "pnpm -r --if-present build",
+    "build:web": "pnpm --filter @red-video-flow/web build",
+    "start": "pnpm build && pnpm --filter @red-video-flow/local-server start",
+    "serve": "pnpm --filter @red-video-flow/local-server start",
+    "preview": "pnpm --filter @red-video-flow/web preview"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,147 @@
+.composer {
+  position: absolute;
+  z-index: 15;
+  min-height: 198px;
+  padding: 22px 24px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  background: #282828;
+  box-shadow: 0 18px 58px rgba(0, 0, 0, 0.42);
+}
+
+.closeButton {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: #d9d9d9;
+  border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.nodeBadge {
+  position: relative;
+  display: inline-flex;
+  width: 58px;
+  height: 58px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  color: #fff;
+  background: #646464;
+}
+
+.counter {
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #171717;
+  font-size: 12px;
+}
+
+.promptInput {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  margin-top: 14px;
+  resize: none;
+  border: 0;
+  outline: none;
+  color: #f1f1f1;
+  background: transparent;
+  font-size: 17px;
+  line-height: 1.6;
+
+  &::placeholder {
+    color: #6d6d6d;
+  }
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.footerMeta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.agentSelect,
+.visualModel {
+  border: 0;
+  color: #f4f4f4;
+  background: transparent;
+}
+
+.agentSelect,
+.visualModel {
+  display: inline-flex;
+  max-width: 178px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.agentSelect {
+  select {
+    min-width: 0;
+    max-width: 132px;
+    border: 0;
+    outline: 0;
+    color: #f4f4f4;
+    background: transparent;
+    font-size: 15px;
+    cursor: pointer;
+  }
+}
+
+.visualModel {
+  font-size: 15px;
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sendButton {
+  display: inline-flex;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 16px;
+  color: #111;
+  background: #f4f4f4;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.42;
+    cursor: default;
+  }
+}
