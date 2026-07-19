@@ -1,91 +1,223 @@
 .page {
+  display: grid;
   min-height: 100vh;
-  padding: 28px;
+  grid-template-columns: 300px minmax(0, 1fr);
   color: #f5f5f5;
-  background:
-    radial-gradient(circle at top left, rgba(43, 71, 78, 0.16), transparent 34%),
-    #111;
+  background: #111;
 }
 
-.header {
+.sidebar {
+  position: sticky;
+  top: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
-
-  h1 {
-    margin: 0;
-    font-size: 28px;
-    font-weight: 720;
-  }
-
-  p {
-    margin: 8px 0 0;
-    color: #9a9a9a;
-  }
+  height: 100vh;
+  flex-direction: column;
+  gap: 18px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 22px;
+  background: #181818;
 }
 
 .backLink {
   display: inline-flex;
+  width: fit-content;
   height: 38px;
   align-items: center;
   gap: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 0 13px;
+  border-radius: 8px;
+  padding: 0 12px;
   color: #e8e8e8;
   text-decoration: none;
   background: rgba(255, 255, 255, 0.05);
 }
 
-.section,
-.card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.035);
+.sidebarTitle {
+  h1 {
+    margin: 0;
+    color: #fff;
+    font-size: 22px;
+    font-weight: 760;
+    letter-spacing: 0;
+  }
+
+  p {
+    margin: 8px 0 0;
+    color: #9d9d9d;
+    font-size: 13px;
+    line-height: 1.5;
+  }
 }
 
-.section {
-  padding: 18px;
-}
-
-.sectionTitle,
-.card h2 {
+.searchBox {
   display: flex;
+  height: 40px;
   align-items: center;
   gap: 9px;
-  margin: 0 0 16px;
-  color: #d8d8d8;
-  font-size: 16px;
-  font-weight: 650;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 0 11px;
+  color: #9d9d9d;
+  background: #222;
+
+  input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    color: #f5f5f5;
+    background: transparent;
+    font-size: 14px;
+
+    &::placeholder {
+      color: #777;
+    }
+  }
+}
+
+.navList {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+
+  button {
+    display: flex;
+    min-height: 52px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: #e4e4e4;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.055);
+    }
+
+    &[data-active] {
+      border-color: rgba(130, 217, 229, 0.36);
+      background: rgba(76, 146, 156, 0.18);
+    }
+  }
+
+  span {
+    font-size: 14px;
+    font-weight: 720;
+  }
+
+  small {
+    margin-top: 3px;
+    color: #8f8f8f;
+    font-size: 12px;
+  }
+}
+
+.content {
+  min-width: 0;
+  padding: 26px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+
+  h2 {
+    margin: 7px 0 0;
+    color: #fff;
+    font-size: 30px;
+    font-weight: 780;
+    letter-spacing: 0;
+  }
+
+  p {
+    max-width: 760px;
+    margin: 9px 0 0;
+    color: #a6a6a6;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+}
+
+.category {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 0 9px;
+  color: #9de8ef;
+  background: rgba(80, 160, 170, 0.12);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.previewPanel,
+.registryBlock {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #1b1b1b;
+}
+
+.previewPanel {
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 14px;
+
+  h3 {
+    margin: 0;
+    color: #e7e7e7;
+    font-size: 14px;
+    font-weight: 760;
+  }
+}
+
+.previewStage {
+  min-height: 320px;
+  padding: 20px;
+  overflow: auto;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #151515;
+  background-size: 22px 22px;
 }
 
 .canvasPreview {
-  height: 720px;
+  height: 640px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
+  border-radius: 8px;
   background: #151515;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 420px) 1fr;
-  gap: 18px;
-  margin-top: 18px;
-}
-
-.card {
-  min-height: 300px;
-  padding: 18px;
+.homePreview {
+  min-width: 820px;
+  padding: 12px;
 }
 
 .fakeMenu {
   width: 256px;
-  padding: 20px;
+  padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 22px;
+  border-radius: 8px;
   background: #262626;
 
   span {
@@ -102,19 +234,92 @@
     align-items: center;
     gap: 12px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 8px;
     color: #f4f4f4;
     background: transparent;
-    font-size: 16px;
+    cursor: pointer;
+    font-size: 15px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
   }
 }
 
 .promptPreview {
   position: relative;
-  height: 260px;
+  height: 270px;
   overflow: hidden;
 
   > div {
     transform: translate(0, 0) !important;
+  }
+}
+
+.resourceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.registryBlock {
+  min-width: 0;
+  overflow: hidden;
+
+  pre {
+    max-height: 360px;
+    margin: 0;
+    overflow: auto;
+    padding: 16px;
+    color: #dedede;
+    background: #121212;
+    font-size: 12.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  }
+}
+
+.copyButton {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #e9e9e9;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+
+  &[data-copied] {
+    color: #102322;
+    border-color: transparent;
+    background: #8fe8dd;
+  }
+}
+
+@media (max-width: 980px) {
+  .page {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .navList {
+    max-height: 240px;
+  }
+
+  .resourceGrid {
+    grid-template-columns: 1fr;
   }
 }
