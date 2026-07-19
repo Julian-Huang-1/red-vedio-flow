@@ -11,6 +11,9 @@ export type VisualEvent =
 
 export type VisualRunResult = {
   submitId?: string
+  taskStatus?: VisualTaskStatus
+  genStatus?: string
+  failReason?: string
   url?: string
   localPath?: string
   fileName?: string
@@ -18,11 +21,21 @@ export type VisualRunResult = {
   text?: string
 }
 
+export type VisualTaskStatus = 'querying' | 'success' | 'failed' | 'unknown'
+
 export type InvokeVisualModelInput = {
   modelId: string
   nodeKind: string
   prompt: string
   upstream?: any[]
+  downloadDir: string
+  assetUrlForPath: (filePath: string) => string
+  onEvent?: (event: VisualEvent) => void
+}
+
+export type QueryVisualTaskInput = {
+  submitId: string
+  nodeKind?: string
   downloadDir: string
   assetUrlForPath: (filePath: string) => string
   onEvent?: (event: VisualEvent) => void
@@ -52,6 +65,10 @@ export class VisualService {
 
   async invoke(input: InvokeVisualModelInput) {
     return invokeVisualModel(input)
+  }
+
+  async query(input: QueryVisualTaskInput) {
+    return queryVisualTask(input)
   }
 }
 
@@ -146,6 +163,32 @@ function listDownloadedMedia(downloadDir: string) {
     .map((name) => path.join(downloadDir, name))
 }
 
+function mimeTypeForMedia(filePath: string, nodeKind?: string) {
+  const extension = path.extname(filePath).toLowerCase()
+  if (extension === '.png') return 'image/png'
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg'
+  if (extension === '.webp') return 'image/webp'
+  if (extension === '.gif') return 'image/gif'
+  if (extension === '.mp4') return 'video/mp4'
+  if (extension === '.mov') return 'video/quicktime'
+  if (extension === '.m4v') return 'video/x-m4v'
+  return nodeKind === 'image' ? 'image/generated' : nodeKind === 'video' ? 'video/generated' : undefined
+}
+
+export function normalizeVisualTaskStatus(genStatus?: string, hasMedia = false): VisualTaskStatus {
+  const normalized = genStatus?.trim().toLowerCase()
+  if (hasMedia || ['success', 'succeeded', 'done', 'completed', 'complete', 'finish', 'finished'].includes(normalized ?? '')) {
+    return 'success'
+  }
+  if (['failed', 'fail', 'error', 'cancelled', 'canceled', 'rejected'].includes(normalized ?? '')) {
+    return 'failed'
+  }
+  if (['querying', 'queued', 'queueing', 'pending', 'running', 'processing', 'generating'].includes(normalized ?? '')) {
+    return 'querying'
+  }
+  return 'unknown'
+}
+
 function buildDreaminaArgv({ nodeKind, prompt, upstream = [] }: { nodeKind: string; prompt: string; upstream?: any[] }) {
   const firstImage = upstream.find((node) => (node?.data?.materialType ?? node?.data?.kind) === 'image' && node?.data?.value?.localPath)
 
@@ -168,6 +211,47 @@ function buildDreaminaArgv({ nodeKind, prompt, upstream = [] }: { nodeKind: stri
   throw new Error(`Dreamina 不支持节点类型：${nodeKind}`)
 }
 
+async function queryVisualTask({
+  submitId,
+  nodeKind,
+  downloadDir,
+  assetUrlForPath,
+  onEvent,
+}: QueryVisualTaskInput): Promise<VisualRunResult> {
+  const bin = resolveOnPath('dreamina')
+  if (!bin) throw new Error('未检测到 dreamina CLI，请先安装并登录即梦 CLI。')
+
+  mkdirSync(downloadDir, { recursive: true })
+  const argv = ['query_result', `--submit_id=${submitId}`, `--download_dir=${downloadDir}`]
+  onEvent?.({ type: 'start', modelId: 'dreamina', bin, argv })
+  onEvent?.({ type: 'meta', submitId })
+
+  const query = await runCli(bin, argv, { onEvent })
+  if (query.code !== 0) {
+    throw new Error(query.stderr.trim() || query.stdout.trim() || `dreamina 退出码 ${query.code}`)
+  }
+
+  const queryJson = firstJsonObject(query.stdout)
+  const downloaded = listDownloadedMedia(downloadDir)
+  const localPath = downloaded[0]
+  const remoteUrl = findMediaUrl(queryJson)
+  const genStatus = findValueDeep(queryJson, ['gen_status', 'genStatus', 'status'])
+  const failReason = findValueDeep(queryJson, ['fail_reason', 'failReason', 'error_message', 'errorMessage'])
+  const taskStatus = normalizeVisualTaskStatus(genStatus, Boolean(localPath || remoteUrl))
+
+  return {
+    submitId,
+    taskStatus,
+    genStatus,
+    failReason,
+    localPath,
+    url: localPath ? assetUrlForPath(localPath) : remoteUrl,
+    fileName: localPath ? path.basename(localPath) : undefined,
+    mimeType: localPath ? mimeTypeForMedia(localPath, nodeKind) : mimeTypeForMedia(remoteUrl ?? '', nodeKind),
+    text: query.stdout.trim(),
+  }
+}
+
 async function invokeVisualModel({ modelId, nodeKind, prompt, upstream = [], downloadDir, assetUrlForPath, onEvent }: InvokeVisualModelInput): Promise<VisualRunResult> {
   if (modelId !== 'dreamina') throw new Error(`未知视觉模型：${modelId}`)
   const bin = resolveOnPath('dreamina')
@@ -184,25 +268,31 @@ async function invokeVisualModel({ modelId, nodeKind, prompt, upstream = [], dow
     throw new Error(submit.stderr.trim() || submit.stdout.trim() || `dreamina 退出码 ${submit.code}`)
   }
 
-  let queryJson = null
-  let queryText = submit.stdout.trim()
   if (submitId) {
-    onEvent?.({ type: 'meta', submitId })
-    const query = await runCli(bin, ['query_result', `--submit_id=${submitId}`, `--download_dir=${downloadDir}`], { onEvent })
-    queryJson = firstJsonObject(query.stdout)
-    queryText = query.stdout.trim() || queryText
+    return queryVisualTask({
+      submitId,
+      nodeKind,
+      downloadDir,
+      assetUrlForPath,
+      onEvent,
+    })
   }
 
   const downloaded = listDownloadedMedia(downloadDir)
   const localPath = downloaded[0]
-  const remoteUrl = findMediaUrl(queryJson) ?? findMediaUrl(submitJson)
+  const remoteUrl = findMediaUrl(submitJson)
+  const genStatus = findValueDeep(submitJson, ['gen_status', 'genStatus', 'status'])
+  const failReason = findValueDeep(submitJson, ['fail_reason', 'failReason', 'error_message', 'errorMessage'])
 
   return {
     submitId,
+    taskStatus: normalizeVisualTaskStatus(genStatus, Boolean(localPath || remoteUrl)),
+    genStatus,
+    failReason,
     localPath,
     url: localPath ? assetUrlForPath(localPath) : remoteUrl,
     fileName: localPath ? path.basename(localPath) : undefined,
-    mimeType: nodeKind === 'image' ? 'image/generated' : 'video/generated',
-    text: queryText || submit.stdout.trim(),
+    mimeType: localPath ? mimeTypeForMedia(localPath, nodeKind) : mimeTypeForMedia(remoteUrl ?? '', nodeKind),
+    text: submit.stdout.trim(),
   }
 }

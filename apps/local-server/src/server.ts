@@ -309,6 +309,25 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    if (req.method === 'POST' && pathname === '/api/query-visual-task') {
+      const body = await readJson(req)
+      const submitId = typeof body.submitId === 'string' ? body.submitId.trim() : ''
+      if (!submitId || !/^[a-zA-Z0-9._-]+$/.test(submitId)) {
+        sendJson(res, 400, { error: 'valid submitId is required' })
+        return
+      }
+
+      const downloadDir = join(backend.assets.generatedDir, `task-${submitId}`)
+      const result = await backend.visual.query({
+        submitId,
+        nodeKind: typeof body.nodeKind === 'string' ? body.nodeKind : undefined,
+        downloadDir,
+        assetUrlForPath: (filePath) => backend.assets.assetUrlForPath(filePath),
+      })
+      sendJson(res, 200, result)
+      return
+    }
+
     if (req.method === 'GET' || req.method === 'HEAD') {
       const decodedPath = decodeURIComponent(pathname)
       const requestedPath = normalize(join(distDir, decodedPath))

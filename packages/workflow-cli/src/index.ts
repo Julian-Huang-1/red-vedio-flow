@@ -9,11 +9,26 @@ import {
   fetchWorkflows,
   heartbeatWorkflowNodeRun,
   patchWorkflow,
+  queryVisualTask,
   runNodeWithAgent,
   runVisualNode,
   startWorkflowNodeRun,
+  type VisualRunResult,
 } from '@red-video-flow/workflow-client'
-import { createGeneratedValue, getUpstreamNodes, type MaterialMessage, type MaterialNode, type MaterialValue, type NodeStatus, type WorkflowPatchOperation, type WorkflowDocument } from '@red-video-flow/workflow-core'
+import {
+  createGeneratedValue,
+  createMaterialNode,
+  getUpstreamNodes,
+  materialTypes,
+  type MaterialMessage,
+  type MaterialNode,
+  type MaterialType,
+  type MaterialValue,
+  type NodeSize,
+  type NodeStatus,
+  type WorkflowDocument,
+  type WorkflowPatchOperation,
+} from '@red-video-flow/workflow-core'
 
 type CliOptions = {
   baseUrl: string
@@ -26,6 +41,19 @@ type ParsedArgs = {
 }
 
 const statuses = new Set<NodeStatus>(['empty', 'ready', 'running', 'done', 'error'])
+const materialTypeSet = new Set<MaterialType>(materialTypes)
+const defaultNodeSizes: Record<MaterialType, NodeSize> = {
+  text: { width: 360, height: 220 },
+  image: { width: 560, height: 280 },
+  video: { width: 560, height: 280 },
+}
+const materialTypeLabels: Record<MaterialType, string> = {
+  text: '文本节点',
+  image: '图片节点',
+  video: '视频节点',
+}
+const defaultPollIntervalMs = 5_000
+const defaultVisualTimeoutMs = 10 * 60_000
 
 main().catch((error) => {
   printJson({ ok: false, error: error instanceof Error ? error.message : String(error) })
@@ -44,6 +72,11 @@ async function main() {
   const [scope, command, ...args] = parsed.positionals
   if (!scope || scope === 'help' || parsed.flags.help) {
     printHelp()
+    return
+  }
+
+  if (scope === 'visual') {
+    await runVisualCommand(command, args, parsed.flags)
     return
   }
   if (scope !== 'workflow') throw new Error(`unknown scope: ${scope}`)
@@ -69,14 +102,64 @@ async function main() {
     return
   }
 
-  if (command !== 'node') throw new Error(`unknown workflow command: ${command}`)
-  await runNodeCommand(args, parsed.flags, options)
+  if (command === 'recover') {
+    await recoverVisualNodes(args[0], parsed.flags, options)
+    return
+  }
+  if (command === 'node') {
+    await runNodeCommand(args, parsed.flags, options)
+    return
+  }
+  if (command === 'edge') {
+    await runEdgeCommand(args, parsed.flags, options)
+    return
+  }
+  throw new Error(`unknown workflow command: ${command}`)
 }
 
 async function runNodeCommand(args: string[], flags: ParsedArgs['flags'], options: CliOptions) {
   const command = required(args[0], 'node command')
   const workflowId = required(args[1], 'workflowId')
+
+  if (command === 'add') {
+    const materialType = required(args[2] ?? readStringFlag(flags.type), 'materialType') as MaterialType
+    if (!materialTypeSet.has(materialType)) throw new Error(`invalid material type: ${materialType}`)
+
+    const nodeId = readStringFlag(flags['node-id']) ?? createCliId(materialType)
+    const value = readOptionalValue(flags)
+    const requestedStatus = readStringFlag(flags.status) as NodeStatus | undefined
+    if (requestedStatus && !statuses.has(requestedStatus)) throw new Error(`invalid status: ${requestedStatus}`)
+    const size = defaultNodeSizes[materialType]
+    const node = createMaterialNode({
+      id: nodeId,
+      materialType,
+      position: {
+        x: readNumberFlag(flags.x) ?? 0,
+        y: readNumberFlag(flags.y) ?? 0,
+      },
+      title: readStringFlag(flags.title) ?? createCliNodeTitle(materialType),
+      size: {
+        width: readNumberFlag(flags.width) ?? size.width,
+        height: readNumberFlag(flags.height) ?? size.height,
+      },
+    })
+    if (value) {
+      node.data.value = value
+      node.data.status = requestedStatus ?? 'ready'
+    } else if (requestedStatus) {
+      node.data.status = requestedStatus
+    }
+
+    await commitPatch(workflowId, [{ type: 'addNode', node }], options, { node })
+    return
+  }
+
   const nodeId = required(args[2], 'nodeId')
+
+  if (command === 'remove') {
+    await commitPatch(workflowId, [{ type: 'removeNode', nodeId }], options, { removedNodeId: nodeId })
+    return
+  }
 
   if (command === 'get') {
     const workflow = await fetchWorkflow(workflowId)
@@ -159,6 +242,237 @@ async function runNodeCommand(args: string[], flags: ParsedArgs['flags'], option
   throw new Error(`unknown node command: ${command}`)
 }
 
+async function runEdgeCommand(args: string[], flags: ParsedArgs['flags'], options: CliOptions) {
+  const command = required(args[0], 'edge command')
+  const workflowId = required(args[1], 'workflowId')
+
+  if (command === 'add') {
+    const source = required(args[2] ?? readStringFlag(flags.source), 'sourceNodeId')
+    const target = required(args[3] ?? readStringFlag(flags.target), 'targetNodeId')
+    const edge = {
+      id: readStringFlag(flags['edge-id']) ?? createCliId('edge'),
+      source,
+      target,
+    }
+    const workflow = await fetchWorkflow(workflowId)
+    if (workflow.graph.edges.some((item) => item.source === source && item.target === target)) {
+      throw new Error(`edge already exists: ${source} -> ${target}`)
+    }
+    await commitPatch(workflowId, [{ type: 'addEdge', edge }], options, { edge })
+    return
+  }
+
+  if (command === 'remove') {
+    const edgeId = args[2] ?? readStringFlag(flags['edge-id'])
+    const source = readStringFlag(flags.source)
+    const target = readStringFlag(flags.target)
+    if (!edgeId && !(source && target)) {
+      throw new Error('edgeId or both --source and --target are required')
+    }
+    const op: Extract<WorkflowPatchOperation, { type: 'removeEdge' }> = {
+      type: 'removeEdge',
+      edgeId,
+      source,
+      target,
+    }
+    await commitPatch(workflowId, [op], options, {
+      removedEdge: edgeId ? { id: edgeId } : { source, target },
+    })
+    return
+  }
+
+  throw new Error(`unknown edge command: ${command}`)
+}
+
+async function runVisualCommand(command: string | undefined, args: string[], flags: ParsedArgs['flags']) {
+  if (command !== 'query') throw new Error(`unknown visual command: ${command ?? ''}`)
+  const submitId = required(args[0] ?? readStringFlag(flags['submit-id']), 'submitId')
+  const nodeKind = readMaterialTypeFlag(flags['node-kind'])
+  const wait = readBooleanFlag(flags.wait, false)
+  const outcome = await pollVisualTask({
+    submitId,
+    nodeKind,
+    wait,
+    pollIntervalMs: readPollInterval(flags),
+    timeoutMs: readTimeout(flags),
+  })
+  printJson({
+    ok: true,
+    submitId,
+    attempts: outcome.attempts,
+    timedOut: outcome.timedOut,
+    terminal: !isPendingVisualTask(outcome.result),
+    result: outcome.result,
+  })
+}
+
+type VisualPollOutcome = {
+  result: VisualRunResult
+  attempts: number
+  timedOut: boolean
+}
+
+type VisualRecoveryQuery = {
+  workflowId: string
+  nodeId: string
+  nodeKind: MaterialType
+  submitId: string
+  outcome?: VisualPollOutcome
+  error?: string
+}
+
+async function pollVisualTask(input: {
+  submitId: string
+  nodeKind?: MaterialType
+  wait: boolean
+  pollIntervalMs: number
+  timeoutMs: number
+}): Promise<VisualPollOutcome> {
+  const startedAt = Date.now()
+  let attempts = 0
+
+  while (true) {
+    attempts += 1
+    const result = await queryVisualTask({ submitId: input.submitId, nodeKind: input.nodeKind })
+    if (!isPendingVisualTask(result) || !input.wait) {
+      return { result, attempts, timedOut: false }
+    }
+
+    const elapsed = Date.now() - startedAt
+    if (elapsed >= input.timeoutMs) {
+      return { result, attempts, timedOut: true }
+    }
+    await delay(Math.min(input.pollIntervalMs, input.timeoutMs - elapsed))
+  }
+}
+
+function isPendingVisualTask(result: VisualRunResult) {
+  if (result.url || result.taskStatus === 'success' || result.taskStatus === 'failed') return false
+  return result.taskStatus === 'querying' || result.taskStatus === 'unknown' || result.taskStatus === undefined
+}
+
+async function recoverVisualNodes(workflowId: string | undefined, flags: ParsedArgs['flags'], options: CliOptions) {
+  const workflows = workflowId
+    ? [await fetchWorkflow(workflowId)]
+    : (await fetchWorkflows()).workflows
+  const candidates = workflows.flatMap((workflow) =>
+    workflow.graph.nodes
+      .filter((node) =>
+        (node.data.materialType === 'image' || node.data.materialType === 'video')
+        && node.data.status === 'running'
+        && node.data.value.submitId
+        && (!node.data.value.provider || node.data.value.provider === 'dreamina'),
+      )
+      .map((node) => ({
+        workflowId: workflow.id,
+        nodeId: node.id,
+        nodeKind: node.data.materialType,
+        submitId: node.data.value.submitId as string,
+      })),
+  )
+
+  if (!candidates.length) {
+    printJson({ ok: true, recoveredCount: 0, pendingCount: 0, results: [] })
+    return
+  }
+
+  const wait = !readBooleanFlag(flags.once, false)
+  const pollIntervalMs = readPollInterval(flags)
+  const timeoutMs = readTimeout(flags)
+  const queried: VisualRecoveryQuery[] = await Promise.all(
+    candidates.map(async (candidate) => {
+      try {
+        return {
+          ...candidate,
+          outcome: await pollVisualTask({
+            submitId: candidate.submitId,
+            nodeKind: candidate.nodeKind,
+            wait,
+            pollIntervalMs,
+            timeoutMs,
+          }),
+        }
+      } catch (error) {
+        return {
+          ...candidate,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }),
+  )
+
+  const updates: Array<{ workflowId: string; nodeId: string; status: NodeStatus }> = []
+  for (const workflow of workflows) {
+    const terminal = queried.filter(
+      (item) => item.workflowId === workflow.id && item.outcome && !isPendingVisualTask(item.outcome.result),
+    )
+    if (!terminal.length) continue
+
+    const latest = await fetchWorkflow(workflow.id)
+    const ops: WorkflowPatchOperation[] = []
+    for (const item of terminal) {
+      const node = latest.graph.nodes.find((candidate) => candidate.id === item.nodeId)
+      if (!node || node.data.status !== 'running' || node.data.value.submitId !== item.submitId) continue
+
+      const result = item.outcome!.result
+      const succeeded = result.taskStatus === 'success' && Boolean(result.url)
+      const status: NodeStatus = succeeded ? 'done' : 'error'
+      const message = succeeded
+        ? `视觉任务 ${item.submitId} 已恢复并完成。`
+        : result.failReason || (result.taskStatus === 'success'
+          ? `视觉任务 ${item.submitId} 已成功，但没有返回可用媒体。`
+          : `视觉任务 ${item.submitId} 失败${result.genStatus ? `：${result.genStatus}` : ''}。`)
+      const value: MaterialValue = succeeded
+        ? {
+            ...node.data.value,
+            text: undefined,
+            url: result.url,
+            localPath: result.localPath,
+            fileName: result.fileName,
+            mimeType: result.mimeType,
+          }
+        : {
+            ...node.data.value,
+            text: message,
+          }
+
+      ops.push(
+        { type: 'setNodeStatus', nodeId: node.id, status },
+        { type: 'setNodeValue', nodeId: node.id, value },
+        { type: 'appendNodeMessage', nodeId: node.id, message: createMessage('assistant', message) },
+      )
+      updates.push({ workflowId: workflow.id, nodeId: node.id, status })
+    }
+    if (ops.length) {
+      await patchWorkflow(workflow.id, {
+        baseRevision: options.baseRevision ?? latest.revision,
+        ops,
+      })
+    }
+  }
+
+  const results = queried.map((item) => ({
+    workflowId: item.workflowId,
+    nodeId: item.nodeId,
+    submitId: item.submitId,
+    attempts: item.outcome?.attempts ?? 0,
+    timedOut: item.outcome?.timedOut ?? false,
+    taskStatus: item.outcome?.result.taskStatus,
+    genStatus: item.outcome?.result.genStatus,
+    error: item.error,
+    recovered: updates.some((update) => update.workflowId === item.workflowId && update.nodeId === item.nodeId),
+  }))
+  const pendingCount = results.filter((item) =>
+    !item.recovered && (item.error || item.taskStatus === 'querying' || item.taskStatus === 'unknown'),
+  ).length
+  printJson({
+    ok: true,
+    recoveredCount: updates.length,
+    pendingCount,
+    results,
+  })
+}
+
 async function runWorkflowNodeFromCli(
   workflowId: string,
   nodeId: string,
@@ -230,13 +544,29 @@ async function executeNode(input: {
   const { workflow, node, upstream, prompt, flags, options } = input
 
   if (node.data.materialType === 'image' || node.data.materialType === 'video') {
-    const result = await runVisualNode({
+    let result = await runVisualNode({
       node,
       upstream,
       edges: workflow.graph.edges,
       prompt,
       modelId: readStringFlag(flags['model-id']),
     })
+    if (!result.url && result.submitId && !readBooleanFlag(flags['no-wait'], false) && isPendingVisualTask(result)) {
+      const outcome = await pollVisualTask({
+        submitId: result.submitId,
+        nodeKind: node.data.materialType,
+        wait: true,
+        pollIntervalMs: readPollInterval(flags),
+        timeoutMs: readTimeout(flags),
+      })
+      result = outcome.result
+    }
+    if (result.taskStatus === 'failed') {
+      throw new Error(result.failReason || `视觉任务失败${result.genStatus ? `：${result.genStatus}` : ''}`)
+    }
+    if (result.taskStatus === 'success' && !result.url) {
+      throw new Error('视觉任务已成功，但没有返回可用媒体')
+    }
     const status: 'done' | 'running' = result.url ? 'done' : 'running'
     const message = result.url ? '已通过视觉模型生成素材。' : result.text || `已提交视觉生成任务${result.submitId ? `：${result.submitId}` : ''}`
     return {
@@ -299,13 +629,30 @@ function findNode(workflow: WorkflowDocument, nodeId: string) {
   return node
 }
 
-async function commitPatch(workflowId: string, ops: WorkflowPatchOperation[], options: CliOptions) {
+async function commitPatch(
+  workflowId: string,
+  ops: WorkflowPatchOperation[],
+  options: CliOptions,
+  details: Record<string, unknown> = {},
+) {
   const baseRevision = options.baseRevision ?? (await fetchWorkflow(workflowId)).revision
   const result = await patchWorkflow(workflowId, { baseRevision, ops })
-  printJson({ ok: true, workflow: result.workflow, revision: result.workflow.revision, appliedOps: result.appliedOps })
+  printJson({
+    ok: true,
+    ...details,
+    workflow: result.workflow,
+    revision: result.workflow.revision,
+    appliedOps: result.appliedOps,
+  })
 }
 
 function readValue(flags: ParsedArgs['flags']): MaterialValue {
+  const value = readOptionalValue(flags)
+  if (!value) throw new Error('value is empty; pass --text, --url, or another value flag')
+  return value
+}
+
+function readOptionalValue(flags: ParsedArgs['flags']): MaterialValue | undefined {
   const value: MaterialValue = {}
   const text = readStringFlag(flags.text)
   const url = readStringFlag(flags.url)
@@ -325,8 +672,7 @@ function readValue(flags: ParsedArgs['flags']): MaterialValue {
   if (mimeType !== undefined) value.mimeType = mimeType
   if (duration !== undefined) value.duration = duration
 
-  if (!Object.keys(value).length) throw new Error('value is empty; pass --text, --url, or another value flag')
-  return value
+  return Object.keys(value).length ? value : undefined
 }
 
 function readMessage(flags: ParsedArgs['flags']): MaterialMessage {
@@ -384,6 +730,32 @@ function readNumberFlag(value: string | true | undefined) {
   return number
 }
 
+function readBooleanFlag(value: string | true | undefined, fallback: boolean) {
+  if (value === undefined) return fallback
+  if (value === true) return true
+  if (['true', '1', 'yes', 'on'].includes(value.toLowerCase())) return true
+  if (['false', '0', 'no', 'off'].includes(value.toLowerCase())) return false
+  throw new Error(`invalid boolean: ${value}`)
+}
+
+function readMaterialTypeFlag(value: string | true | undefined) {
+  const materialType = readStringFlag(value) as MaterialType | undefined
+  if (materialType && !materialTypeSet.has(materialType)) throw new Error(`invalid material type: ${materialType}`)
+  return materialType
+}
+
+function readPollInterval(flags: ParsedArgs['flags']) {
+  const value = readNumberFlag(flags['poll-interval-ms']) ?? defaultPollIntervalMs
+  if (value <= 0) throw new Error('poll-interval-ms must be greater than 0')
+  return value
+}
+
+function readTimeout(flags: ParsedArgs['flags']) {
+  const value = readNumberFlag(flags['timeout-ms']) ?? defaultVisualTimeoutMs
+  if (value < 0) throw new Error('timeout-ms must be greater than or equal to 0')
+  return value
+}
+
 function required<T>(value: T | undefined, name: string): T {
   if (value === undefined || value === '') throw new Error(`${name} is required`)
   return value
@@ -391,6 +763,18 @@ function required<T>(value: T | undefined, name: string): T {
 
 function printJson(value: unknown) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function createCliId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 10000)}`
+}
+
+function createCliNodeTitle(materialType: MaterialType) {
+  return `${materialTypeLabels[materialType]} ${Math.floor(Math.random() * 90) + 10}`
 }
 
 function printHelp() {
@@ -408,7 +792,11 @@ function printHelp() {
       },
       {
         command: 'rvf workflow node run <workflowId> <nodeId> --prompt "..." --model-id dreamina',
-        purpose: 'Run an image/video node end-to-end through a visual model.',
+        purpose: 'Run an image/video node and keep polling asynchronous visual tasks until a terminal status or timeout.',
+      },
+      {
+        command: 'rvf workflow recover [workflowId]',
+        purpose: 'Find saved running visual nodes with submitId values and recover them automatically.',
       },
     ],
     readCommands: [
@@ -416,6 +804,14 @@ function printHelp() {
       'rvf workflow get <workflowId>',
       'rvf workflow upstream <workflowId> <nodeId>',
       'rvf workflow node get <workflowId> <nodeId>',
+      'rvf visual query <submitId> [--node-kind image|video] [--wait]',
+    ],
+    graphCommands: [
+      'rvf workflow node add <workflowId> <text|image|video> [--node-id <id>] [--title "..."] [--x 0 --y 0]',
+      'rvf workflow node remove <workflowId> <nodeId>',
+      'rvf workflow edge add <workflowId> <sourceNodeId> <targetNodeId> [--edge-id <id>]',
+      'rvf workflow edge remove <workflowId> <edgeId>',
+      'rvf workflow edge remove <workflowId> --source <sourceNodeId> --target <targetNodeId>',
     ],
     patchCommands: [
       'rvf workflow node set-status <workflowId> <nodeId> <empty|ready|running|done|error>',
@@ -430,6 +826,13 @@ function printHelp() {
       'rvf workflow node complete <workflowId> <nodeId> --run-id <runId> --url "..." --local-path "..." --file-name "..." --mime-type "image/png" --message "..."',
       'rvf workflow node fail <workflowId> <nodeId> --run-id <runId> --message "..."',
     ],
+    visualRecovery: {
+      queryOnce: 'rvf visual query <submitId>',
+      queryUntilTerminal: 'rvf visual query <submitId> --wait [--poll-interval-ms 5000] [--timeout-ms 600000]',
+      recoverSavedNodes: 'rvf workflow recover [workflowId] [--poll-interval-ms 5000] [--timeout-ms 600000]',
+      recoverOnce: 'rvf workflow recover [workflowId] --once',
+      disableRunWaiting: 'Add --no-wait to workflow node run to keep the previous submit-only behavior.',
+    },
     guidance: [
       'Prefer workflow node run for normal agent work.',
       'Use start/heartbeat/complete/fail only for custom external executors.',

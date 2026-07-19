@@ -50,12 +50,17 @@ export type UploadedAsset = {
 
 export type VisualRunResult = {
   submitId?: string
+  taskStatus?: VisualTaskStatus
+  genStatus?: string
+  failReason?: string
   url?: string
   localPath?: string
   fileName?: string
   mimeType?: string
   text?: string
 }
+
+export type VisualTaskStatus = 'querying' | 'success' | 'failed' | 'unknown'
 
 export async function fetchLocalAgents() {
   const response = await getWorkflowClientTransport().request('/api/agents')
@@ -133,6 +138,18 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
 
   if (!result) throw new Error('视觉模型没有返回结果')
   return result
+}
+
+export async function queryVisualTask(input: {
+  submitId: string
+  nodeKind?: MaterialNode['data']['materialType']
+}) {
+  const response = await getWorkflowClientTransport().request('/api/query-visual-task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return readJsonResponse<VisualRunResult>(response, '查询视觉任务失败')
 }
 
 export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeEvents = {}) {
