@@ -164,7 +164,7 @@ function HomePage() {
                 void createCanvasAndOpen()
               }}
             >
-              <textarea placeholder="请输入你的创作灵感，或从下方挑选一个 Skill 开始" />
+              <textarea name="inspiration" placeholder="请输入你的创作灵感，或从下方挑选一个 Skill 开始" />
               <div className={styles.inspirationFooter}>
                 <div>
                   <button type="button" title="添加素材">

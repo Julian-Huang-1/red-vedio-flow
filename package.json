@@ -20,6 +20,9 @@
     "dev:electron": "node apps/electron/scripts/dev.mjs",
     "build": "pnpm -r --if-present build",
     "build:web": "pnpm --filter @red-video-flow/web build",
+    "test": "PATH=$HOME/.nvm/versions/node/v22.22.1/bin:$PATH vitest run",
+    "test:watch": "PATH=$HOME/.nvm/versions/node/v22.22.1/bin:$PATH vitest",
+    "test:e2e": "PATH=$HOME/.nvm/versions/node/v22.22.1/bin:$PATH playwright test",
     "pack:electron": "pnpm --filter @red-video-flow/electron run pack:dir",
     "dist:electron": "pnpm --filter @red-video-flow/electron dist",
     "dist:mac": "pnpm --filter @red-video-flow/electron dist:mac",
@@ -29,7 +32,9 @@
     "preview": "pnpm --filter @red-video-flow/web preview"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "concurrently": "^10.0.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.10"
   }
 }

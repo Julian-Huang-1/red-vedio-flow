@@ -376,7 +376,9 @@ function listen(port: number) {
   })
 }
 
-export async function startLocalServer(preferredPort = Number(process.env.RED_VEDIO_FLOW_AGENT_PORT ?? 5176)): Promise<LocalServerHandle> {
+export async function startLocalServer(
+  preferredPort = Number(process.env.RED_VIDEO_FLOW_AGENT_PORT ?? process.env.RED_VEDIO_FLOW_AGENT_PORT ?? 5176),
+): Promise<LocalServerHandle> {
   let port = preferredPort
   while (port < preferredPort + 20) {
     try {

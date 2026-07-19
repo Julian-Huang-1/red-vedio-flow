@@ -13,6 +13,5 @@ export function hasMaterialValue(node: MaterialNode) {
 
 export function canConnectMaterialNodes(source: MaterialNode, target: MaterialNode) {
   if (!hasMaterialValue(source)) return false
-  if (target.data.status === 'empty') return true
   return canConnect(source.data.materialType, target.data.materialType)
 }

@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'node:path'
 
+const localServerOrigin =
+  process.env.RED_VIDEO_FLOW_AGENT_ORIGIN ??
+  `http://127.0.0.1:${process.env.RED_VEDIO_FLOW_AGENT_PORT ?? process.env.RED_VIDEO_FLOW_AGENT_PORT ?? 5176}`
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -16,7 +20,7 @@ export default defineConfig({
       allow: [resolve(__dirname, '../..')],
     },
     proxy: {
-      '/api': 'http://127.0.0.1:5176',
+      '/api': localServerOrigin,
     },
   },
 })

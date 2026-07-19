@@ -60,6 +60,20 @@ export function WorkflowCanvas() {
     [handlePaneContextMenu],
   )
 
+  const handleCanvasDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      const target = event.target as HTMLElement
+      const interactiveTarget = target.closest(
+        '.react-flow__node, .react-flow__handle, button, input, textarea, video, [data-node-composer="true"]',
+      )
+
+      if (interactiveTarget) return
+      const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      openAddNodeMenu({ x: event.clientX, y: event.clientY }, flowPosition)
+    },
+    [openAddNodeMenu, screenToFlowPosition],
+  )
+
   const handleNodeClick: NodeMouseHandler = useCallback(
     (event, node) => {
       if (event.detail > 1) return
@@ -81,7 +95,7 @@ export function WorkflowCanvas() {
   )
 
   return (
-    <section className="absolute inset-0" onContextMenu={handleCanvasContextMenu}>
+    <section className="absolute inset-0" onContextMenu={handleCanvasContextMenu} onDoubleClick={handleCanvasDoubleClick}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
