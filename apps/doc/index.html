@@ -160,6 +160,40 @@
         font-weight: 700;
       }
 
+      .github-link {
+        display: inline-flex;
+        min-height: 38px;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.19);
+        border-radius: 999px;
+        padding: 0 15px;
+        background: rgba(255, 255, 255, 0.045);
+        color: #fff !important;
+        font-weight: 750;
+      }
+
+      .github-link::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 2px;
+        background: var(--red);
+        box-shadow: 0 0 11px rgba(255, 75, 56, 0.65);
+        content: "";
+      }
+
+      .github-link:hover {
+        border-color: rgba(255, 255, 255, 0.38);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .external-arrow {
+        color: #8f8981;
+        font-size: 14px;
+        line-height: 1;
+      }
+
       .hero {
         display: grid;
         min-height: calc(100vh - 72px);
@@ -924,11 +958,11 @@
           min-height: 64px;
         }
 
-        .nav-links a:not(.nav-cta) {
+        .nav-links a:not(.github-link) {
           display: none;
         }
 
-        .nav-cta {
+        .github-link {
           min-height: 34px;
           padding: 0 13px;
           font-size: 11px;
@@ -1090,6 +1124,13 @@
           <a href="#agents">Agent CLI</a>
           <a href="#workflow">工作流</a>
           <a class="nav-cta" href="#quickstart">本地开始</a>
+          <a
+            class="github-link"
+            href="https://github.com/Julian-Huang-1/red-vedio-flow"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="在 GitHub 查看 Julian-Huang-1/red-vedio-flow"
+          >GitHub <span class="external-arrow" aria-hidden="true">↗</span></a>
         </div>
       </div>
     </nav>
