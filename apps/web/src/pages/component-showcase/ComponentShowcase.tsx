@@ -1,8 +1,8 @@
 import { Background, BackgroundVariant, ReactFlow, ReactFlowProvider, type Node } from '@xyflow/react'
 import { ArrowLeft, FileText, Image, Play, Plus } from 'lucide-react'
 import type { MaterialNodeData } from '@red-video-flow/workflow-core'
-import { MaterialNode } from '../components/workflow/nodes/MaterialNode'
-import { NodePromptComposer } from '../components/workflow/prompt/NodePromptComposer'
+import { MaterialNode } from '../../components/workflow/nodes/MaterialNode'
+import { NodePromptComposer } from '../../components/workflow/prompt/NodePromptComposer'
 import styles from './ComponentShowcase.module.less'
 
 const nodeTypes = {

@@ -20,16 +20,12 @@ import {
   type WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
 import {
-  createWorkflow as createWorkflowDocument,
-  deleteWorkflow as deleteWorkflowDocument,
-  fetchLocalAgents,
   fetchWorkflow,
-  fetchWorkflows,
   patchWorkflow,
   runNodeWithAgent,
   runVisualNode,
-  saveWorkflow,
   uploadAsset,
+  type AgentListResponse,
 } from '@red-video-flow/workflow-client'
 import { runWorkflowNode } from '@red-video-flow/workflow-runtime'
 import { createFlowNode, toFlowNode, toMaterialNode, type AddNodeMenuState, type FlowNode } from '../workflowPresentation'
@@ -76,14 +72,16 @@ type WorkflowStore = {
   beginEditNode: (nodeId: string) => void
   attachFileToNode: (nodeId: string, file: File) => void
   updateTextNode: (nodeId: string, text: string) => void
-  loadAgents: () => Promise<void>
+  applyAgentsResponse: (response: AgentListResponse) => void
+  setAgentQueryStatus: (status: AgentStatus, error?: string) => void
   selectAgent: (agentId: string) => void
   runNode: (nodeId: string, prompt: string, agentId?: string) => Promise<void>
-  loadWorkflows: () => Promise<void>
-  loadWorkflow: (workflowId?: string) => Promise<void>
-  createWorkflow: () => Promise<WorkflowDocument | undefined>
-  deleteWorkflow: (workflowId: string) => Promise<void>
-  saveWorkflow: () => Promise<void>
+  applyWorkflowList: (workflows: WorkflowDocument[]) => void
+  setWorkflowListQueryStatus: (status: WorkflowListStatus, error?: string) => void
+  applyWorkflow: (document: WorkflowDocument) => void
+  applySavedWorkflow: (document: WorkflowDocument) => void
+  resetWorkflow: () => void
+  setPersistenceQueryStatus: (status: PersistenceStatus, error?: string) => void
 }
 
 const initialMenu: AddNodeMenuState = {
@@ -442,179 +440,86 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     ])
   },
 
-  loadAgents: async () => {
-    set({ agentStatus: 'loading', agentError: undefined })
+  applyAgentsResponse: (response) => {
+    const invokable = response.agents.find((agent) => agent.invokable)
+    const currentSelected = get().selectedAgentId
+    const stillAvailable = response.agents.some((agent) => agent.id === currentSelected && agent.invokable)
 
-    try {
-      const response = await fetchLocalAgents()
-      const invokable = response.agents.find((agent) => agent.invokable)
-      const currentSelected = get().selectedAgentId
-      const stillAvailable = response.agents.some((agent) => agent.id === currentSelected && agent.invokable)
+    set({
+      agents: response.agents,
+      selectedAgentId: stillAvailable ? currentSelected : invokable?.id,
+      agentStatus: 'ready',
+      agentError: undefined,
+    })
+  },
 
-      set({
-        agents: response.agents,
-        selectedAgentId: stillAvailable ? currentSelected : invokable?.id,
-        agentStatus: 'ready',
-      })
-    } catch (error) {
-      set({
-        agentStatus: 'error',
-        agentError: error instanceof Error ? error.message : String(error),
-      })
-    }
+  setAgentQueryStatus: (status, error) => {
+    set({ agentStatus: status, agentError: error })
   },
 
   selectAgent: (agentId) => {
     set({ selectedAgentId: agentId })
   },
 
-  loadWorkflows: async () => {
-    set({ workflowListStatus: 'loading', workflowListError: undefined })
-    try {
-      const response = await fetchWorkflows()
-      set({ workflows: response.workflows, workflowListStatus: 'ready' })
-    } catch (error) {
-      set({
-        workflowListStatus: 'error',
-        workflowListError: error instanceof Error ? error.message : String(error),
-      })
-    }
+  applyWorkflowList: (workflows) => {
+    set({ workflows, workflowListStatus: 'ready', workflowListError: undefined })
   },
 
-  loadWorkflow: async (workflowId = 'default') => {
-    set({ persistenceStatus: 'loading', persistenceError: undefined })
-    try {
-      const document = await fetchWorkflow(workflowId)
-      set({
-        workflowId: document.id,
-        workflowTitle: document.title,
-        workflowRevision: document.revision,
-        nodes: document.graph.nodes.map(toFlowNode),
-        edges: document.graph.edges,
-        selectedNodeId: undefined,
-        editingNodeId: undefined,
-        composerNodeId: undefined,
-        activeCanvasPanel: undefined,
-        openWorkspacePanels: [],
-        addNodeMenu: initialMenu,
-        hasLoadedWorkflow: true,
-        persistenceStatus: 'saved',
-      })
-      void get().loadWorkflows()
-    } catch (error) {
-      set({
-        hasLoadedWorkflow: false,
-        persistenceStatus: 'error',
-        persistenceError: error instanceof Error ? error.message : String(error),
-      })
-    }
+  setWorkflowListQueryStatus: (status, error) => {
+    set({ workflowListStatus: status, workflowListError: error })
   },
 
-  createWorkflow: async () => {
-    const nextIndex = get().workflows.length + 1
-    set({ persistenceStatus: 'saving', persistenceError: undefined })
-    try {
-      const document = await createWorkflowDocument({ title: nextIndex === 1 ? '未命名工作区' : `工作流 ${nextIndex}` })
-      set({
-        workflowId: document.id,
-        workflowTitle: document.title,
-        workflowRevision: document.revision,
-        nodes: document.graph.nodes.map(toFlowNode),
-        edges: document.graph.edges,
-        selectedNodeId: undefined,
-        editingNodeId: undefined,
-        composerNodeId: undefined,
-        activeCanvasPanel: undefined,
-        openWorkspacePanels: [],
-        addNodeMenu: initialMenu,
-        hasLoadedWorkflow: true,
-        persistenceStatus: 'saved',
-        workflows: [document, ...get().workflows.filter((workflow) => workflow.id !== document.id)],
-        workflowListStatus: 'ready',
-      })
-      return document
-    } catch (error) {
-      set({
-        persistenceStatus: 'error',
-        persistenceError: error instanceof Error ? error.message : String(error),
-      })
-      return undefined
-    }
+  applyWorkflow: (document) => {
+    set({
+      workflowId: document.id,
+      workflowTitle: document.title,
+      workflowRevision: document.revision,
+      nodes: document.graph.nodes.map(toFlowNode),
+      edges: document.graph.edges,
+      selectedNodeId: undefined,
+      editingNodeId: undefined,
+      composerNodeId: undefined,
+      activeCanvasPanel: undefined,
+      openWorkspacePanels: [],
+      addNodeMenu: initialMenu,
+      hasLoadedWorkflow: true,
+      persistenceStatus: 'saved',
+      persistenceError: undefined,
+      workflows: [document, ...get().workflows.filter((workflow) => workflow.id !== document.id)],
+      workflowListStatus: 'ready',
+    })
   },
 
-  deleteWorkflow: async (workflowId) => {
-    set({ persistenceStatus: 'saving', persistenceError: undefined })
-    try {
-      await deleteWorkflowDocument(workflowId)
-      const remainingWorkflows = get()
-        .workflows.filter((workflow) => workflow.id !== workflowId)
-        .sort((left, right) => right.updatedAt - left.updatedAt)
-
-      set({
-        workflows: remainingWorkflows,
-        workflowListStatus: 'ready',
-      })
-
-      if (workflowId !== get().workflowId) {
-        set({ persistenceStatus: 'saved' })
-        return
-      }
-
-      const nextWorkflow = remainingWorkflows[0]
-      if (nextWorkflow) {
-        await get().loadWorkflow(nextWorkflow.id)
-        return
-      }
-
-      set({
-        workflowId: 'default',
-        workflowTitle: '默认工作流',
-        workflowRevision: 0,
-        nodes: [],
-        edges: [],
-        selectedNodeId: undefined,
-        editingNodeId: undefined,
-        composerNodeId: undefined,
-        activeCanvasPanel: undefined,
-        openWorkspacePanels: [],
-        addNodeMenu: initialMenu,
-        hasLoadedWorkflow: false,
-        persistenceStatus: 'saved',
-      })
-    } catch (error) {
-      set({
-        persistenceStatus: 'error',
-        persistenceError: error instanceof Error ? error.message : String(error),
-      })
-    }
+  applySavedWorkflow: (document) => {
+    set({
+      workflowTitle: document.title,
+      workflowRevision: document.revision,
+      workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
+      persistenceStatus: 'saved',
+      persistenceError: undefined,
+    })
   },
 
-  saveWorkflow: async () => {
-    const { workflowId, workflowTitle, nodes, edges, hasLoadedWorkflow } = get()
-    if (!hasLoadedWorkflow) return
-    set({ persistenceStatus: 'saving', persistenceError: undefined })
-    try {
-      const document = await saveWorkflow({
-        id: workflowId,
-        title: workflowTitle,
-        baseRevision: get().workflowRevision,
-        graph: {
-          nodes: nodes.map(toMaterialNode),
-          edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
-        },
-      })
-      set({
-        workflowTitle: document.title,
-        workflowRevision: document.revision,
-        workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
-        persistenceStatus: 'saved',
-      })
-    } catch (error) {
-      set({
-        persistenceStatus: 'error',
-        persistenceError: error instanceof Error ? error.message : String(error),
-      })
-    }
+  resetWorkflow: () => {
+    set({
+      workflowId: 'default',
+      workflowTitle: '默认工作流',
+      workflowRevision: 0,
+      nodes: [],
+      edges: [],
+      selectedNodeId: undefined,
+      editingNodeId: undefined,
+      composerNodeId: undefined,
+      activeCanvasPanel: undefined,
+      openWorkspacePanels: [],
+      addNodeMenu: initialMenu,
+      hasLoadedWorkflow: false,
+      persistenceStatus: 'saved',
+    })
+  },
+
+  setPersistenceQueryStatus: (status, error) => {
+    set({ persistenceStatus: status, persistenceError: error })
   },
 
   runNode: async (nodeId, prompt, agentId) => {

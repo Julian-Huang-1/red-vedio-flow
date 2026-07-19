@@ -74,16 +74,16 @@
   }
 }
 
-.challengeButton {
+.startNav button[data-variant='challenge'] {
   color: #f3bd53 !important;
   background: rgba(67, 50, 25, 0.68) !important;
 }
 
-.marketButton {
+.startNav button[data-variant='market'] {
   color: #22d7e9 !important;
 }
 
-.memberButton {
+.startNav button[data-variant='member'] {
   position: relative;
 
   &::before {
@@ -161,7 +161,7 @@
   }
 }
 
-.heroCardPlaceholder {
+.heroCard[data-placeholder] {
   cursor: default;
 
   &::before {
@@ -175,7 +175,7 @@
   }
 }
 
-.heroCardorange {
+.heroCard[data-tone='orange'] {
   z-index: 1;
   margin-right: -88px;
   transform: perspective(820px) rotateY(7deg);
@@ -188,7 +188,7 @@
   }
 }
 
-.heroCardblue {
+.heroCard[data-tone='blue'] {
   z-index: 2;
   transform: translateY(-10px);
 
@@ -201,7 +201,7 @@
   }
 }
 
-.heroCardmono {
+.heroCard[data-tone='mono'] {
   z-index: 1;
   margin-left: -88px;
   transform: perspective(820px) rotateY(-7deg);
@@ -274,7 +274,7 @@
   }
 }
 
-.heroDotActive {
+.heroDots span[data-active] {
   width: 28px !important;
   background: rgba(255, 255, 255, 0.52) !important;
 }
@@ -285,8 +285,7 @@
   margin-top: 54px;
 }
 
-.startButton,
-.quickButton {
+.startActionButton {
   display: inline-flex;
   width: 330px;
   height: 68px;
@@ -304,25 +303,25 @@
     box-shadow 180ms ease,
     filter 180ms ease;
 
-  &:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
+    &:hover:not([data-disabled]) {
+      transform: translateY(-1px);
+    }
 
-  &:disabled {
-    cursor: default;
-    filter: saturate(0.7);
-    opacity: 0.72;
+    &[data-disabled] {
+      cursor: default;
+      filter: saturate(0.7);
+      opacity: 0.72;
   }
 }
 
-.startButton {
+.startActionButton[data-variant='primary'] {
   border: 1.5px solid transparent;
   background:
     linear-gradient(#202020, #202020) padding-box,
     linear-gradient(93deg, #8395ff 0%, #5fe8de 100%) border-box;
 }
 
-.quickButton {
+.startActionButton[data-variant='secondary'] {
   border: 1px solid #43515d;
 }
 
@@ -397,7 +396,7 @@
   }
 }
 
-.submitButton {
+.inspirationFooter button[data-variant='submit'] {
   color: #111 !important;
   background: #a8a8a8 !important;
   border-radius: 13px !important;
@@ -470,12 +469,12 @@
     grid-template-columns: 1fr;
   }
 
-  .heroCardorange,
-  .heroCardmono {
+  .heroCard[data-tone='orange'],
+  .heroCard[data-tone='mono'] {
     display: none;
   }
 
-  .heroCardblue {
+  .heroCard[data-tone='blue'] {
     transform: none;
   }
 
@@ -486,8 +485,7 @@
     margin-top: 30px;
   }
 
-  .startButton,
-  .quickButton,
+  .startActionButton,
   .inspirationBox,
   .skillChips {
     width: 100%;
@@ -510,8 +508,7 @@
     padding: 20px;
   }
 
-  .startButton,
-  .quickButton {
+  .startActionButton {
     height: 58px;
     font-size: 16px;
   }

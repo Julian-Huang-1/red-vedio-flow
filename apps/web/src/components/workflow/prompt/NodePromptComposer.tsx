@@ -7,7 +7,7 @@ import {
   type MaterialNodeData,
   type MaterialType,
 } from '@red-video-flow/workflow-core'
-import { fetchVisualModels } from '@red-video-flow/workflow-client'
+import { useAgentsQuery, useVisualModelsQuery } from '../../../queries/workflowQueries'
 import { useWorkflowStore } from '../../../store/workflowStore'
 import styles from './NodePromptComposer.module.less'
 
@@ -37,12 +37,15 @@ export function NodePromptComposer({ node }: Props) {
   const edges = useWorkflowStore((state) => state.edges)
   const selectedAgentId = useWorkflowStore((state) => state.selectedAgentId)
   const agentStatus = useWorkflowStore((state) => state.agentStatus)
+  const applyAgentsResponse = useWorkflowStore((state) => state.applyAgentsResponse)
+  const setAgentQueryStatus = useWorkflowStore((state) => state.setAgentQueryStatus)
   const selectAgent = useWorkflowStore((state) => state.selectAgent)
-  const loadAgents = useWorkflowStore((state) => state.loadAgents)
   const closeComposer = useWorkflowStore((state) => state.closeComposer)
   const runNode = useWorkflowStore((state) => state.runNode)
-  const availableAgents = agents.filter((agent) => agent.invokable)
   const isVisualNode = node.data.materialType === 'image' || node.data.materialType === 'video'
+  const agentsQuery = useAgentsQuery(!isVisualNode)
+  const visualModelsQuery = useVisualModelsQuery(isVisualNode)
+  const availableAgents = agents.filter((agent) => agent.invokable)
   const sendDisabled = node.data.status === 'running' || !prompt.trim()
   const inputMaterials = useMemo(
     () => getUpstreamNodes(nodes, edges, node.id).filter(hasMaterialValue),
@@ -78,18 +81,28 @@ export function NodePromptComposer({ node }: Props) {
   }
 
   useEffect(() => {
-    if (agentStatus === 'idle') void loadAgents()
-  }, [agentStatus, loadAgents])
+    if (isVisualNode) return
+    if (agentsQuery.isLoading) setAgentQueryStatus('loading')
+    if (agentsQuery.isError) {
+      setAgentQueryStatus('error', agentsQuery.error instanceof Error ? agentsQuery.error.message : String(agentsQuery.error))
+    }
+    if (agentsQuery.data) applyAgentsResponse(agentsQuery.data)
+  }, [
+    agentsQuery.data,
+    agentsQuery.error,
+    agentsQuery.isError,
+    agentsQuery.isLoading,
+    applyAgentsResponse,
+    isVisualNode,
+    setAgentQueryStatus,
+  ])
 
   useEffect(() => {
     if (!isVisualNode) return
-    void fetchVisualModels()
-      .then((response) => {
-        const model = response.models.find((item) => item.invokable) ?? response.models[0]
-        setVisualModelLabel(model ? model.label : '视觉模型')
-      })
-      .catch(() => setVisualModelLabel('视觉模型'))
-  }, [isVisualNode])
+    const model = visualModelsQuery.data?.models.find((item) => item.invokable) ?? visualModelsQuery.data?.models[0]
+    if (model) setVisualModelLabel(model.label)
+    if (visualModelsQuery.isError) setVisualModelLabel('视觉模型')
+  }, [isVisualNode, visualModelsQuery.data, visualModelsQuery.isError])
 
   useEffect(() => {
     setPrompt('')

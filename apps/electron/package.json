@@ -16,7 +16,8 @@
     "prepare:package": "node scripts/prepare-package.mjs"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1"
+    "better-sqlite3": "^12.11.1",
+    "extract-zip": "^2.0.1"
   },
   "devDependencies": {
     "@red-video-flow/local-server": "workspace:*",

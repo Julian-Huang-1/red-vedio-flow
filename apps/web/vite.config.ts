@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import { resolve } from 'node:path'
 
 const localServerOrigin =
@@ -7,7 +8,7 @@ const localServerOrigin =
   `http://127.0.0.1:${process.env.RED_VEDIO_FLOW_AGENT_PORT ?? process.env.RED_VIDEO_FLOW_AGENT_PORT ?? 5176}`
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [TanStackRouterVite({ target: 'react', autoCodeSplitting: true }), react()],
   resolve: {
     alias: {
       '@red-video-flow/workflow-core': resolve(__dirname, '../../packages/workflow-core/src/index.ts'),

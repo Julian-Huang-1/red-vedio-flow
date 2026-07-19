@@ -12,6 +12,9 @@
     "@red-video-flow/workflow-client": "workspace:*",
     "@red-video-flow/workflow-core": "workspace:*",
     "@red-video-flow/workflow-runtime": "workspace:*",
+    "@tanstack/react-query": "^5.101.2",
+    "@tanstack/react-router": "^1.170.18",
+    "@tanstack/router-plugin": "^1.168.22",
     "@vitejs/plugin-react": "^4.3.4",
     "@xyflow/react": "^12.3.6",
     "lucide-react": "^0.468.0",
@@ -21,6 +24,8 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.4.20",
     "less": "^4.2.1",
     "postcss": "^8.4.49",

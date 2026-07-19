@@ -1,27 +1,47 @@
+import { useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Bot, Check, ChevronDown, GitBranch, LoaderCircle, PanelsTopLeft, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { fetchWorkflow } from '@red-video-flow/workflow-client'
+import {
+  useAgentsQuery,
+  useCreateWorkflowMutation,
+  useDeleteWorkflowMutation,
+  useSaveWorkflowMutation,
+  useWorkflowListQuery,
+  workflowQueryKeys,
+} from '../../queries/workflowQueries'
 import { useWorkflowStore } from '../../store/workflowStore'
 import styles from './TopBar.module.less'
 
-type TopBarProps = {
-  navigateTo: (pathname: string) => void
-}
-
-export function TopBar({ navigateTo }: TopBarProps) {
+export function TopBar() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const agents = useWorkflowStore((state) => state.agents)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
+  const workflowRevision = useWorkflowStore((state) => state.workflowRevision)
   const workflows = useWorkflowStore((state) => state.workflows)
   const workflowListStatus = useWorkflowStore((state) => state.workflowListStatus)
   const persistenceStatus = useWorkflowStore((state) => state.persistenceStatus)
+  const nodes = useWorkflowStore((state) => state.nodes)
+  const edges = useWorkflowStore((state) => state.edges)
+  const hasLoadedWorkflow = useWorkflowStore((state) => state.hasLoadedWorkflow)
   const openWorkspacePanels = useWorkflowStore((state) => state.openWorkspacePanels)
-  const loadAgents = useWorkflowStore((state) => state.loadAgents)
-  const loadWorkflows = useWorkflowStore((state) => state.loadWorkflows)
-  const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow)
-  const createWorkflow = useWorkflowStore((state) => state.createWorkflow)
-  const deleteWorkflow = useWorkflowStore((state) => state.deleteWorkflow)
-  const saveWorkflow = useWorkflowStore((state) => state.saveWorkflow)
+  const applyAgentsResponse = useWorkflowStore((state) => state.applyAgentsResponse)
+  const setAgentQueryStatus = useWorkflowStore((state) => state.setAgentQueryStatus)
+  const applyWorkflowList = useWorkflowStore((state) => state.applyWorkflowList)
+  const setWorkflowListQueryStatus = useWorkflowStore((state) => state.setWorkflowListQueryStatus)
+  const applyWorkflow = useWorkflowStore((state) => state.applyWorkflow)
+  const applySavedWorkflow = useWorkflowStore((state) => state.applySavedWorkflow)
+  const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow)
+  const setPersistenceQueryStatus = useWorkflowStore((state) => state.setPersistenceQueryStatus)
   const toggleWorkspacePanel = useWorkflowStore((state) => state.toggleWorkspacePanel)
+  const agentsQuery = useAgentsQuery()
+  const workflowsQuery = useWorkflowListQuery()
+  const createWorkflowMutation = useCreateWorkflowMutation()
+  const deleteWorkflowMutation = useDeleteWorkflowMutation()
+  const saveWorkflowMutation = useSaveWorkflowMutation()
   const [canvasMenuOpen, setCanvasMenuOpen] = useState(false)
   const canvasMenuRef = useRef<HTMLDivElement>(null)
   const availableAgents = agents.filter((agent) => agent.invokable)
@@ -34,8 +54,27 @@ export function TopBar({ navigateTo }: TopBarProps) {
   const isBusy = workflowListStatus === 'loading' || persistenceStatus === 'loading' || persistenceStatus === 'saving'
 
   useEffect(() => {
-    void loadAgents()
-  }, [loadAgents])
+    if (agentsQuery.isLoading) setAgentQueryStatus('loading')
+    if (agentsQuery.isError) {
+      setAgentQueryStatus('error', agentsQuery.error instanceof Error ? agentsQuery.error.message : String(agentsQuery.error))
+    }
+    if (agentsQuery.data) applyAgentsResponse(agentsQuery.data)
+  }, [agentsQuery.data, agentsQuery.error, agentsQuery.isError, agentsQuery.isLoading, applyAgentsResponse, setAgentQueryStatus])
+
+  useEffect(() => {
+    if (workflowsQuery.isLoading) setWorkflowListQueryStatus('loading')
+    if (workflowsQuery.isError) {
+      setWorkflowListQueryStatus('error', workflowsQuery.error instanceof Error ? workflowsQuery.error.message : String(workflowsQuery.error))
+    }
+    if (workflowsQuery.data) applyWorkflowList(workflowsQuery.data)
+  }, [
+    applyWorkflowList,
+    setWorkflowListQueryStatus,
+    workflowsQuery.data,
+    workflowsQuery.error,
+    workflowsQuery.isError,
+    workflowsQuery.isLoading,
+  ])
 
   useEffect(() => {
     if (!canvasMenuOpen) return
@@ -50,7 +89,20 @@ export function TopBar({ navigateTo }: TopBarProps) {
 
   const handleCanvasMenuToggle = () => {
     setCanvasMenuOpen((open) => !open)
-    if (!canvasMenuOpen) void loadWorkflows()
+    if (!canvasMenuOpen) void queryClient.invalidateQueries({ queryKey: workflowQueryKeys.workflows })
+  }
+
+  const saveCurrentWorkflow = async () => {
+    if (!hasLoadedWorkflow) return
+    setPersistenceQueryStatus('saving')
+    const workflow = await saveWorkflowMutation.mutateAsync({
+      workflowId,
+      workflowTitle,
+      workflowRevision,
+      nodes,
+      edges,
+    })
+    applySavedWorkflow(workflow)
   }
 
   const handleSwitchCanvas = async (nextWorkflowId: string) => {
@@ -59,16 +111,26 @@ export function TopBar({ navigateTo }: TopBarProps) {
       return
     }
 
-    await saveWorkflow()
-    await loadWorkflow(nextWorkflowId)
-    navigateTo(`/canvas/${encodeURIComponent(nextWorkflowId)}`)
+    await saveCurrentWorkflow()
+    setPersistenceQueryStatus('loading')
+    const workflow = await queryClient.fetchQuery({
+      queryKey: workflowQueryKeys.workflow(nextWorkflowId),
+      queryFn: () => fetchWorkflow(nextWorkflowId),
+    })
+    applyWorkflow(workflow)
+    await navigate({ to: '/canvas/$workflowId', params: { workflowId: nextWorkflowId } })
     setCanvasMenuOpen(false)
   }
 
   const handleCreateCanvas = async () => {
-    await saveWorkflow()
-    const workflow = await createWorkflow()
-    if (workflow) navigateTo(`/canvas/${encodeURIComponent(workflow.id)}`)
+    await saveCurrentWorkflow()
+    const nextIndex = workflows.length + 1
+    setPersistenceQueryStatus('saving')
+    const workflow = await createWorkflowMutation.mutateAsync({
+      title: nextIndex === 1 ? '未命名工作区' : `工作流 ${nextIndex}`,
+    })
+    applyWorkflow(workflow)
+    await navigate({ to: '/canvas/$workflowId', params: { workflowId: workflow.id } })
     setCanvasMenuOpen(false)
   }
 
@@ -79,17 +141,31 @@ export function TopBar({ navigateTo }: TopBarProps) {
     const remainingWorkflows = sortedWorkflows
       .filter((workflow) => workflow.id !== targetWorkflowId)
       .sort((left, right) => right.updatedAt - left.updatedAt)
-    await deleteWorkflow(targetWorkflowId)
+    setPersistenceQueryStatus('saving')
+    await deleteWorkflowMutation.mutateAsync(targetWorkflowId)
+    applyWorkflowList(remainingWorkflows)
     if (targetWorkflowId === workflowId) {
       const nextWorkflow = remainingWorkflows[0]
-      navigateTo(nextWorkflow ? `/canvas/${encodeURIComponent(nextWorkflow.id)}` : '/')
+      if (nextWorkflow) {
+        const workflow = await queryClient.fetchQuery({
+          queryKey: workflowQueryKeys.workflow(nextWorkflow.id),
+          queryFn: () => fetchWorkflow(nextWorkflow.id),
+        })
+        applyWorkflow(workflow)
+        await navigate({ to: '/canvas/$workflowId', params: { workflowId: nextWorkflow.id } })
+      } else {
+        resetWorkflow()
+        await navigate({ to: '/' })
+      }
+    } else {
+      setPersistenceQueryStatus('saved')
     }
     setCanvasMenuOpen(false)
   }
 
   const handleLogoClick = async () => {
-    await saveWorkflow()
-    navigateTo('/')
+    await saveCurrentWorkflow()
+    await navigate({ to: '/' })
   }
 
   return (

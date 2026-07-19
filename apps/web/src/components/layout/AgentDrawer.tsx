@@ -1,7 +1,9 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { Bot, ChevronDown, History, Paperclip, Send, Settings, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getUpstreamNodes, type MaterialNode } from '@red-video-flow/workflow-core'
-import { runNodeWithAgent } from '@red-video-flow/workflow-client'
+import { fetchWorkflow, runNodeWithAgent } from '@red-video-flow/workflow-client'
+import { useAgentsQuery, workflowQueryKeys } from '../../queries/workflowQueries'
 import { useWorkflowStore } from '../../store/workflowStore'
 import styles from './AgentDrawer.module.less'
 
@@ -15,6 +17,7 @@ const skillSuggestions = ['皮克斯动画广告', '爆款拉片复刻', '新中
 const mentionPattern = /@([^\s@]+)/g
 
 export function AgentDrawer() {
+  const queryClient = useQueryClient()
   const openWorkspacePanels = useWorkflowStore((state) => state.openWorkspacePanels)
   const closeWorkspacePanel = useWorkflowStore((state) => state.closeWorkspacePanel)
   const agents = useWorkflowStore((state) => state.agents)
@@ -25,8 +28,9 @@ export function AgentDrawer() {
   const workflowRevision = useWorkflowStore((state) => state.workflowRevision)
   const nodes = useWorkflowStore((state) => state.nodes)
   const edges = useWorkflowStore((state) => state.edges)
-  const loadAgents = useWorkflowStore((state) => state.loadAgents)
-  const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow)
+  const applyAgentsResponse = useWorkflowStore((state) => state.applyAgentsResponse)
+  const setAgentQueryStatus = useWorkflowStore((state) => state.setAgentQueryStatus)
+  const applyWorkflow = useWorkflowStore((state) => state.applyWorkflow)
   const selectAgent = useWorkflowStore((state) => state.selectAgent)
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -35,6 +39,7 @@ export function AgentDrawer() {
   const [activeMentionIndex, setActiveMentionIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isDrawerOpen = openWorkspacePanels.includes('agent')
+  const agentsQuery = useAgentsQuery(isDrawerOpen)
   const [shouldRenderDrawer, setShouldRenderDrawer] = useState(isDrawerOpen)
 
   const selectedAgent = useMemo(
@@ -64,8 +69,21 @@ export function AgentDrawer() {
   }, [isDrawerOpen])
 
   useEffect(() => {
-    if (isDrawerOpen && agentStatus === 'idle') void loadAgents()
-  }, [agentStatus, isDrawerOpen, loadAgents])
+    if (!isDrawerOpen) return
+    if (agentsQuery.isLoading) setAgentQueryStatus('loading')
+    if (agentsQuery.isError) {
+      setAgentQueryStatus('error', agentsQuery.error instanceof Error ? agentsQuery.error.message : String(agentsQuery.error))
+    }
+    if (agentsQuery.data) applyAgentsResponse(agentsQuery.data)
+  }, [
+    agentsQuery.data,
+    agentsQuery.error,
+    agentsQuery.isError,
+    agentsQuery.isLoading,
+    applyAgentsResponse,
+    isDrawerOpen,
+    setAgentQueryStatus,
+  ])
 
   if (!shouldRenderDrawer) return null
 
@@ -172,7 +190,13 @@ export function AgentDrawer() {
             : message,
         ),
       )
-      if (patchedByAgent) await loadWorkflow(workflowId)
+      if (patchedByAgent) {
+        const workflow = await queryClient.fetchQuery({
+          queryKey: workflowQueryKeys.workflow(workflowId),
+          queryFn: () => fetchWorkflow(workflowId),
+        })
+        applyWorkflow(workflow)
+      }
     } catch (error) {
       setMessages((current) =>
         current.map((message) =>
