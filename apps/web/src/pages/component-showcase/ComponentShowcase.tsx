@@ -1,25 +1,17 @@
 import { ReactFlowProvider } from '@xyflow/react'
 import { ArrowLeft, Check, Clipboard, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { showcaseItems, type ShowcaseItem } from './showcaseRegistry'
+import { useComponentShowcase, useCopyFeedback } from './ComponentShowcase.logic'
+import { ComponentShowcasePrimitive as Showcase } from './ComponentShowcase.primitives'
+import type { ShowcaseItem } from './showcaseRegistry'
 import styles from './ComponentShowcase.module.less'
 
 export function ComponentShowcase() {
-  const [selectedId, setSelectedId] = useState(showcaseItems[0]?.id)
-  const [query, setQuery] = useState('')
-  const filteredItems = useMemo(() => {
-    const keyword = query.trim().toLowerCase()
-    if (!keyword) return showcaseItems
-    return showcaseItems.filter((item) =>
-      `${item.title} ${item.category} ${item.description}`.toLowerCase().includes(keyword),
-    )
-  }, [query])
-  const selectedItem = showcaseItems.find((item) => item.id === selectedId) ?? filteredItems[0] ?? showcaseItems[0]
+  const showcase = useComponentShowcase()
 
   return (
     <ReactFlowProvider>
-      <main className={styles.page}>
-        <aside className={styles.sidebar}>
+      <Showcase.Root>
+        <Showcase.Sidebar>
           <a className={styles.backLink} href="/">
             <ArrowLeft size={18} />
             返回工作流
@@ -31,29 +23,29 @@ export function ComponentShowcase() {
           <label className={styles.searchBox}>
             <Search size={16} />
             <input
-              value={query}
+              value={showcase.query}
               placeholder="搜索组件"
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => showcase.setQuery(event.target.value)}
             />
           </label>
-          <nav className={styles.navList} aria-label="组件列表">
-            {filteredItems.map((item) => (
-              <button
+          <Showcase.Navigation>
+            {showcase.filteredItems.map((item) => (
+              <Showcase.NavigationItem
                 key={item.id}
-                data-active={item.id === selectedItem.id ? true : undefined}
-                onClick={() => setSelectedId(item.id)}
+                active={item.id === showcase.selectedItem.id}
+                onClick={() => showcase.select(item.id)}
               >
                 <span>{item.title}</span>
                 <small>{item.category}</small>
-              </button>
+              </Showcase.NavigationItem>
             ))}
-          </nav>
-        </aside>
+          </Showcase.Navigation>
+        </Showcase.Sidebar>
 
-        <section className={styles.content}>
-          {selectedItem ? <ShowcaseDetail item={selectedItem} /> : null}
-        </section>
-      </main>
+        <Showcase.Content>
+          {showcase.selectedItem ? <ShowcaseDetail item={showcase.selectedItem} /> : null}
+        </Showcase.Content>
+      </Showcase.Root>
     </ReactFlowProvider>
   )
 }
@@ -69,12 +61,12 @@ function ShowcaseDetail({ item }: { item: ShowcaseItem }) {
         </div>
       </header>
 
-      <section className={styles.previewPanel}>
+      <Showcase.Panel>
         <div className={styles.panelHeader}>
           <h3>Preview</h3>
         </div>
         <div className={styles.previewStage}>{item.preview()}</div>
-      </section>
+      </Showcase.Panel>
 
       <section className={styles.resourceGrid}>
         <RegistryBlock title="Code" value={item.code} />
@@ -99,18 +91,12 @@ function RegistryBlock({ title, value }: { title: string; value: string }) {
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1200)
-  }
+  const feedback = useCopyFeedback(value)
 
   return (
-    <button className={styles.copyButton} data-copied={copied ? true : undefined} onClick={() => void copy()}>
-      {copied ? <Check size={15} /> : <Clipboard size={15} />}
-      {copied ? '已复制' : label}
+    <button className={styles.copyButton} data-copied={feedback.copied || undefined} onClick={feedback.copy}>
+      {feedback.copied ? <Check size={15} /> : <Clipboard size={15} />}
+      {feedback.copied ? '已复制' : label}
     </button>
   )
 }

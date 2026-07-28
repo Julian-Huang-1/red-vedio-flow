@@ -1,4 +1,5 @@
 import type { MaterialValue, NodeStatus } from '@red-video-flow/workflow-core'
+import { isDeepStrictEqual } from 'node:util'
 import type { WorkflowService } from '../workflows/workflowService.js'
 import type { RunRepository, WorkflowRun } from './runRepository.js'
 
@@ -91,24 +92,32 @@ export class RunService {
     if (!workflow) throw new WorkflowRunError(`workflow not found: ${input.workflowId}`)
     const now = Date.now()
 
-    const patched = this.workflows.patch({
-      id: input.workflowId,
-      baseRevision: input.baseRevision ?? workflow.revision,
-      ops: [
-        { type: 'setNodeStatus', nodeId: input.nodeId, status: input.status ?? 'done' },
-        ...(input.value ? [{ type: 'setNodeValue' as const, nodeId: input.nodeId, value: input.value }] : []),
-        {
-          type: 'appendNodeMessage',
-          nodeId: input.nodeId,
-          message: {
-            id: `msg-${now}-assistant`,
-            role: 'assistant',
-            text: input.message,
-            createdAt: now,
-          },
-        },
-      ],
-    })
+    const node = workflow.graph.nodes.find((candidate) => candidate.id === input.nodeId)
+    const targetStatus = input.status ?? 'done'
+    const alreadyApplied = Boolean(input.value?.submitId)
+      && node?.data.messages.some((message) => message.id.startsWith('visual-task:'))
+      && node.data.status === targetStatus
+      && (!input.value || isDeepStrictEqual(node.data.value, input.value))
+    const patched = alreadyApplied
+      ? workflow
+      : this.workflows.patch({
+          id: input.workflowId,
+          baseRevision: input.baseRevision ?? workflow.revision,
+          ops: [
+            { type: 'setNodeStatus', nodeId: input.nodeId, status: targetStatus },
+            ...(input.value ? [{ type: 'setNodeValue' as const, nodeId: input.nodeId, value: input.value }] : []),
+            {
+              type: 'appendNodeMessage',
+              nodeId: input.nodeId,
+              message: {
+                id: `msg-${now}-assistant`,
+                role: 'assistant',
+                text: input.message,
+                createdAt: now,
+              },
+            },
+          ],
+        })
 
     const nextRun = this.repository.save({
       ...run,
@@ -126,23 +135,29 @@ export class RunService {
     if (!workflow) throw new WorkflowRunError(`workflow not found: ${input.workflowId}`)
     const now = Date.now()
 
-    const patched = this.workflows.patch({
-      id: input.workflowId,
-      baseRevision: input.baseRevision ?? workflow.revision,
-      ops: [
-        { type: 'setNodeStatus', nodeId: input.nodeId, status: 'error' },
-        {
-          type: 'appendNodeMessage',
-          nodeId: input.nodeId,
-          message: {
-            id: `msg-${now}-assistant`,
-            role: 'assistant',
-            text: input.message,
-            createdAt: now,
-          },
-        },
-      ],
-    })
+    const node = workflow.graph.nodes.find((candidate) => candidate.id === input.nodeId)
+    const alreadyApplied = Boolean(node?.data.value.submitId)
+      && node?.data.messages.some((message) => message.id.startsWith('visual-task:') && message.id.endsWith(':completed'))
+      && node.data.status === 'error'
+    const patched = alreadyApplied
+      ? workflow
+      : this.workflows.patch({
+          id: input.workflowId,
+          baseRevision: input.baseRevision ?? workflow.revision,
+          ops: [
+            { type: 'setNodeStatus', nodeId: input.nodeId, status: 'error' },
+            {
+              type: 'appendNodeMessage',
+              nodeId: input.nodeId,
+              message: {
+                id: `msg-${now}-assistant`,
+                role: 'assistant',
+                text: input.message,
+                createdAt: now,
+              },
+            },
+          ],
+        })
 
     const nextRun = this.repository.save({
       ...run,

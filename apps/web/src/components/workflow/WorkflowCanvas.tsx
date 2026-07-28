@@ -1,118 +1,40 @@
-import {
-  Background,
-  BackgroundVariant,
-  ReactFlow,
-  type NodeMouseHandler,
-  useReactFlow,
-} from '@xyflow/react'
-import { useCallback, useMemo } from 'react'
-import { useWorkflowStore } from '../../store/workflowStore'
+import { Background, BackgroundVariant, ReactFlow } from '@xyflow/react'
+import { useWorkflowCanvas } from './WorkflowCanvas.logic'
+import { WorkflowCanvasPrimitive as Canvas } from './WorkflowCanvas.primitives'
 import { AddNodeMenu } from './menus/AddNodeMenu'
 import { MaterialNode } from './nodes/MaterialNode'
-import { NodePromptComposer } from './prompt/NodePromptComposer'
 
 const nodeTypes = {
   material: MaterialNode,
 }
 
 export function WorkflowCanvas() {
-  const { screenToFlowPosition } = useReactFlow()
-  const nodes = useWorkflowStore((state) => state.nodes)
-  const edges = useWorkflowStore((state) => state.edges)
-  const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId)
-  const editingNodeId = useWorkflowStore((state) => state.editingNodeId)
-  const composerNodeId = useWorkflowStore((state) => state.composerNodeId)
-  const onNodesChange = useWorkflowStore((state) => state.onNodesChange)
-  const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange)
-  const connectNodes = useWorkflowStore((state) => state.connectNodes)
-  const openAddNodeMenu = useWorkflowStore((state) => state.openAddNodeMenu)
-  const selectNode = useWorkflowStore((state) => state.selectNode)
-  const beginEditNode = useWorkflowStore((state) => state.beginEditNode)
-  const closeCanvasPanel = useWorkflowStore((state) => state.closeCanvasPanel)
-  const closeWorkspacePanel = useWorkflowStore((state) => state.closeWorkspacePanel)
-
-  const composerNode = useMemo(
-    () => nodes.find((node) => node.id === composerNodeId),
-    [nodes, composerNodeId],
-  )
-
-  const shouldShowComposer = composerNode && editingNodeId !== composerNode.id
-
-  const handlePaneContextMenu = useCallback(
-    (event: React.MouseEvent) => {
-      event.preventDefault()
-      const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      openAddNodeMenu({ x: event.clientX, y: event.clientY }, flowPosition)
-    },
-    [openAddNodeMenu, screenToFlowPosition],
-  )
-
-  const handleCanvasContextMenu = useCallback(
-    (event: React.MouseEvent<HTMLElement>) => {
-      const target = event.target as HTMLElement
-      const interactiveTarget = target.closest(
-        '.react-flow__node, .react-flow__handle, button, input, textarea, video',
-      )
-
-      if (interactiveTarget) return
-      handlePaneContextMenu(event)
-    },
-    [handlePaneContextMenu],
-  )
-
-  const handleCanvasDoubleClick = useCallback(
-    (event: React.MouseEvent<HTMLElement>) => {
-      const target = event.target as HTMLElement
-      const interactiveTarget = target.closest(
-        '.react-flow__node, .react-flow__handle, button, input, textarea, video, [data-node-composer="true"]',
-      )
-
-      if (interactiveTarget) return
-      const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      openAddNodeMenu({ x: event.clientX, y: event.clientY }, flowPosition)
-    },
-    [openAddNodeMenu, screenToFlowPosition],
-  )
-
-  const handleNodeClick: NodeMouseHandler = useCallback(
-    (event, node) => {
-      if (event.detail > 1) return
-      selectNode(node.id)
-    },
-    [selectNode],
-  )
-
-  const handleNodeDoubleClick: NodeMouseHandler = useCallback(
-    (event, node) => {
-      if (node.data.materialType !== 'text') return
-      event.stopPropagation()
-      window.setTimeout(() => {
-        beginEditNode(node.id)
-        window.dispatchEvent(new CustomEvent('focus-node-composer', { detail: { nodeId: node.id } }))
-      }, 0)
-    },
-    [beginEditNode],
-  )
+  const canvas = useWorkflowCanvas()
 
   return (
-    <section className="absolute inset-0" onContextMenu={handleCanvasContextMenu} onDoubleClick={handleCanvasDoubleClick}>
+    <Canvas.Root
+      empty={canvas.nodes.length === 0}
+      panning={canvas.isTrackpadPanning}
+      onContextMenu={canvas.handleCanvasContextMenu}
+      onDoubleClick={canvas.handleCanvasDoubleClick}
+      onWheelCapture={canvas.handleWheel}
+    >
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={canvas.nodes}
+        edges={canvas.edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={connectNodes}
-        onPaneClick={(event) => {
-          const target = event.target as HTMLElement
-          if (target.closest('[data-node-composer="true"]')) return
-          closeCanvasPanel()
-          closeWorkspacePanel()
-          if (!composerNodeId) selectNode(undefined)
-        }}
-        onNodeClick={handleNodeClick}
-        onNodeDoubleClick={handleNodeDoubleClick}
+        onNodesChange={canvas.onNodesChange}
+        onEdgesChange={canvas.onEdgesChange}
+        onConnect={canvas.connectNodes}
+        onPaneClick={canvas.handlePaneClick}
+        onNodeClick={canvas.handleNodeClick}
+        onNodeDoubleClick={canvas.handleNodeDoubleClick}
         zoomOnDoubleClick={false}
+        zoomOnScroll={false}
+        zoomOnPinch
+        panOnDrag={false}
+        panOnScroll
+        panOnScrollSpeed={0.8}
         minZoom={0.15}
         maxZoom={1.6}
         defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
@@ -120,13 +42,8 @@ export function WorkflowCanvas() {
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="#2d2d2d" />
       </ReactFlow>
-      {nodes.length === 0 ? (
-        <div className="pointer-events-none absolute left-1/2 top-[32%] z-10 -translate-x-1/2 text-sm text-zinc-500">
-          右击画布生成节点
-        </div>
-      ) : null}
+      {canvas.nodes.length === 0 ? <Canvas.Empty>右击画布生成节点</Canvas.Empty> : null}
       <AddNodeMenu />
-      {shouldShowComposer ? <NodePromptComposer node={composerNode} /> : null}
-    </section>
+    </Canvas.Root>
   )
 }

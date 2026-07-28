@@ -1,4 +1,5 @@
 import type { LocalAgent, MaterialNode, WorkflowEdge } from '@red-video-flow/workflow-core'
+import { recordWorkflowSseEvent } from './debugEvents'
 import { getWorkflowClientTransport, readJsonResponse } from './transport'
 
 export type AgentListResponse = {
@@ -38,7 +39,15 @@ export type RunNodePayload = {
   baseUrl?: string
 }
 
+export type AgentRunEvent =
+  | { type: 'start'; agentId: string; bin: string; argv: string[] }
+  | { type: 'stderr'; text: string }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; code: number | null; output: string }
+  | { type: 'error'; message: string }
+
 export type RunNodeEvents = {
+  onEvent?: (event: AgentRunEvent) => void
   onDelta?: (text: string) => void
 }
 
@@ -61,6 +70,33 @@ export type VisualRunResult = {
 }
 
 export type VisualTaskStatus = 'querying' | 'success' | 'failed' | 'unknown'
+
+export type VisualTaskRecordStatus =
+  | 'submitting'
+  | 'polling'
+  | 'succeeded'
+  | 'failed'
+  | 'timed_out'
+  | 'cancelled'
+
+export type VisualTaskRecord = {
+  id: string
+  workflowId: string
+  nodeId: string
+  provider: string
+  nodeKind: 'image' | 'video'
+  submitId?: string
+  status: VisualTaskRecordStatus
+  attemptCount: number
+  nextPollAt: number
+  timeoutAt: number
+  lastError?: string
+  result?: VisualRunResult
+  createdAt: number
+  updatedAt: number
+  completedAt?: number
+  projectedAt?: number
+}
 
 export async function fetchLocalAgents() {
   const response = await getWorkflowClientTransport().request('/api/agents')
@@ -92,6 +128,7 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       modelId: payload.modelId ?? 'dreamina',
+      workflowId: payload.workflowId,
       nodeKind: payload.node.data.materialType,
       prompt: payload.prompt,
       messages: payload.messages,
@@ -130,6 +167,7 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
       if (!dataLine) continue
 
       const event = JSON.parse(dataLine.slice(6)) as { type?: string; result?: VisualRunResult; message?: string }
+      recordWorkflowSseEvent(response, '/api/run-visual-node', event)
 
       if (event.type === 'done') result = event.result
       if (event.type === 'error') throw new Error(event.message ?? '视觉模型调用失败')
@@ -140,16 +178,21 @@ export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & {
   return result
 }
 
-export async function queryVisualTask(input: {
-  submitId: string
-  nodeKind?: MaterialNode['data']['materialType']
-}) {
-  const response = await getWorkflowClientTransport().request('/api/query-visual-task', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  return readJsonResponse<VisualRunResult>(response, '查询视觉任务失败')
+export async function fetchVisualTaskBySubmitId(submitId: string, provider = 'dreamina') {
+  const response = await getWorkflowClientTransport().request(
+    `/api/visual-tasks?provider=${encodeURIComponent(provider)}&submitId=${encodeURIComponent(submitId)}`,
+  )
+  return readJsonResponse<{ task: VisualTaskRecord }>(response, '读取视觉任务失败')
+}
+
+export async function reconcileVisualTasks() {
+  const response = await getWorkflowClientTransport().request('/api/visual-tasks/reconcile', { method: 'POST' })
+  return readJsonResponse<{
+    claimed: number
+    completed: number
+    pending: number
+    failed: number
+  }>(response, '触发视觉任务协调失败')
 }
 
 export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeEvents = {}) {
@@ -166,6 +209,8 @@ export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeE
       prompt: payload.prompt,
       currentNode: payload.node,
       upstream: payload.upstream,
+      referencedNodes: payload.referencedNodes,
+      messages: payload.messages,
       edges: payload.edges,
     }),
   })
@@ -181,6 +226,7 @@ export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeE
   const decoder = new TextDecoder()
   let buffer = ''
   let output = ''
+  let completed = false
 
   while (true) {
     const { value, done } = await reader.read()
@@ -197,28 +243,54 @@ export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeE
 
       if (!dataLine) continue
 
-      const event = JSON.parse(dataLine.slice(6)) as {
-        type?: string
-        text?: string
-        output?: string
-        message?: string
-        code?: number
-      }
+      const event = parseAgentRunEvent(dataLine.slice(6))
+      if (!event) continue
 
-      if (event.type === 'delta' && event.text) {
-        output += event.text
-        events.onDelta?.(event.text)
-      }
+      recordWorkflowSseEvent(response, '/api/run-node', event)
+      events.onEvent?.(event)
 
-      if (event.type === 'done' && event.output) output = event.output
-      if (event.type === 'done' && event.code !== undefined && event.code !== 0 && !output.trim()) {
-        throw new Error(`Agent 退出码 ${event.code}`)
+      switch (event.type) {
+        case 'delta':
+          output += event.text
+          events.onDelta?.(event.text)
+          break
+        case 'done':
+          completed = true
+          output = event.output
+          if (event.code !== null && event.code !== 0) {
+            throw new Error(`Agent 退出码 ${event.code}`)
+          }
+          break
+        case 'error':
+          throw new Error(event.message || '本地 Agent 调用失败')
       }
-      if (event.type === 'error') throw new Error(event.message ?? '本地 Agent 调用失败')
     }
   }
 
+  if (!completed) throw new Error('Agent 连接在完成前中断')
   return output.trim()
+}
+
+function parseAgentRunEvent(value: string): AgentRunEvent | undefined {
+  const event = JSON.parse(value) as Partial<AgentRunEvent>
+
+  switch (event.type) {
+    case 'start':
+      if (typeof event.agentId !== 'string' || typeof event.bin !== 'string' || !Array.isArray(event.argv)) return undefined
+      return { type: 'start', agentId: event.agentId, bin: event.bin, argv: event.argv }
+    case 'stderr':
+    case 'delta':
+      if (typeof event.text !== 'string') return undefined
+      return { type: event.type, text: event.text }
+    case 'done':
+      if ((typeof event.code !== 'number' && event.code !== null) || typeof event.output !== 'string') return undefined
+      return { type: 'done', code: event.code, output: event.output }
+    case 'error':
+      if (typeof event.message !== 'string') return undefined
+      return { type: 'error', message: event.message }
+    default:
+      return undefined
+  }
 }
 
 function getBrowserOrigin() {

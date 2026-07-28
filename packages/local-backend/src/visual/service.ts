@@ -268,25 +268,17 @@ async function invokeVisualModel({ modelId, nodeKind, prompt, upstream = [], dow
     throw new Error(submit.stderr.trim() || submit.stdout.trim() || `dreamina 退出码 ${submit.code}`)
   }
 
-  if (submitId) {
-    return queryVisualTask({
-      submitId,
-      nodeKind,
-      downloadDir,
-      assetUrlForPath,
-      onEvent,
-    })
-  }
-
   const downloaded = listDownloadedMedia(downloadDir)
   const localPath = downloaded[0]
   const remoteUrl = findMediaUrl(submitJson)
   const genStatus = findValueDeep(submitJson, ['gen_status', 'genStatus', 'status'])
   const failReason = findValueDeep(submitJson, ['fail_reason', 'failReason', 'error_message', 'errorMessage'])
+  const taskStatus = normalizeVisualTaskStatus(genStatus, Boolean(localPath || remoteUrl))
+  if (submitId) onEvent?.({ type: 'meta', submitId })
 
   return {
     submitId,
-    taskStatus: normalizeVisualTaskStatus(genStatus, Boolean(localPath || remoteUrl)),
+    taskStatus: submitId && taskStatus === 'unknown' ? 'querying' : taskStatus,
     genStatus,
     failReason,
     localPath,

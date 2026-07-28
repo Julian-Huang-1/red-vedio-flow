@@ -16,6 +16,7 @@ import {
   type AgentStatus,
   type LocalAgent,
   type MaterialType,
+  type WorkflowEdge,
   type WorkflowDocument,
   type WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
@@ -26,6 +27,7 @@ import {
   runVisualNode,
   uploadAsset,
   type AgentListResponse,
+  WorkflowClientResponseError,
 } from '@red-video-flow/workflow-client'
 import { runWorkflowNode } from '@red-video-flow/workflow-runtime'
 import { createFlowNode, toFlowNode, toMaterialNode, type AddNodeMenuState, type FlowNode } from '../workflowPresentation'
@@ -79,7 +81,8 @@ type WorkflowStore = {
   applyWorkflowList: (workflows: WorkflowDocument[]) => void
   setWorkflowListQueryStatus: (status: WorkflowListStatus, error?: string) => void
   applyWorkflow: (document: WorkflowDocument) => void
-  applySavedWorkflow: (document: WorkflowDocument) => void
+  applyRemoteWorkflow: (document: WorkflowDocument) => void
+  flushWorkflowPatches: () => Promise<void>
   resetWorkflow: () => void
   setPersistenceQueryStatus: (status: PersistenceStatus, error?: string) => void
 }
@@ -95,13 +98,13 @@ const initialMenu: AddNodeMenuState = {
 let workflowPatchQueue = Promise.resolve()
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => {
-  const applyRemoteWorkflow = (document: WorkflowDocument) => {
+  const mergeRemoteWorkflow = (document: WorkflowDocument) => {
     set({
       workflowId: document.id,
       workflowTitle: document.title,
       workflowRevision: document.revision,
       nodes: document.graph.nodes.map(toFlowNode),
-      edges: document.graph.edges,
+      edges: document.graph.edges.map(toFlowEdge),
       workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
       persistenceStatus: 'saved',
     })
@@ -112,7 +115,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     if (!hasLoadedWorkflow || !ops.length) return undefined
 
     set({ persistenceStatus: 'saving', persistenceError: undefined })
-    const response = await patchWorkflow(workflowId, { baseRevision: workflowRevision, ops })
+    let response
+    try {
+      response = await patchWorkflow(workflowId, { baseRevision: workflowRevision, ops })
+    } catch (error) {
+      if (!(error instanceof WorkflowClientResponseError) || error.status !== 409) throw error
+      const latest = await fetchWorkflow(workflowId)
+      response = await patchWorkflow(workflowId, { baseRevision: latest.revision, ops })
+    }
     set({
       workflowTitle: response.workflow.title,
       workflowRevision: response.workflow.revision,
@@ -162,7 +172,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
       const agentPatchedNode = messageCountChanged || statusChangedFromRunning || valueChanged
       if (!agentPatchedNode) return false
 
-      applyRemoteWorkflow(document)
+      mergeRemoteWorkflow(document)
       return true
     } catch (error) {
       set({
@@ -241,7 +251,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     if (!source || !target || source.id === target.id) return
     if (!canConnectMaterialNodes(source, target)) return
 
-    const edge = {
+    const edge: Edge = {
       ...connection,
       id: `edge-${source.id}-${target.id}-${Date.now()}`,
       source: source.id,
@@ -321,6 +331,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     const node = get().nodes.find((item) => item.id === nodeId)
     const canShowComposer = node ? !hasMaterialValue(node) : false
     set({
+      nodes: get().nodes.map((item) => ({
+        ...item,
+        selected: item.id === nodeId,
+      })),
       selectedNodeId: nodeId,
       editingNodeId: nodeId && editingNodeId === nodeId ? editingNodeId : undefined,
       composerNodeId: canShowComposer ? nodeId : undefined,
@@ -475,7 +489,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
       workflowTitle: document.title,
       workflowRevision: document.revision,
       nodes: document.graph.nodes.map(toFlowNode),
-      edges: document.graph.edges,
+      edges: document.graph.edges.map(toFlowEdge),
       selectedNodeId: undefined,
       editingNodeId: undefined,
       composerNodeId: undefined,
@@ -490,14 +504,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     })
   },
 
-  applySavedWorkflow: (document) => {
-    set({
-      workflowTitle: document.title,
-      workflowRevision: document.revision,
-      workflows: get().workflows.map((workflow) => (workflow.id === document.id ? document : workflow)),
-      persistenceStatus: 'saved',
-      persistenceError: undefined,
-    })
+  applyRemoteWorkflow: (document) => {
+    const current = get()
+    if (document.id !== current.workflowId || document.revision <= current.workflowRevision) return
+    mergeRemoteWorkflow(document)
+  },
+
+  flushWorkflowPatches: async () => {
+    await workflowPatchQueue
   },
 
   resetWorkflow: () => {
@@ -568,9 +582,21 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
       },
       {
         runTextAgent: runNodeWithAgent,
-        runVisualModel: runVisualNode,
+        runVisualModel: (payload) => runVisualNode({ ...payload, workflowId: get().workflowId }),
       },
     )
+
+    if (target.data.materialType === 'image' || target.data.materialType === 'video') {
+      try {
+        mergeRemoteWorkflow(await fetchWorkflow(get().workflowId))
+      } catch (error) {
+        set({
+          persistenceStatus: 'error',
+          persistenceError: error instanceof Error ? error.message : String(error),
+        })
+      }
+      return
+    }
 
     if (selectedAgent && (await refreshIfAgentPatchedNode(nodeId, agentBaseRevision))) return
 
@@ -611,3 +637,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
   },
   }
 })
+
+function toFlowEdge(edge: WorkflowEdge, index: number): Edge {
+  return {
+    ...edge,
+    id: edge.id ?? `edge-${edge.source}-${edge.target}-${index}`,
+  }
+}

@@ -17,6 +17,7 @@ let server: http.Server | undefined
 let baseUrl = ''
 let workflow: WorkflowDocument
 let visualResult: Record<string, unknown>
+let visualTask: Record<string, unknown>
 
 function createWorkflow(nodes: WorkflowDocument['graph']['nodes'] = []): WorkflowDocument {
   return {
@@ -60,6 +61,23 @@ beforeEach(async () => {
     fileName: 'result.mp4',
     mimeType: 'video/mp4',
   }
+  visualTask = {
+    id: 'visual-task-test',
+    workflowId: workflow.id,
+    nodeId: 'video-running',
+    provider: 'dreamina',
+    nodeKind: 'video',
+    submitId: 'submit-video',
+    status: 'succeeded',
+    attemptCount: 1,
+    nextPollAt: 1,
+    timeoutAt: 60_000,
+    result: visualResult,
+    createdAt: 1,
+    updatedAt: 2,
+    completedAt: 2,
+    projectedAt: 2,
+  }
 
   server = http.createServer(async (req, res) => {
     try {
@@ -86,8 +104,36 @@ beforeEach(async () => {
         sendJson(res, 200, { workflow, appliedOps: patch.ops.length })
         return
       }
-      if (req.method === 'POST' && url.pathname === '/api/query-visual-task') {
-        sendJson(res, 200, visualResult)
+      if (req.method === 'GET' && url.pathname === '/api/visual-tasks') {
+        sendJson(res, 200, { task: visualTask })
+        return
+      }
+      if (req.method === 'POST' && url.pathname === '/api/visual-tasks/reconcile') {
+        const node = workflow.graph.nodes.find((candidate) => candidate.id === 'video-running')
+        if (node?.data.status === 'running') {
+          workflow = {
+            ...applyWorkflowPatch(workflow, [
+              { type: 'setNodeStatus', nodeId: node.id, status: 'done' },
+              {
+                type: 'setNodeValue',
+                nodeId: node.id,
+                value: {
+                  submitId: 'submit-video',
+                  provider: 'dreamina',
+                  url: '/api/assets/generated/result.mp4',
+                  localPath: '/tmp/result.mp4',
+                  fileName: 'result.mp4',
+                  mimeType: 'video/mp4',
+                },
+              },
+            ]),
+            revision: workflow.revision + 1,
+            updatedAt: workflow.updatedAt + 1,
+          }
+          sendJson(res, 200, { claimed: 1, completed: 1, pending: 0, failed: 0 })
+          return
+        }
+        sendJson(res, 200, { claimed: 0, completed: 0, pending: 0, failed: 0 })
         return
       }
       sendJson(res, 404, { error: 'not found' })
@@ -184,10 +230,18 @@ describe('workflow CLI visual recovery', () => {
     workflow = createWorkflow([video])
 
     const query = await runCli(['visual', 'query', 'submit-video', '--node-kind=video'])
-    expect(query.result).toMatchObject({ taskStatus: 'success', url: '/api/assets/generated/result.mp4' })
+    expect(query.task).toMatchObject({
+      status: 'succeeded',
+      result: { taskStatus: 'success', url: '/api/assets/generated/result.mp4' },
+    })
 
     const recovery = await runCli(['workflow', 'recover', workflow.id, '--once'])
-    expect(recovery).toMatchObject({ ok: true, recoveredCount: 1, pendingCount: 0 })
+    expect(recovery).toMatchObject({
+      ok: true,
+      attempts: 1,
+      pendingCount: 0,
+      reconcile: { completed: 1 },
+    })
     expect(workflow.graph.nodes[0].data).toMatchObject({
       status: 'done',
       value: {

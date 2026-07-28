@@ -13,6 +13,7 @@
 - 上传本地素材到 `/api/upload-asset`
 - 调用 `/api/run-node`
 - 调用 `/api/run-visual-node`
+- 读取 `/api/visual-tasks` 中的服务端任务状态
 - 解析服务端 SSE 响应
 - 将接口失败转换成 `Error`
 
@@ -113,8 +114,14 @@ type RunNodePayload = {
   agentId: string
   node: MaterialNode
   upstream: MaterialNode[]
+  referencedNodes?: MaterialNode[]
   edges: WorkflowEdge[]
   prompt: string
+  messages?: Array<{ role: 'user' | 'assistant'; text: string }>
+  mode?: 'node' | 'chat'
+  workflowId?: string
+  workflowRevision?: number
+  baseUrl?: string
 }
 ```
 
@@ -122,16 +129,27 @@ type RunNodePayload = {
 
 - `node`: 当前要执行的节点
 - `upstream`: 当前节点的上游节点
+- `referencedNodes`: 对话中通过 `@` 显式引用的节点
 - `edges`: 当前工作流边
 - `prompt`: 用户输入的生成指令
+- `messages`: 当前消息之前的对话历史
+- `mode`: 节点执行或侧边栏对话模式
 - `agentId`: 文本 Agent 调用时需要；视觉模型调用会省略
 
 ### `RunNodeEvents`
 
-文本 Agent SSE 增量事件回调。
+文本 Agent SSE 事件回调。`onEvent` 接收完整运行事件，`onDelta` 保留为只关心正文增量时的快捷回调。
 
 ```ts
+type AgentRunEvent =
+  | { type: 'start'; agentId: string; bin: string; argv: string[] }
+  | { type: 'stderr'; text: string }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; code: number | null; output: string }
+  | { type: 'error'; message: string }
+
 type RunNodeEvents = {
+  onEvent?: (event: AgentRunEvent) => void
   onDelta?: (text: string) => void
 }
 ```
@@ -140,6 +158,9 @@ type RunNodeEvents = {
 
 ```ts
 await runNodeWithAgent(payload, {
+  onEvent: (event) => {
+    console.log('agent event:', event)
+  },
   onDelta: (text) => {
     console.log('partial output:', text)
   },
@@ -292,6 +313,8 @@ POST /api/run-node
   prompt: payload.prompt,
   currentNode: payload.node,
   upstream: payload.upstream,
+  referencedNodes: payload.referencedNodes,
+  messages: payload.messages,
   edges: payload.edges,
 }
 ```
@@ -308,6 +331,7 @@ const output = await runNodeWithAgent(
     prompt: '扩写成 60 秒短剧脚本',
   },
   {
+    onEvent: (event) => console.log(event.type),
     onDelta: (text) => console.log(text),
   },
 )
@@ -319,10 +343,12 @@ const output = await runNodeWithAgent(
 string
 ```
 
-它会解析服务端 SSE：
+它会解析并通过 `events.onEvent` 暴露完整服务端 SSE：
 
-- `delta`: 累加文本，并触发 `events.onDelta`
-- `done`: 使用最终 `output`
+- `start`: Agent 子进程已经启动
+- `stderr`: Agent 的运行日志或警告
+- `delta`: 累加文本，并额外触发 `events.onDelta`
+- `done`: 使用最终 `output`；非零退出码会抛出错误
 - `error`: 抛出错误
 
 如果服务端返回非 2xx，会优先读取 JSON 中的 `error` 字段。
@@ -342,6 +368,7 @@ POST /api/run-visual-node
 ```ts
 {
   modelId: payload.modelId ?? 'dreamina',
+  workflowId: payload.workflowId,
   nodeKind: payload.node.data.materialType,
   prompt: payload.prompt,
   currentNode: payload.node,
@@ -354,6 +381,7 @@ POST /api/run-visual-node
 
 ```ts
 const result = await runVisualNode({
+  workflowId,
   node: imageNode,
   upstream,
   edges,
@@ -366,6 +394,7 @@ const result = await runVisualNode({
 ```ts
 const result = await runVisualNode({
   modelId: 'dreamina',
+  workflowId,
   node: videoNode,
   upstream,
   edges,
@@ -389,6 +418,8 @@ VisualRunResult
 ```txt
 视觉模型没有返回结果
 ```
+
+拿到 `submitId` 后，任务由本地服务持久化并在后台继续查询。调用方不应再直接调用模型供应商轮询；需要观察状态时使用 `fetchVisualTaskBySubmitId()`，节点最终结果以工作流接口为准。
 
 ## 与 runtime 组合使用
 
@@ -417,5 +448,5 @@ const result = await runWorkflowNode(
 
 - `workflow-runtime`: 决定怎么执行节点
 - `workflow-client`: 负责实际请求本地服务
-- app store: 负责把结果写回 UI 状态
-
+- local backend: 持久化视觉任务并把终态结果写回工作流
+- app store: 负责展示服务端工作流状态

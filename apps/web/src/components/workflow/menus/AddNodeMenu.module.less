@@ -48,15 +48,15 @@
     font-size: 11px;
   }
 
-  &:hover:not(:disabled) {
+  &:hover:not([data-disabled]) {
     background: rgba(255, 255, 255, 0.08);
   }
 
-  &:disabled {
+  &[data-disabled] {
     cursor: default;
   }
 }
 
-.disabledItem {
+.item[data-disabled] {
   color: #9f9f9f;
 }

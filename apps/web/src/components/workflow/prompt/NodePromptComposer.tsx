@@ -1,14 +1,9 @@
-import { type Node, useViewport } from '@xyflow/react'
+import type { Node } from '@xyflow/react'
 import { ArrowUp, Bot, FileText, Image, Play, X } from 'lucide-react'
-import { type ElementType, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  getUpstreamNodes,
-  hasMaterialValue,
-  type MaterialNodeData,
-  type MaterialType,
-} from '@red-video-flow/workflow-core'
-import { useAgentsQuery, useVisualModelsQuery } from '../../../queries/workflowQueries'
-import { useWorkflowStore } from '../../../store/workflowStore'
+import type { ElementType } from 'react'
+import type { MaterialNodeData, MaterialType } from '@red-video-flow/workflow-core'
+import { useNodePromptComposer } from './NodePromptComposer.logic'
+import { NodePromptComposerPrimitive as Composer } from './NodePromptComposer.primitives'
 import styles from './NodePromptComposer.module.less'
 
 const icons: Record<MaterialType, ElementType> = {
@@ -27,172 +22,79 @@ type Props = {
   node: Node<MaterialNodeData, 'material'>
 }
 
+const stopPropagation = (event: React.SyntheticEvent) => event.stopPropagation()
+
 export function NodePromptComposer({ node }: Props) {
-  const viewport = useViewport()
-  const [prompt, setPrompt] = useState('')
-  const [visualModelLabel, setVisualModelLabel] = useState('即梦 Dreamina')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const agents = useWorkflowStore((state) => state.agents)
-  const nodes = useWorkflowStore((state) => state.nodes)
-  const edges = useWorkflowStore((state) => state.edges)
-  const selectedAgentId = useWorkflowStore((state) => state.selectedAgentId)
-  const agentStatus = useWorkflowStore((state) => state.agentStatus)
-  const applyAgentsResponse = useWorkflowStore((state) => state.applyAgentsResponse)
-  const setAgentQueryStatus = useWorkflowStore((state) => state.setAgentQueryStatus)
-  const selectAgent = useWorkflowStore((state) => state.selectAgent)
-  const closeComposer = useWorkflowStore((state) => state.closeComposer)
-  const runNode = useWorkflowStore((state) => state.runNode)
-  const isVisualNode = node.data.materialType === 'image' || node.data.materialType === 'video'
-  const agentsQuery = useAgentsQuery(!isVisualNode)
-  const visualModelsQuery = useVisualModelsQuery(isVisualNode)
-  const availableAgents = agents.filter((agent) => agent.invokable)
-  const sendDisabled = node.data.status === 'running' || !prompt.trim()
-  const inputMaterials = useMemo(
-    () => getUpstreamNodes(nodes, edges, node.id).filter(hasMaterialValue),
-    [edges, node.id, nodes],
-  )
-  const visibleInputMaterials = inputMaterials.slice(0, 3)
-  const hiddenInputMaterialCount = inputMaterials.length - visibleInputMaterials.length
-
-  const style = useMemo(() => {
-    const width = Math.max(node.width ?? 520, 520)
-    const height = 220
-    const gap = 34
-    const nodeHeight = node.height ?? 260
-    const visibleBottom = (window.innerHeight - viewport.y) / viewport.zoom
-    const belowY = node.position.y + nodeHeight + gap
-    const aboveY = Math.max(node.position.y - height - gap, 24)
-    const y = belowY + height > visibleBottom ? aboveY : belowY
-    const screenX = node.position.x * viewport.zoom + viewport.x
-    const screenY = y * viewport.zoom + viewport.y
-
-    return {
-      transform: `translate(${screenX}px, ${screenY}px) scale(${viewport.zoom})`,
-      transformOrigin: 'top left',
-      width,
-    }
-  }, [node.height, node.position.x, node.position.y, node.width, viewport.x, viewport.y, viewport.zoom])
-
-  const submit = async () => {
-    const value = prompt.trim()
-    if (!value) return
-    await runNode(node.id, value, selectedAgentId)
-    setPrompt('')
-  }
-
-  useEffect(() => {
-    if (isVisualNode) return
-    if (agentsQuery.isLoading) setAgentQueryStatus('loading')
-    if (agentsQuery.isError) {
-      setAgentQueryStatus('error', agentsQuery.error instanceof Error ? agentsQuery.error.message : String(agentsQuery.error))
-    }
-    if (agentsQuery.data) applyAgentsResponse(agentsQuery.data)
-  }, [
-    agentsQuery.data,
-    agentsQuery.error,
-    agentsQuery.isError,
-    agentsQuery.isLoading,
-    applyAgentsResponse,
-    isVisualNode,
-    setAgentQueryStatus,
-  ])
-
-  useEffect(() => {
-    if (!isVisualNode) return
-    const model = visualModelsQuery.data?.models.find((item) => item.invokable) ?? visualModelsQuery.data?.models[0]
-    if (model) setVisualModelLabel(model.label)
-    if (visualModelsQuery.isError) setVisualModelLabel('视觉模型')
-  }, [isVisualNode, visualModelsQuery.data, visualModelsQuery.isError])
-
-  useEffect(() => {
-    setPrompt('')
-  }, [node.id])
-
-  useEffect(() => {
-    const focusComposer = (event: Event) => {
-      const customEvent = event as CustomEvent<{ nodeId: string }>
-      if (customEvent.detail?.nodeId === node.id) {
-        textareaRef.current?.focus()
-      }
-    }
-
-    window.addEventListener('focus-node-composer', focusComposer)
-    return () => window.removeEventListener('focus-node-composer', focusComposer)
-  }, [node.id])
+  const composer = useNodePromptComposer(node)
 
   return (
-    <div
-      className={`${styles.composer} nodrag nopan`}
-      data-node-composer="true"
-      style={style}
-      onMouseDown={(event) => event.stopPropagation()}
-      onMouseUp={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-      onPointerUp={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
+    <Composer.Root
+      data-material-type={node.data.materialType}
+      data-state={node.data.status === 'running' ? 'running' : 'idle'}
+      style={{ width: Math.max(node.width ?? 520, 520) }}
+      onMouseDown={stopPropagation}
+      onMouseUp={stopPropagation}
+      onPointerDown={stopPropagation}
+      onPointerUp={stopPropagation}
+      onClick={stopPropagation}
+      onDoubleClick={stopPropagation}
     >
-      <button className={styles.closeButton} title="关闭" onClick={closeComposer}>
+      <Composer.Close onClick={composer.close}>
         <X size={20} />
-      </button>
-      {visibleInputMaterials.length > 0 ? (
-        <div className={styles.inputMaterials} aria-label="输入连接的物料">
-          {visibleInputMaterials.map((inputMaterial, index) => (
-            <div key={inputMaterial.id} className={styles.materialBadge} title={inputMaterial.data.title}>
+      </Composer.Close>
+      {composer.visibleInputMaterials.length > 0 ? (
+        <Composer.Materials>
+          {composer.visibleInputMaterials.map((inputMaterial, index) => (
+            <Composer.Material
+              key={inputMaterial.id}
+              data-material-type={inputMaterial.data.materialType}
+              title={inputMaterial.data.title}
+            >
               <span className={styles.counter}>{index + 1}</span>
               <MaterialPreview data={inputMaterial.data} />
-            </div>
+            </Composer.Material>
           ))}
-          {hiddenInputMaterialCount > 0 ? (
-            <div className={`${styles.materialBadge} ${styles.moreBadge}`}>+{hiddenInputMaterialCount}</div>
+          {composer.hiddenInputMaterialCount > 0 ? (
+            <Composer.Material data-overflow>
+              +{composer.hiddenInputMaterialCount}
+            </Composer.Material>
           ) : null}
-        </div>
+        </Composer.Materials>
       ) : null}
-      <textarea
-        ref={textareaRef}
-        className={`${styles.promptInput} nodrag nopan`}
-        value={prompt}
+      <Composer.Input
+        inputRef={composer.textareaRef}
+        value={composer.prompt}
         placeholder={placeholders[node.data.materialType]}
-        onMouseDown={(event) => event.stopPropagation()}
-        onMouseUp={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-        onPointerUp={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onContextMenu={(event) => event.stopPropagation()}
-        onChange={(event) => setPrompt(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) return
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            void submit()
-            return
-          }
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-            void submit()
-          }
-        }}
+        onMouseDown={stopPropagation}
+        onMouseUp={stopPropagation}
+        onPointerDown={stopPropagation}
+        onPointerUp={stopPropagation}
+        onClick={stopPropagation}
+        onDoubleClick={stopPropagation}
+        onContextMenu={stopPropagation}
+        onChange={(event) => composer.setPrompt(event.target.value)}
+        onKeyDown={composer.handleKeyDown}
       />
-      <footer className={styles.footer}>
+      <Composer.Footer>
         <div className={styles.footerMeta}>
-          {isVisualNode ? (
+          {composer.isVisualNode ? (
             <span className={styles.visualModel}>
               <Bot size={16} />
-              {visualModelLabel}
+              {composer.visualModelLabel}
             </span>
           ) : (
             <label className={styles.agentSelect}>
               <Bot size={16} />
               <select
-                value={selectedAgentId ?? ''}
-                disabled={agentStatus === 'loading' || availableAgents.length === 0}
-                onChange={(event) => selectAgent(event.target.value)}
+                value={composer.selectedAgentId ?? ''}
+                disabled={composer.agentStatus === 'loading' || composer.availableAgents.length === 0}
+                onChange={(event) => composer.selectAgent(event.target.value)}
                 aria-label="选择本地 Agent"
               >
-                {availableAgents.length === 0 ? (
-                  <option value="">{agentStatus === 'loading' ? '扫描中' : '本地 Agent'}</option>
+                {composer.availableAgents.length === 0 ? (
+                  <option value="">{composer.agentStatus === 'loading' ? '扫描中' : '本地 Agent'}</option>
                 ) : (
-                  availableAgents.map((agent) => (
+                  composer.availableAgents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
                       {agent.label}
                     </option>
@@ -203,21 +105,20 @@ export function NodePromptComposer({ node }: Props) {
           )}
         </div>
         <div className={styles.footerActions}>
-          <button
-            className={styles.sendButton}
-            aria-label="提交内容"
-            onPointerDown={(event) => event.stopPropagation()}
+          <Composer.Submit
+            data-disabled={composer.sendDisabled || undefined}
+            onPointerDown={stopPropagation}
             onClick={(event) => {
               event.stopPropagation()
-              void submit()
+              composer.submit()
             }}
-            disabled={sendDisabled}
+            disabled={composer.sendDisabled}
           >
             <ArrowUp size={24} />
-          </button>
+          </Composer.Submit>
         </div>
-      </footer>
-    </div>
+      </Composer.Footer>
+    </Composer.Root>
   )
 }
 
@@ -227,10 +128,8 @@ function MaterialPreview({ data }: { data: MaterialNodeData }) {
   if (data.materialType === 'image' && data.value.url) {
     return <img className={styles.materialPreview} src={data.value.url} alt={data.value.fileName ?? data.title} />
   }
-
   if (data.materialType === 'video' && data.value.url) {
     return <video className={styles.materialPreview} src={data.value.url} muted playsInline preload="metadata" />
   }
-
   return <Icon size={27} />
 }

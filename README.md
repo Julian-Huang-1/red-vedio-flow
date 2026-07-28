@@ -31,6 +31,7 @@ Red Video Flow 是一个本地优先的 AI 视频工作流工具。它把你已�
 - **本地 Agent 自动发现**：扫描 `PATH` 和常用安装目录，识别本机已安装的 Agent CLI。
 - **上下文自动注入**：执行节点时自动携带当前节点、上游素材、引用节点与最近对话。
 - **文本与视觉任务分流**：文本节点交给 Agent CLI，图片和视频节点交给视觉模型。
+- **视觉任务断点恢复**：服务端持久化 `submitId`、租约、重试和超时状态，页面刷新或服务重启后自动续查。
 - **可靠的节点回写**：记录 `start`、`heartbeat`、`complete`、`fail` 生命周期，使用 revision 避免并行更新互相覆盖。
 - **本地数据与素材管理**：工作流、运行记录和素材默认保存在本机 SQLite 与本地目录中。
 - **Web 与桌面端**：既可以在浏览器中开发运行，也可以构建 Electron 桌面应用。
@@ -40,7 +41,7 @@ Red Video Flow 是一个本地优先的 AI 视频工作流工具。它把你已�
 ```mermaid
 flowchart LR
     UI["可视化工作流编辑器"] --> SERVER["本地服务"]
-    SERVER --> DB[("SQLite 工作流与运行记录")]
+    SERVER --> DB[("SQLite 工作流、运行与视觉任务")]
     SERVER --> AGENT["本地 Agent CLI"]
     SERVER --> MODEL["视觉模型 CLI"]
     AGENT --> RESULT["文本节点结果"]
@@ -49,7 +50,7 @@ flowchart LR
     ASSET --> SERVER
 ```
 
-浏览器负责编辑体验，本地服务负责工作流、素材、Agent 进程和执行状态。工作流与素材默认保存在本机；实际模型请求是否离开本机，取决于你选择的 Agent CLI 和模型配置。
+浏览器负责编辑体验和读取工作流状态；本地服务是视觉任务轮询与节点结果回写的唯一执行者。工作流、任务状态与素材默认保存在本机；实际模型请求是否离开本机，取决于你选择的 Agent CLI 和模型配置。
 
 ## 快速开始
 
@@ -144,6 +145,8 @@ rvf workflow node run <workflowId> <nodeId> \
 
 正常执行优先使用 `workflow node run`。自定义外部执行器可以使用 `start`、`heartbeat`、`complete` 和 `fail` 原子命令接管节点生命周期。
 
+视觉节点提交成功后可以安全刷新页面。后台协调器会从 SQLite 中恢复任务并继续查询，Web 与 `rvf` 只读取服务端状态，不直接轮询模型供应商。
+
 ## 常用脚本
 
 | 命令 | 说明 |
@@ -188,6 +191,10 @@ apps/local-server/.data/
 ```
 
 可以通过 `RED_VIDEO_FLOW_DATA_DIR` 把数据目录指向其他位置。
+
+视觉任务默认每 5 秒协调一次，图片超时 10 分钟、视频超时 30 分钟。可通过
+`RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS`、`RED_VIDEO_FLOW_VISUAL_TASK_IMAGE_TIMEOUT_MS`、
+`RED_VIDEO_FLOW_VISUAL_TASK_VIDEO_TIMEOUT_MS` 和 `RED_VIDEO_FLOW_VISUAL_TASK_BATCH_SIZE` 调整。
 
 ## 开发状态
 

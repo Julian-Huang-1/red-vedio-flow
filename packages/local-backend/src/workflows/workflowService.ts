@@ -6,6 +6,7 @@ import {
   type WorkflowEdge,
   type WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
+import { isDeepStrictEqual } from 'node:util'
 import type { WorkflowRepository } from './workflowRepository.js'
 
 export type SaveWorkflowInput = {
@@ -64,11 +65,15 @@ export class WorkflowService {
     if (existing && input.baseRevision !== undefined) {
       assertRevision(input.baseRevision, existing.revision)
     }
+    const title = input.title ?? existing?.title ?? '未命名工作流'
+    if (existing && title === existing.title && isDeepStrictEqual(input.graph, existing.graph)) {
+      return existing
+    }
     const now = Date.now()
     const document: WorkflowDocument = {
       schemaVersion: 1,
       id: input.id,
-      title: input.title ?? existing?.title ?? '未命名工作流',
+      title,
       revision: existing ? nextRevision(existing.revision) : 1,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,

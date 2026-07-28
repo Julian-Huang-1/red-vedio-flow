@@ -1,4 +1,5 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const workflows = sqliteTable('workflows', {
   id: text('id').primaryKey(),
@@ -33,3 +34,33 @@ export const runs = sqliteTable('runs', {
   heartbeatAt: integer('heartbeat_at').notNull(),
   finishedAt: integer('finished_at'),
 })
+
+export const visualTasks = sqliteTable('visual_tasks', {
+  id: text('id').primaryKey(),
+  workflowId: text('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
+  nodeId: text('node_id').notNull(),
+  provider: text('provider').notNull(),
+  nodeKind: text('node_kind').notNull(),
+  submitId: text('submit_id'),
+  status: text('status').notNull(),
+  attemptCount: integer('attempt_count').notNull(),
+  nextPollAt: integer('next_poll_at').notNull(),
+  timeoutAt: integer('timeout_at').notNull(),
+  leaseOwner: text('lease_owner'),
+  leaseExpiresAt: integer('lease_expires_at'),
+  lastError: text('last_error'),
+  resultJson: text('result_json'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  completedAt: integer('completed_at'),
+  projectedAt: integer('projected_at'),
+}, (table) => [
+  uniqueIndex('idx_visual_tasks_provider_submit')
+    .on(table.provider, table.submitId)
+    .where(sql`${table.submitId} IS NOT NULL`),
+  uniqueIndex('idx_visual_tasks_active_node')
+    .on(table.workflowId, table.nodeId)
+    .where(sql`${table.status} IN ('submitting', 'polling')`),
+  index('idx_visual_tasks_due').on(table.status, table.nextPollAt),
+  index('idx_visual_tasks_node').on(table.workflowId, table.nodeId),
+])

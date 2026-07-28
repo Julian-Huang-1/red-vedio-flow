@@ -34,6 +34,23 @@ textarea {
   box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.92);
 }
 
+.react-flow__pane {
+  cursor: default;
+}
+
+[data-panning] .react-flow__pane {
+  cursor: grabbing;
+}
+
+.react-flow__node {
+  cursor: grab;
+}
+
+.react-flow__node.dragging,
+.react-flow__node.dragging * {
+  cursor: grabbing !important;
+}
+
 .react-flow__handle::before,
 .react-flow__handle::after {
   position: absolute;

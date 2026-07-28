@@ -68,4 +68,49 @@ describe('WorkflowService', () => {
       }),
     ).toThrow('workflow revision conflict')
   })
+
+  it('does not advance the revision for an identical full save', () => {
+    const localBackend = createBackend()
+    const workflow = localBackend.workflows.create({ title: 'Stable workflow' })
+
+    const saved = localBackend.workflows.save({
+      id: workflow.id,
+      title: workflow.title,
+      baseRevision: workflow.revision,
+      graph: workflow.graph,
+    })
+
+    expect(saved).toEqual(workflow)
+    expect(localBackend.workflows.get(workflow.id)?.revision).toBe(workflow.revision)
+  })
+
+  it('persists visual submission metadata through the server-owned task service', () => {
+    const localBackend = createBackend()
+    const workflow = localBackend.workflows.create()
+    const videoNode = createMaterialNode({
+      id: 'video-1',
+      materialType: 'video',
+      position: { x: 10, y: 20 },
+      title: 'Video node',
+    })
+    const withNode = localBackend.workflows.patch({
+      id: workflow.id,
+      baseRevision: workflow.revision,
+      ops: [{ type: 'addNode', node: videoNode }],
+    })
+    const task = localBackend.visualTasks.start({
+      workflowId: workflow.id,
+      nodeId: videoNode.id,
+      provider: 'dreamina',
+      nodeKind: 'video',
+    })
+
+    const submitted = localBackend.visualTasks.markSubmitted(task.id, 'submit-1')
+    const updatedWorkflow = localBackend.workflows.get(workflow.id)
+
+    expect(withNode.graph.nodes[0].data.status).toBe('empty')
+    expect(submitted.status).toBe('polling')
+    expect(updatedWorkflow?.graph.nodes[0].data.status).toBe('running')
+    expect(updatedWorkflow?.graph.nodes[0].data.value.submitId).toBe('submit-1')
+  })
 })

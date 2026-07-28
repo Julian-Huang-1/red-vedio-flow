@@ -1,7 +1,7 @@
 import { Clock3, HelpCircle, Library, Plus, Sparkles, UserRound } from 'lucide-react'
-import { useReactFlow } from '@xyflow/react'
-import { useWorkflowStore, type CanvasPanel } from '../../store/workflowStore'
-import styles from './BottomToolbar.module.less'
+import type { CanvasPanel } from '../../store/workflowStore'
+import { useBottomToolbar } from './BottomToolbar.logic'
+import { BottomToolbarPrimitive as Toolbar } from './BottomToolbar.primitives'
 
 const tools: Array<{ panel: CanvasPanel; label: string; icon: React.ElementType }> = [
   { panel: 'toolbox', label: '工具箱', icon: Sparkles },
@@ -12,43 +12,38 @@ const tools: Array<{ panel: CanvasPanel; label: string; icon: React.ElementType 
 ]
 
 export function BottomToolbar() {
-  const { screenToFlowPosition } = useReactFlow()
-  const activePanel = useWorkflowStore((state) => state.activeCanvasPanel)
-  const openAddNodeMenu = useWorkflowStore((state) => state.openAddNodeMenu)
-  const toggleCanvasPanel = useWorkflowStore((state) => state.toggleCanvasPanel)
-
-  const handleAddClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation()
-    const screen = { x: window.innerWidth / 2, y: Math.max(120, window.innerHeight / 2 - 140) }
-    openAddNodeMenu(screen, screenToFlowPosition(screen))
-  }
+  const toolbar = useBottomToolbar()
 
   return (
-    <nav
-      className={styles.toolbar}
-      aria-label="工作流工具栏"
+    <Toolbar.Root
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <button className={styles.primaryButton} title="添加节点" onClick={handleAddClick}>
+      <Toolbar.PrimaryAction
+        title="添加节点"
+        onClick={(event) => {
+          event.stopPropagation()
+          toolbar.addNode()
+        }}
+      >
         <Plus size={23} />
-      </button>
-      <div className={styles.toolGroup}>
+      </Toolbar.PrimaryAction>
+      <Toolbar.Group>
         {tools.map((tool) => {
           const Icon = tool.icon
           return (
-            <button
+            <Toolbar.Tool
               key={tool.panel}
-              className={activePanel === tool.panel ? styles.activeTool : styles.toolButton}
+              active={toolbar.activePanel === tool.panel}
               title={tool.label}
-              onClick={() => toggleCanvasPanel(tool.panel)}
+              onClick={() => toolbar.toggleCanvasPanel(tool.panel)}
             >
               <Icon size={20} />
-            </button>
+            </Toolbar.Tool>
           )
         })}
-      </div>
-    </nav>
+      </Toolbar.Group>
+    </Toolbar.Root>
   )
 }

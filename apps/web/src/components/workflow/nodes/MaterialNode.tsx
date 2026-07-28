@@ -1,8 +1,10 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { FileText, Image, Play } from 'lucide-react'
-import { type ElementType, useEffect, useRef } from 'react'
+import type { ElementType } from 'react'
 import { acceptedMimeTypes, type MaterialNodeData, type MaterialType } from '@red-video-flow/workflow-core'
-import { useWorkflowStore } from '../../../store/workflowStore'
+import { NodePromptComposer } from '../prompt/NodePromptComposer'
+import { useMaterialNode } from './MaterialNode.logic'
+import { MaterialNodePrimitive as NodeUi } from './MaterialNode.primitives'
 import styles from './MaterialNode.module.less'
 
 const icons: Record<MaterialType, ElementType> = {
@@ -25,111 +27,40 @@ const statusLabel: Record<MaterialNodeData['status'], string> = {
   error: '异常',
 }
 
-const textStarterActions = [
-  '自己编写内容',
-  '文生视频',
-  '图片反推提示词',
-  '文字生音乐',
-]
+const textStarterActions = ['自己编写内容', '文生视频', '图片反推提示词', '文字生音乐']
 
-export function MaterialNode({ id, data, selected }: NodeProps<MaterialNodeData>) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const attachFile = useWorkflowStore((state) => state.attachFileToNode)
-  const selectNode = useWorkflowStore((state) => state.selectNode)
-  const beginEditNode = useWorkflowStore((state) => state.beginEditNode)
-  const editingNodeId = useWorkflowStore((state) => state.editingNodeId)
-  const updateTextNode = useWorkflowStore((state) => state.updateTextNode)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+type MaterialFlowNode = Node<MaterialNodeData, 'material'>
+
+export function MaterialNode({ id, data, selected }: NodeProps<MaterialFlowNode>) {
+  const materialNode = useMaterialNode({ id, data })
   const Icon = icons[data.materialType]
-  const canUpload = data.materialType === 'image' || data.materialType === 'video'
-  const isTextEditing = data.materialType === 'text' && editingNodeId === id
-  const lastPointerDownAtRef = useRef(0)
-
-  const enterTextEdit = () => {
-    beginEditNode(id)
-    window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('focus-node-composer', { detail: { nodeId: id } }))
-    }, 0)
-  }
-
-  const handleBodyPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (data.materialType !== 'text') return
-
-    const now = window.performance.now()
-    const isFastSecondClick = now - lastPointerDownAtRef.current < 360
-    lastPointerDownAtRef.current = now
-
-    if (!isFastSecondClick) return
-    event.stopPropagation()
-    enterTextEdit()
-  }
-
-  const handleNodeMouseDownCapture = (event: React.MouseEvent<HTMLElement>) => {
-    if (data.materialType !== 'text' || event.detail < 2) return
-    event.stopPropagation()
-    enterTextEdit()
-  }
-
-  const handleNodeDoubleClickCapture = (event: React.MouseEvent<HTMLElement>) => {
-    if (data.materialType !== 'text') return
-    event.stopPropagation()
-    enterTextEdit()
-  }
-
-  const handleBodyClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (data.materialType === 'text' && event.detail > 1) return
-    selectNode(id)
-  }
-
-  const handleBodyDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (canUpload && !data.value.url) {
-      event.stopPropagation()
-      inputRef.current?.click()
-      return
-    }
-
-    if (data.materialType !== 'text') return
-    event.stopPropagation()
-    enterTextEdit()
-  }
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) attachFile(id, file)
-    event.target.value = ''
-  }
-
-  useEffect(() => {
-    if (isTextEditing) {
-      window.setTimeout(() => textareaRef.current?.focus(), 0)
-    }
-  }, [isTextEditing])
 
   return (
-    <article
-      className={`${styles.nodeWrap} ${selected ? styles.selected : ''}`}
-      onMouseDownCapture={handleNodeMouseDownCapture}
-      onDoubleClickCapture={handleNodeDoubleClickCapture}
+    <NodeUi.Root
+      selected={selected}
+      data-material-type={data.materialType}
+      data-status={data.status}
+      data-editing={materialNode.isTextEditing || undefined}
+      onMouseDownCapture={materialNode.handleNodeMouseDownCapture}
+      onDoubleClickCapture={materialNode.handleNodeDoubleClickCapture}
     >
-      <div className={styles.title}>
+      <NodeUi.Title>
         <Icon size={20} />
         <span>{data.title}</span>
-        <span className={styles.status}>{statusLabel[data.status]}</span>
-      </div>
+        <NodeUi.Status>{statusLabel[data.status]}</NodeUi.Status>
+      </NodeUi.Title>
 
-      <div
-        className={styles.body}
-        onPointerDown={handleBodyPointerDown}
-        onClick={handleBodyClick}
-        onDoubleClick={handleBodyDoubleClick}
+      <NodeUi.Body
+        onPointerDown={materialNode.handleBodyPointerDown}
+        onClick={materialNode.handleBodyClick}
+        onDoubleClick={materialNode.handleBodyDoubleClick}
       >
-        {isTextEditing ? (
-          <textarea
-            ref={textareaRef}
-            className={`${styles.inlineEditor} nodrag nopan`}
+        {materialNode.isTextEditing ? (
+          <NodeUi.Editor
+            editorRef={materialNode.textareaRef}
             value={data.value.text ?? ''}
             placeholder="输入文本内容"
-            onChange={(event) => updateTextNode(id, event.target.value)}
+            onChange={(event) => materialNode.updateText(event.target.value)}
             onMouseDown={(event) => event.stopPropagation()}
             onMouseUp={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
@@ -139,35 +70,43 @@ export function MaterialNode({ id, data, selected }: NodeProps<MaterialNodeData>
             onContextMenu={(event) => event.stopPropagation()}
           />
         ) : (
-          renderNodeBody(data, Icon, data.materialType === 'text' ? enterTextEdit : undefined)
+          <MaterialNodeBody data={data} icon={Icon} onTextStarterClick={materialNode.enterTextEdit} />
         )}
-      </div>
+      </NodeUi.Body>
 
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
 
-      {canUpload ? (
-        <input
-          ref={inputRef}
-          className="hidden"
-          type="file"
+      {materialNode.canUpload ? (
+        <NodeUi.FileInput
+          inputRef={materialNode.inputRef}
           accept={acceptedMimeTypes[data.materialType]?.join(',')}
-          onChange={handleFileChange}
+          onChange={materialNode.handleFileChange}
         />
       ) : null}
-    </article>
+
+      {materialNode.shouldShowComposer && materialNode.node ? (
+        <NodePromptComposer node={materialNode.node} />
+      ) : null}
+    </NodeUi.Root>
   )
 }
 
-function renderNodeBody(data: MaterialNodeData, Icon: ElementType, onTextStarterClick?: () => void) {
+function MaterialNodeBody({
+  data,
+  icon: Icon,
+  onTextStarterClick,
+}: {
+  data: MaterialNodeData
+  icon: ElementType
+  onTextStarterClick: () => void
+}) {
   if (data.materialType === 'text' && data.value.text) {
     return <p className={styles.textPreview}>{data.value.text}</p>
   }
 
   if (data.materialType === 'image' && data.value.url) {
-    return (
-      <img className={styles.mediaPreview} src={data.value.url} alt={data.value.fileName ?? '图片素材'} />
-    )
+    return <img className={styles.mediaPreview} src={data.value.url} alt={data.value.fileName ?? '图片素材'} />
   }
 
   if (data.materialType === 'video' && data.value.url) {
@@ -206,7 +145,7 @@ function renderNodeBody(data: MaterialNodeData, Icon: ElementType, onTextStarter
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation()
-                onTextStarterClick?.()
+                onTextStarterClick()
               }}
             >
               {action}

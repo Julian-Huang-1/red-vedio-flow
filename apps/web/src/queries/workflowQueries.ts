@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Edge } from '@xyflow/react'
 import type { WorkflowDocument } from '@red-video-flow/workflow-core'
 import {
   createWorkflow,
@@ -8,9 +7,7 @@ import {
   fetchVisualModels,
   fetchWorkflow,
   fetchWorkflows,
-  saveWorkflow,
 } from '@red-video-flow/workflow-client'
-import { toMaterialNode, type FlowNode } from '../workflowPresentation'
 
 export const workflowQueryKeys = {
   agents: ['agents'] as const,
@@ -42,11 +39,13 @@ export function useVisualModelsQuery(enabled = true) {
   })
 }
 
-export function useWorkflowQuery(workflowId: string) {
+export function useWorkflowQuery(workflowId: string, refetchWhileRunning = false) {
   return useQuery({
     queryKey: workflowQueryKeys.workflow(workflowId),
     queryFn: () => fetchWorkflow(workflowId),
     enabled: Boolean(workflowId),
+    refetchInterval: refetchWhileRunning ? 5_000 : false,
+    refetchIntervalInBackground: refetchWhileRunning,
   })
 }
 
@@ -76,37 +75,6 @@ export function useDeleteWorkflowMutation() {
         current?.filter((workflow) => workflow.id !== workflowId),
       )
       void queryClient.invalidateQueries({ queryKey: workflowQueryKeys.workflows })
-    },
-  })
-}
-
-export type SaveWorkflowInput = {
-  workflowId: string
-  workflowTitle: string
-  workflowRevision: number
-  nodes: FlowNode[]
-  edges: Edge[]
-}
-
-export function useSaveWorkflowMutation() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: ({ workflowId, workflowTitle, workflowRevision, nodes, edges }: SaveWorkflowInput) =>
-      saveWorkflow({
-        id: workflowId,
-        title: workflowTitle,
-        baseRevision: workflowRevision,
-        graph: {
-          nodes: nodes.map(toMaterialNode),
-          edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
-        },
-      }),
-    onSuccess: (workflow) => {
-      queryClient.setQueryData<WorkflowDocument>(workflowQueryKeys.workflow(workflow.id), workflow)
-      queryClient.setQueryData<WorkflowDocument[]>(workflowQueryKeys.workflows, (current) =>
-        current?.map((item) => (item.id === workflow.id ? workflow : item)),
-      )
     },
   })
 }

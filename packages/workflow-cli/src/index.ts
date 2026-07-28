@@ -5,15 +5,16 @@ import {
   createHttpTransport,
   failWorkflowNodeRun,
   fetchLocalAgents,
+  fetchVisualTaskBySubmitId,
   fetchWorkflow,
   fetchWorkflows,
   heartbeatWorkflowNodeRun,
   patchWorkflow,
-  queryVisualTask,
+  reconcileVisualTasks,
   runNodeWithAgent,
   runVisualNode,
   startWorkflowNodeRun,
-  type VisualRunResult,
+  type VisualTaskRecord,
 } from '@red-video-flow/workflow-client'
 import {
   createGeneratedValue,
@@ -103,7 +104,7 @@ async function main() {
   }
 
   if (command === 'recover') {
-    await recoverVisualNodes(args[0], parsed.flags, options)
+    await recoverVisualNodes(args[0], parsed.flags)
     return
   }
   if (command === 'node') {
@@ -287,11 +288,9 @@ async function runEdgeCommand(args: string[], flags: ParsedArgs['flags'], option
 async function runVisualCommand(command: string | undefined, args: string[], flags: ParsedArgs['flags']) {
   if (command !== 'query') throw new Error(`unknown visual command: ${command ?? ''}`)
   const submitId = required(args[0] ?? readStringFlag(flags['submit-id']), 'submitId')
-  const nodeKind = readMaterialTypeFlag(flags['node-kind'])
   const wait = readBooleanFlag(flags.wait, false)
-  const outcome = await pollVisualTask({
+  const outcome = await waitForVisualTask({
     submitId,
-    nodeKind,
     wait,
     pollIntervalMs: readPollInterval(flags),
     timeoutMs: readTimeout(flags),
@@ -301,176 +300,85 @@ async function runVisualCommand(command: string | undefined, args: string[], fla
     submitId,
     attempts: outcome.attempts,
     timedOut: outcome.timedOut,
-    terminal: !isPendingVisualTask(outcome.result),
-    result: outcome.result,
+    terminal: isTerminalVisualTask(outcome.task),
+    task: outcome.task,
   })
 }
 
-type VisualPollOutcome = {
-  result: VisualRunResult
+type VisualTaskWaitOutcome = {
+  task: VisualTaskRecord
   attempts: number
   timedOut: boolean
 }
 
-type VisualRecoveryQuery = {
-  workflowId: string
-  nodeId: string
-  nodeKind: MaterialType
+async function waitForVisualTask(input: {
   submitId: string
-  outcome?: VisualPollOutcome
-  error?: string
-}
-
-async function pollVisualTask(input: {
-  submitId: string
-  nodeKind?: MaterialType
   wait: boolean
   pollIntervalMs: number
   timeoutMs: number
-}): Promise<VisualPollOutcome> {
+}): Promise<VisualTaskWaitOutcome> {
   const startedAt = Date.now()
   let attempts = 0
 
   while (true) {
     attempts += 1
-    const result = await queryVisualTask({ submitId: input.submitId, nodeKind: input.nodeKind })
-    if (!isPendingVisualTask(result) || !input.wait) {
-      return { result, attempts, timedOut: false }
+    const { task } = await fetchVisualTaskBySubmitId(input.submitId)
+    if (isTerminalVisualTask(task) || !input.wait) {
+      return { task, attempts, timedOut: false }
     }
 
     const elapsed = Date.now() - startedAt
     if (elapsed >= input.timeoutMs) {
-      return { result, attempts, timedOut: true }
+      return { task, attempts, timedOut: true }
     }
     await delay(Math.min(input.pollIntervalMs, input.timeoutMs - elapsed))
   }
 }
 
-function isPendingVisualTask(result: VisualRunResult) {
-  if (result.url || result.taskStatus === 'success' || result.taskStatus === 'failed') return false
-  return result.taskStatus === 'querying' || result.taskStatus === 'unknown' || result.taskStatus === undefined
+function isTerminalVisualTask(task: VisualTaskRecord) {
+  return ['succeeded', 'failed', 'timed_out', 'cancelled'].includes(task.status)
 }
 
-async function recoverVisualNodes(workflowId: string | undefined, flags: ParsedArgs['flags'], options: CliOptions) {
-  const workflows = workflowId
-    ? [await fetchWorkflow(workflowId)]
-    : (await fetchWorkflows()).workflows
-  const candidates = workflows.flatMap((workflow) =>
-    workflow.graph.nodes
-      .filter((node) =>
-        (node.data.materialType === 'image' || node.data.materialType === 'video')
-        && node.data.status === 'running'
-        && node.data.value.submitId
-        && (!node.data.value.provider || node.data.value.provider === 'dreamina'),
-      )
-      .map((node) => ({
-        workflowId: workflow.id,
-        nodeId: node.id,
-        nodeKind: node.data.materialType,
-        submitId: node.data.value.submitId as string,
-      })),
-  )
-
-  if (!candidates.length) {
-    printJson({ ok: true, recoveredCount: 0, pendingCount: 0, results: [] })
-    return
-  }
-
+async function recoverVisualNodes(workflowId: string | undefined, flags: ParsedArgs['flags']) {
   const wait = !readBooleanFlag(flags.once, false)
   const pollIntervalMs = readPollInterval(flags)
   const timeoutMs = readTimeout(flags)
-  const queried: VisualRecoveryQuery[] = await Promise.all(
-    candidates.map(async (candidate) => {
-      try {
-        return {
-          ...candidate,
-          outcome: await pollVisualTask({
-            submitId: candidate.submitId,
-            nodeKind: candidate.nodeKind,
-            wait,
-            pollIntervalMs,
-            timeoutMs,
-          }),
-        }
-      } catch (error) {
-        return {
-          ...candidate,
-          error: error instanceof Error ? error.message : String(error),
-        }
-      }
-    }),
-  )
+  const startedAt = Date.now()
+  let attempts = 0
 
-  const updates: Array<{ workflowId: string; nodeId: string; status: NodeStatus }> = []
-  for (const workflow of workflows) {
-    const terminal = queried.filter(
-      (item) => item.workflowId === workflow.id && item.outcome && !isPendingVisualTask(item.outcome.result),
+  while (true) {
+    attempts += 1
+    const reconcile = await reconcileVisualTasks()
+    const workflows = workflowId
+      ? [await fetchWorkflow(workflowId)]
+      : (await fetchWorkflows()).workflows
+    const pending = workflows.flatMap((workflow) =>
+      workflow.graph.nodes
+        .filter((node) =>
+          node.data.status === 'running'
+          && (node.data.materialType === 'image' || node.data.materialType === 'video')
+          && Boolean(node.data.value.submitId),
+        )
+        .map((node) => ({
+          workflowId: workflow.id,
+          nodeId: node.id,
+          submitId: node.data.value.submitId,
+        })),
     )
-    if (!terminal.length) continue
-
-    const latest = await fetchWorkflow(workflow.id)
-    const ops: WorkflowPatchOperation[] = []
-    for (const item of terminal) {
-      const node = latest.graph.nodes.find((candidate) => candidate.id === item.nodeId)
-      if (!node || node.data.status !== 'running' || node.data.value.submitId !== item.submitId) continue
-
-      const result = item.outcome!.result
-      const succeeded = result.taskStatus === 'success' && Boolean(result.url)
-      const status: NodeStatus = succeeded ? 'done' : 'error'
-      const message = succeeded
-        ? `视觉任务 ${item.submitId} 已恢复并完成。`
-        : result.failReason || (result.taskStatus === 'success'
-          ? `视觉任务 ${item.submitId} 已成功，但没有返回可用媒体。`
-          : `视觉任务 ${item.submitId} 失败${result.genStatus ? `：${result.genStatus}` : ''}。`)
-      const value: MaterialValue = succeeded
-        ? {
-            ...node.data.value,
-            text: undefined,
-            url: result.url,
-            localPath: result.localPath,
-            fileName: result.fileName,
-            mimeType: result.mimeType,
-          }
-        : {
-            ...node.data.value,
-            text: message,
-          }
-
-      ops.push(
-        { type: 'setNodeStatus', nodeId: node.id, status },
-        { type: 'setNodeValue', nodeId: node.id, value },
-        { type: 'appendNodeMessage', nodeId: node.id, message: createMessage('assistant', message) },
-      )
-      updates.push({ workflowId: workflow.id, nodeId: node.id, status })
-    }
-    if (ops.length) {
-      await patchWorkflow(workflow.id, {
-        baseRevision: options.baseRevision ?? latest.revision,
-        ops,
+    const elapsed = Date.now() - startedAt
+    if (!pending.length || !wait || elapsed >= timeoutMs) {
+      printJson({
+        ok: true,
+        attempts,
+        timedOut: Boolean(pending.length && wait && elapsed >= timeoutMs),
+        pendingCount: pending.length,
+        pending,
+        reconcile,
       })
+      return
     }
+    await delay(Math.min(pollIntervalMs, timeoutMs - elapsed))
   }
-
-  const results = queried.map((item) => ({
-    workflowId: item.workflowId,
-    nodeId: item.nodeId,
-    submitId: item.submitId,
-    attempts: item.outcome?.attempts ?? 0,
-    timedOut: item.outcome?.timedOut ?? false,
-    taskStatus: item.outcome?.result.taskStatus,
-    genStatus: item.outcome?.result.genStatus,
-    error: item.error,
-    recovered: updates.some((update) => update.workflowId === item.workflowId && update.nodeId === item.nodeId),
-  }))
-  const pendingCount = results.filter((item) =>
-    !item.recovered && (item.error || item.taskStatus === 'querying' || item.taskStatus === 'unknown'),
-  ).length
-  printJson({
-    ok: true,
-    recoveredCount: updates.length,
-    pendingCount,
-    results,
-  })
 }
 
 async function runWorkflowNodeFromCli(
@@ -500,7 +408,6 @@ async function runWorkflowNodeFromCli(
       upstream,
       prompt,
       flags,
-      options,
     })
     heartbeat.stop()
 
@@ -539,28 +446,18 @@ async function executeNode(input: {
   upstream: MaterialNode[]
   prompt: string
   flags: ParsedArgs['flags']
-  options: CliOptions
 }) {
-  const { workflow, node, upstream, prompt, flags, options } = input
+  const { workflow, node, upstream, prompt, flags } = input
 
   if (node.data.materialType === 'image' || node.data.materialType === 'video') {
-    let result = await runVisualNode({
+    const result = await runVisualNode({
       node,
       upstream,
       edges: workflow.graph.edges,
       prompt,
       modelId: readStringFlag(flags['model-id']),
+      workflowId: workflow.id,
     })
-    if (!result.url && result.submitId && !readBooleanFlag(flags['no-wait'], false) && isPendingVisualTask(result)) {
-      const outcome = await pollVisualTask({
-        submitId: result.submitId,
-        nodeKind: node.data.materialType,
-        wait: true,
-        pollIntervalMs: readPollInterval(flags),
-        timeoutMs: readTimeout(flags),
-      })
-      result = outcome.result
-    }
     if (result.taskStatus === 'failed') {
       throw new Error(result.failReason || `视觉任务失败${result.genStatus ? `：${result.genStatus}` : ''}`)
     }
@@ -568,7 +465,9 @@ async function executeNode(input: {
       throw new Error('视觉任务已成功，但没有返回可用媒体')
     }
     const status: 'done' | 'running' = result.url ? 'done' : 'running'
-    const message = result.url ? '已通过视觉模型生成素材。' : result.text || `已提交视觉生成任务${result.submitId ? `：${result.submitId}` : ''}`
+    const message = result.url
+      ? `视觉任务 ${result.submitId ?? node.id} 已完成。`
+      : `已提交视觉生成任务${result.submitId ? `：${result.submitId}` : ''}`
     return {
       status,
       value: {
@@ -792,11 +691,11 @@ function printHelp() {
       },
       {
         command: 'rvf workflow node run <workflowId> <nodeId> --prompt "..." --model-id dreamina',
-        purpose: 'Run an image/video node and keep polling asynchronous visual tasks until a terminal status or timeout.',
+        purpose: 'Submit an image/video node. The local server owns durable polling and writes the terminal result back.',
       },
       {
         command: 'rvf workflow recover [workflowId]',
-        purpose: 'Find saved running visual nodes with submitId values and recover them automatically.',
+        purpose: 'Ask the local server to reconcile durable visual tasks and optionally wait for workflow completion.',
       },
     ],
     readCommands: [
@@ -827,11 +726,11 @@ function printHelp() {
       'rvf workflow node fail <workflowId> <nodeId> --run-id <runId> --message "..."',
     ],
     visualRecovery: {
-      queryOnce: 'rvf visual query <submitId>',
+      queryOnce: 'rvf visual query <submitId> (reads server-owned task state)',
       queryUntilTerminal: 'rvf visual query <submitId> --wait [--poll-interval-ms 5000] [--timeout-ms 600000]',
       recoverSavedNodes: 'rvf workflow recover [workflowId] [--poll-interval-ms 5000] [--timeout-ms 600000]',
       recoverOnce: 'rvf workflow recover [workflowId] --once',
-      disableRunWaiting: 'Add --no-wait to workflow node run to keep the previous submit-only behavior.',
+      ownership: 'Provider polling is performed only by the local server.',
     },
     guidance: [
       'Prefer workflow node run for normal agent work.',

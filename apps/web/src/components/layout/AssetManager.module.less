@@ -40,11 +40,11 @@
   will-change: transform, opacity;
 }
 
-.panelOpen {
+.panel[data-state='open'] {
   animation: panelIn 220ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
 }
 
-.panelClosed {
+.panel[data-state='closed'] {
   pointer-events: none;
   animation: panelOut 200ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
@@ -151,14 +151,14 @@
   }
 }
 
-.activeTab {
+.tabs button[data-active] {
   color: #fff !important;
   background: #343434 !important;
 }
 
 .controls {
   display: grid;
-  grid-template-columns: 1fr 64px 36px;
+  grid-template-columns: auto 64px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   padding: 14px 12px 12px;
@@ -189,12 +189,12 @@
 }
 
 .searchBox {
-  width: 36px;
-  justify-content: center;
+  min-width: 0;
+  justify-content: flex-start;
 
   input {
-    width: 0;
-    flex: 0;
+    width: 100%;
+    flex: 1;
   }
 }
 
@@ -324,8 +324,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panelOpen,
-  .panelClosed {
+  .panel[data-state='open'],
+  .panel[data-state='closed'] {
     animation-duration: 1ms;
   }
 }

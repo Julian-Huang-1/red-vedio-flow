@@ -1,15 +1,10 @@
 import type { ButtonHTMLAttributes, FormHTMLAttributes, HTMLAttributes } from 'react'
+import { dataBoolean } from '../../../ui/dataAttributes'
 import styles from '../../../App.module.less'
-
-type DataBoolean = true | undefined
 
 type HeaderActionVariant = 'challenge' | 'market' | 'member'
 type HeroCardTone = 'orange' | 'blue' | 'mono'
 type StartActionVariant = 'primary' | 'secondary'
-
-function dataBoolean(value?: boolean): DataBoolean {
-  return value ? true : undefined
-}
 
 export const StartHeaderPrimitive = {
   Root(props: HTMLAttributes<HTMLElement>) {

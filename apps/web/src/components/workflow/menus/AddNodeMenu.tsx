@@ -1,8 +1,8 @@
 import { Clapperboard, FileText, Image, Library, Mic2, PanelsTopLeft, ScrollText, Video } from 'lucide-react'
 import type { ElementType } from 'react'
-import { useWorkflowStore } from '../../../store/workflowStore'
 import type { MaterialType } from '@red-video-flow/workflow-core'
-import styles from './AddNodeMenu.module.less'
+import { useAddNodeMenu } from './AddNodeMenu.logic'
+import { AddNodeMenuPrimitive as Menu } from './AddNodeMenu.primitives'
 
 type NodeItem = {
   materialType?: MaterialType
@@ -23,55 +23,50 @@ const nodeItems: NodeItem[] = [
 ]
 
 export function AddNodeMenu() {
-  const menu = useWorkflowStore((state) => state.addNodeMenu)
-  const createNode = useWorkflowStore((state) => state.createNode)
+  const menu = useAddNodeMenu()
 
-  if (!menu.open) return null
+  if (!menu.isOpen) return null
 
   return (
-    <div
-      className={styles.menu}
+    <Menu.Root
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      style={{
-        left: Math.min(menu.screenX, window.innerWidth - 280),
-        top: Math.min(menu.screenY, window.innerHeight - 520),
-      }}
+      style={menu.position}
     >
-      <p className={styles.sectionTitle}>添加节点</p>
-      <div className={styles.itemList}>
+      <Menu.SectionTitle>添加节点</Menu.SectionTitle>
+      <Menu.ItemList>
         {nodeItems.map((item) => {
           const Icon = item.icon
           return (
-            <button
+            <Menu.Item
               key={item.label}
-              className={`${styles.item} ${item.materialType ? '' : styles.disabledItem}`}
+              unavailable={!item.materialType}
               onClick={() => {
-                if (item.materialType) createNode(item.materialType)
+                if (item.materialType) menu.createNode(item.materialType)
               }}
               disabled={!item.materialType}
             >
               <Icon size={22} />
               <span>{item.label}</span>
               {item.tag ? <small>{item.tag}</small> : null}
-            </button>
+            </Menu.Item>
           )
         })}
-      </div>
-      <p className={styles.sectionTitle}>添加资源</p>
-      <div className={styles.itemList}>
-        <button className={styles.item} disabled>
+      </Menu.ItemList>
+      <Menu.SectionTitle>添加资源</Menu.SectionTitle>
+      <Menu.ItemList>
+        <Menu.Item unavailable disabled>
           <Image size={22} />
           <span>上传</span>
           <small>节点内可用</small>
-        </button>
-        <button className={styles.item} disabled>
+        </Menu.Item>
+        <Menu.Item unavailable disabled>
           <Library size={22} />
           <span>从生成历史选择</span>
           <small>即将支持</small>
-        </button>
-      </div>
-    </div>
+        </Menu.Item>
+      </Menu.ItemList>
+    </Menu.Root>
   )
 }

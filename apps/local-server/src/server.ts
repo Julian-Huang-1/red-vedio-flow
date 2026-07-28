@@ -2,18 +2,50 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { dirname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { WorkflowConflictError, WorkflowRunError, contentTypeFor, createLocalBackend } from '@red-video-flow/local-backend'
+import {
+  VisualTaskCoordinator,
+  WorkflowConflictError,
+  WorkflowRunError,
+  contentTypeFor,
+  createLocalBackend,
+} from '@red-video-flow/local-backend'
 
 const serverDir = dirname(fileURLToPath(import.meta.url))
 const appDir = join(serverDir, '..')
 const dataDir = process.env.RED_VIDEO_FLOW_DATA_DIR ?? join(appDir, '.data')
 const distDir = resolve(process.env.RED_VIDEO_FLOW_WEB_DIST_DIR ?? join(appDir, '../web/dist'))
-const backend = createLocalBackend({ dataDir, cwd: process.cwd() })
 const workspaceRoot = resolve(appDir, '../..')
 const rvfCliCommand = process.env.RVF_CLI_COMMAND ?? 'pnpm --filter @red-video-flow/workflow-cli start --'
 const runTimeoutMs = Number(process.env.RED_VIDEO_FLOW_RUN_TIMEOUT_MS ?? 120_000)
 const runReaperIntervalMs = Number(process.env.RED_VIDEO_FLOW_RUN_REAPER_INTERVAL_MS ?? 30_000)
+const visualTaskIntervalMs = Number(process.env.RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS ?? 5_000)
+const visualTaskBatchSize = Number(process.env.RED_VIDEO_FLOW_VISUAL_TASK_BATCH_SIZE ?? 4)
+const visualTaskImageTimeoutMs = Number(process.env.RED_VIDEO_FLOW_VISUAL_TASK_IMAGE_TIMEOUT_MS ?? 10 * 60_000)
+const visualTaskVideoTimeoutMs = Number(process.env.RED_VIDEO_FLOW_VISUAL_TASK_VIDEO_TIMEOUT_MS ?? 30 * 60_000)
+const visualTaskLeaseDurationMs = Number(process.env.RED_VIDEO_FLOW_VISUAL_TASK_LEASE_DURATION_MS ?? 60_000)
+const backend = createLocalBackend({
+  dataDir,
+  cwd: process.cwd(),
+  visualTaskOptions: {
+    pollIntervalMs: visualTaskIntervalMs,
+    imageTimeoutMs: visualTaskImageTimeoutMs,
+    videoTimeoutMs: visualTaskVideoTimeoutMs,
+    leaseDurationMs: visualTaskLeaseDurationMs,
+  },
+})
 let runReaperTimer: NodeJS.Timeout | undefined
+const visualTaskCoordinator = new VisualTaskCoordinator(backend.visualTasks, {
+  intervalMs: visualTaskIntervalMs,
+  batchSize: visualTaskBatchSize,
+  onResult: (result) => {
+    if (result.completed || result.failed) {
+      console.log(`[red-video-flow] visual tasks completed=${result.completed} failed=${result.failed} pending=${result.pending}`)
+    }
+  },
+  onError: (error) => {
+    console.warn(`[red-video-flow] visual task coordinator failed: ${error instanceof Error ? error.message : String(error)}`)
+  },
+})
 
 function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.writeHead(status, {
@@ -112,6 +144,38 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && pathname === '/api/visual-models') {
       sendJson(res, 200, backend.visual.listModels())
+      return
+    }
+
+    if (req.method === 'GET' && pathname === '/api/visual-tasks') {
+      const provider = url.searchParams.get('provider') ?? 'dreamina'
+      const submitId = url.searchParams.get('submitId')?.trim()
+      if (!submitId) {
+        sendJson(res, 400, { error: 'submitId is required' })
+        return
+      }
+      const task = backend.visualTasks.findBySubmitId(provider, submitId)
+      if (!task) {
+        sendJson(res, 404, { error: 'visual task not found' })
+        return
+      }
+      sendJson(res, 200, { task })
+      return
+    }
+
+    if (req.method === 'GET' && pathname.startsWith('/api/visual-tasks/')) {
+      const taskId = decodeURIComponent(pathname.slice('/api/visual-tasks/'.length))
+      const task = backend.visualTasks.get(taskId)
+      if (!task) {
+        sendJson(res, 404, { error: 'visual task not found' })
+        return
+      }
+      sendJson(res, 200, { task })
+      return
+    }
+
+    if (req.method === 'POST' && pathname === '/api/visual-tasks/reconcile') {
+      sendJson(res, 200, await visualTaskCoordinator.tick())
       return
     }
 
@@ -280,6 +344,18 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req)
       const runId = `${Date.now()}-${Math.round(Math.random() * 10000)}`
       const downloadDir = join(backend.assets.generatedDir, runId)
+      const workflowId = typeof body.workflowId === 'string' ? body.workflowId : undefined
+      const nodeId = typeof body.currentNode?.id === 'string' ? body.currentNode.id : undefined
+      const nodeKind = body.nodeKind === 'image' || body.nodeKind === 'video' ? body.nodeKind : undefined
+      const visualTask = workflowId && nodeId && nodeKind
+        ? backend.visualTasks.start({
+            workflowId,
+            nodeId,
+            provider: body.modelId ?? 'dreamina',
+            nodeKind,
+          })
+        : undefined
+      let taskRegistrationError: unknown
 
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -296,35 +372,42 @@ const server = http.createServer(async (req, res) => {
           upstream: body.upstream,
           downloadDir,
           assetUrlForPath: (filePath) => backend.assets.assetUrlForPath(filePath),
-          onEvent: (event) => writeSse(res, event),
+          onEvent: (event) => {
+            if (visualTask && event.type === 'meta') {
+              try {
+                backend.visualTasks.markSubmitted(visualTask.id, event.submitId)
+              } catch (error) {
+                taskRegistrationError = error
+              }
+            }
+            writeSse(res, event)
+          },
         })
         .then((result) => {
+          if (taskRegistrationError) throw taskRegistrationError
+          if (visualTask) backend.visualTasks.recordInitialResult(visualTask.id, result)
           writeSse(res, { type: 'done', result })
           res.end()
         })
         .catch((error) => {
+          const persistedTask = visualTask
+            ? backend.visualTasks.failSubmission(visualTask.id, error)
+            : undefined
+          if (persistedTask?.status === 'polling') {
+            writeSse(res, {
+              type: 'done',
+              result: {
+                submitId: persistedTask.submitId,
+                taskStatus: 'querying',
+                failReason: error instanceof Error ? error.message : String(error),
+              },
+            })
+            res.end()
+            return
+          }
           writeSse(res, { type: 'error', message: error instanceof Error ? error.message : String(error) })
           res.end()
         })
-      return
-    }
-
-    if (req.method === 'POST' && pathname === '/api/query-visual-task') {
-      const body = await readJson(req)
-      const submitId = typeof body.submitId === 'string' ? body.submitId.trim() : ''
-      if (!submitId || !/^[a-zA-Z0-9._-]+$/.test(submitId)) {
-        sendJson(res, 400, { error: 'valid submitId is required' })
-        return
-      }
-
-      const downloadDir = join(backend.assets.generatedDir, `task-${submitId}`)
-      const result = await backend.visual.query({
-        submitId,
-        nodeKind: typeof body.nodeKind === 'string' ? body.nodeKind : undefined,
-        downloadDir,
-        assetUrlForPath: (filePath) => backend.assets.assetUrlForPath(filePath),
-      })
-      sendJson(res, 200, result)
       return
     }
 
@@ -406,18 +489,23 @@ export async function startLocalServer(
       console.log(`[red-video-flow] local server listening on ${url}`)
       console.log(`[red-video-flow] data dir: ${dataDir}`)
       console.log(`[red-video-flow] run timeout: ${runTimeoutMs}ms, reaper interval: ${runReaperIntervalMs}ms`)
+      console.log(`[red-video-flow] visual task interval: ${visualTaskIntervalMs}ms, batch size: ${visualTaskBatchSize}`)
+      console.log(`[red-video-flow] visual task timeout: image=${visualTaskImageTimeoutMs}ms, video=${visualTaskVideoTimeoutMs}ms`)
       if (!existsSync(join(distDir, 'index.html'))) {
         console.warn(`[red-video-flow] web app not found at ${distDir}`)
       }
       startRunReaper()
+      visualTaskCoordinator.start()
       return {
         port,
         url,
-        close: () =>
-          new Promise<void>((resolveClose, reject) => {
-            stopRunReaper()
+        close: async () => {
+          stopRunReaper()
+          await visualTaskCoordinator.stop()
+          await new Promise<void>((resolveClose, reject) => {
             server.close((error) => (error ? reject(error) : resolveClose()))
-          }),
+          })
+        },
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error

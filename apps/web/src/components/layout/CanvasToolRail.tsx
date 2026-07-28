@@ -1,5 +1,7 @@
 import { Boxes, ImagePlus, Sparkles } from 'lucide-react'
-import { useWorkflowStore, type CanvasPanel } from '../../store/workflowStore'
+import type { CanvasPanel } from '../../store/workflowStore'
+import { useCanvasToolRail } from './CanvasToolRail.logic'
+import { CanvasToolRailPrimitive as Panel } from './CanvasToolRail.primitives'
 import styles from './CanvasToolRail.module.less'
 
 const presets = [
@@ -23,24 +25,23 @@ const shortcutRows = [
 ]
 
 export function CanvasToolRail() {
-  const activePanel = useWorkflowStore((state) => state.activeCanvasPanel)
-  const closeCanvasPanel = useWorkflowStore((state) => state.closeCanvasPanel)
+  const panel = useCanvasToolRail()
+
+  if (!panel.activePanel) return null
 
   return (
-    activePanel ? (
-        <aside
-          className={styles.panel}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <div className={styles.panelHeader}>
-            <h2>{panelTitle[activePanel]}</h2>
-            <button title="关闭" onClick={closeCanvasPanel}>×</button>
-          </div>
-          <PanelContent panel={activePanel} />
-        </aside>
-    ) : null
+    <Panel.Root
+      data-panel={panel.activePanel}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <Panel.Header>
+        <h2>{panelTitle[panel.activePanel]}</h2>
+        <Panel.Close onClick={panel.close}>×</Panel.Close>
+      </Panel.Header>
+      <PanelContent panel={panel.activePanel} />
+    </Panel.Root>
   )
 }
 

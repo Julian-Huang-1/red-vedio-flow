@@ -97,4 +97,29 @@ describe('VisualService query', () => {
     })
     expect(result.url).toBeUndefined()
   })
+
+  it('returns immediately after submission and leaves provider polling to the coordinator', async () => {
+    const root = installFakeDreamina({
+      submit_id: 'submit-3',
+      gen_status: 'querying',
+    })
+    const events: Array<{ type: string; submitId?: string }> = []
+
+    const result = await new VisualService().invoke({
+      modelId: 'dreamina',
+      nodeKind: 'video',
+      prompt: 'test prompt',
+      downloadDir: join(root, 'downloads'),
+      assetUrlForPath: () => '/unused',
+      onEvent: (event) => events.push(event),
+    })
+
+    expect(result).toMatchObject({
+      submitId: 'submit-3',
+      taskStatus: 'querying',
+      genStatus: 'querying',
+    })
+    expect(events).toContainEqual({ type: 'meta', submitId: 'submit-3' })
+    expect(result.url).toBeUndefined()
+  })
 })

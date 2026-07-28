@@ -56,9 +56,39 @@ function migrate(sqlite: Database.Database) {
       FOREIGN KEY (workflow_id) REFERENCES workflows(id)
     );
 
+    CREATE TABLE IF NOT EXISTS visual_tasks (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      node_kind TEXT NOT NULL,
+      submit_id TEXT,
+      status TEXT NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_poll_at INTEGER NOT NULL,
+      timeout_at INTEGER NOT NULL,
+      lease_owner TEXT,
+      lease_expires_at INTEGER,
+      last_error TEXT,
+      result_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      projected_at INTEGER,
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);
     CREATE INDEX IF NOT EXISTS idx_runs_node_id ON runs(node_id);
     CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_visual_tasks_provider_submit
+      ON visual_tasks(provider, submit_id)
+      WHERE submit_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_visual_tasks_active_node
+      ON visual_tasks(workflow_id, node_id)
+      WHERE status IN ('submitting', 'polling');
+    CREATE INDEX IF NOT EXISTS idx_visual_tasks_due ON visual_tasks(status, next_poll_at);
+    CREATE INDEX IF NOT EXISTS idx_visual_tasks_node ON visual_tasks(workflow_id, node_id);
   `)
 
   const columns = sqlite.prepare(`PRAGMA table_info(workflows)`).all() as Array<{ name: string }>
