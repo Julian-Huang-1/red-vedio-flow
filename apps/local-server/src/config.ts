@@ -14,6 +14,7 @@ export type LocalServerOptions = {
   webMode?: 'static' | 'vite' | 'none'
   viteRoot?: string
   distribution?: 'source' | 'electron'
+  maasApiKey?: string
 }
 
 export type LocalServerConfig = {
@@ -38,6 +39,7 @@ export type LocalServerConfig = {
   pluginRequestTimeoutMs: number
   pluginShutdownGraceMs: number
   pluginDirs: string[]
+  maasApiKey: string
 }
 
 const sourceDir = dirname(fileURLToPath(import.meta.url))
@@ -80,6 +82,9 @@ export function resolveLocalServerConfig(
     webMode: options.webMode ?? readWebMode(env.RED_VIDEO_FLOW_WEB_MODE),
     viteRoot: resolve(options.viteRoot ?? env.RED_VIDEO_FLOW_VITE_ROOT ?? join(workspaceRoot, 'apps/web')),
     distribution: options.distribution ?? 'source',
+    maasApiKey: options.maasApiKey
+      ?? env.RED_VIDEO_FLOW_MAAS_API_KEY
+      ?? 'MAASfd018690923149bc890e003129024aee',
     runTimeoutMs: readNumber(env.RED_VIDEO_FLOW_RUN_TIMEOUT_MS, 120_000, 'run timeout'),
     runReaperIntervalMs: readNumber(env.RED_VIDEO_FLOW_RUN_REAPER_INTERVAL_MS, 30_000, 'run reaper interval'),
     visualTaskIntervalMs: readNumber(env.RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS, 5_000, 'visual task interval'),

@@ -11,12 +11,14 @@ import { AgentRegistry } from './agentRegistry.js'
 import { AgentRegistrationTokens } from './agentRegistrationTokens.js'
 import { AgentModelUpdateTokens } from './agentModelUpdateTokens.js'
 import { RuntimeInfoStore } from './runtimeInfo.js'
+import { PiAgentService } from './piAgentService.js'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
   const agentRegistry = new AgentRegistry(config.dataDir)
   const agentRegistrationTokens = new AgentRegistrationTokens()
   const agentModelUpdateTokens = new AgentModelUpdateTokens()
   const runtimeInfo = new RuntimeInfoStore(config.runtimeFilePath)
+  const piAgent = new PiAgentService(config.cwd, config.dataDir, config.maasApiKey)
   const plugins = new PluginManager({
     pluginDirs: config.pluginDirs,
     requestTimeoutMs: config.pluginRequestTimeoutMs,
@@ -91,6 +93,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     agentRegistrationTokens,
     agentModelUpdateTokens,
     runtimeInfo,
+    piAgent,
     backend,
     plugins,
     executions,
@@ -108,6 +111,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
         stopRunReaper()
         await executions.close()
         await visualTasks.stop()
+        await piAgent.close()
         await plugins.close()
         backend.database.sqlite.close()
       })()

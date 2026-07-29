@@ -13,6 +13,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.82.1",
     "@red-video-flow/local-backend": "workspace:*",
     "@red-video-flow/plugin-contract": "workspace:*",
     "@red-video-flow/workflow-core": "workspace:*"

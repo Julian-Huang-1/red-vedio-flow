@@ -13,6 +13,8 @@ import { handleRunRoutes } from './routes/runRoutes.js'
 import { handleStaticRoutes } from './routes/staticRoutes.js'
 import { handleChatRoutes } from './routes/chatRoutes.js'
 import { handleWorkflowAppRoutes } from './routes/workflowAppRoutes.js'
+import { handleDefaultModelRoutes } from './routes/defaultModelRoutes.js'
+import { handlePiAgentRoutes } from './routes/piAgentRoutes.js'
 
 type RequestHandlerOptions = {
   webFallback?: (req: IncomingMessage, res: ServerResponse) => void
@@ -41,6 +43,8 @@ export function createRequestHandler(
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`)
       const context = { req, res, url, pathname: url.pathname }
       const handlers = [
+        handlePiAgentRoutes,
+        handleDefaultModelRoutes,
         handlePluginRoutes,
         handleDiscoveryRoutes,
         handleWorkflowRoutes,
