@@ -1,11 +1,6 @@
-import { AgentComposer } from './AgentComposer'
-import { AgentDrawerHeader } from './AgentDrawerHeader'
 import { useAgentDrawer } from './AgentDrawer.logic'
 import { AgentDrawerPrimitive as Drawer } from './AgentDrawer.primitives'
-import { AgentMessageList } from './AgentMessageList'
-import { AgentSkillPicker } from './AgentSkillPicker'
-
-const skillSuggestions = ['皮克斯动画广告', '爆款拉片复刻', '新中式美学TVC', '古典武侠电影全流程导演']
+import { ExtensionSlot } from '../../extension-system/ExtensionSlot'
 
 export function AgentDrawer() {
   const drawer = useAgentDrawer()
@@ -19,21 +14,14 @@ export function AgentDrawer() {
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <AgentDrawerHeader onClose={drawer.close} />
-      <AgentMessageList messages={drawer.messages} isActive={drawer.isOpen} />
-      <AgentSkillPicker suggestions={skillSuggestions} />
-      <AgentComposer
-        value={drawer.prompt}
-        nodes={drawer.nodes}
-        agents={drawer.agents}
-        agentStatus={drawer.agentStatus}
-        selectedAgentId={drawer.selectedAgentId}
-        hasSelectedNode={drawer.hasSelectedNode}
-        isSending={drawer.isSending}
-        onChange={drawer.setPrompt}
-        onAgentChange={drawer.selectAgent}
-        onSubmit={drawer.submit}
-      />
+      <ExtensionSlot name="agent.drawer.header" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.messages" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.context" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.composer.before" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.composer" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.composer.actions" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.status" slotProps={{ drawer }} />
+      <ExtensionSlot name="agent.drawer.footer" slotProps={{ drawer }} />
     </Drawer.Root>
   )
 }

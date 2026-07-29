@@ -6,8 +6,8 @@ import { WorkflowService } from './workflows/workflowService.js'
 import { RunRepository } from './runs/runRepository.js'
 import { RunService } from './runs/runService.js'
 import { AssetService } from './assets/assetService.js'
-import { AgentService } from './agents/service.js'
-import { VisualService } from './visual/service.js'
+import { AgentPromptService } from './agents/prompt.js'
+import { UnavailableVisualService, type VisualServiceContract } from './visual/service.js'
 import { VisualTaskRepository } from './visual/taskRepository.js'
 import { VisualTaskService, type VisualTaskServiceOptions } from './visual/taskService.js'
 
@@ -15,6 +15,7 @@ export type CreateLocalBackendOptions = {
   dataDir: string
   cwd?: string
   visualTaskOptions?: VisualTaskServiceOptions
+  visual?: VisualServiceContract
 }
 
 export function createLocalBackend(options: CreateLocalBackendOptions) {
@@ -24,7 +25,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
   const workflows = new WorkflowService(workflowRepository)
   const runRepository = new RunRepository(database)
   const assets = new AssetService(options.dataDir)
-  const visual = new VisualService()
+  const visual = options.visual ?? new UnavailableVisualService()
   const visualTaskRepository = new VisualTaskRepository(database)
   const visualTasks = new VisualTaskService(
     visualTaskRepository,
@@ -41,7 +42,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     workflows,
     runs: new RunService(runRepository, workflows),
     assets,
-    agents: new AgentService(),
+    prompts: new AgentPromptService(),
     visual,
     visualTasks,
   }

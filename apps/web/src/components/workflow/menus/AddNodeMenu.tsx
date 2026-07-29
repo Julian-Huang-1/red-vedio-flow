@@ -1,26 +1,6 @@
-import { Clapperboard, FileText, Image, Library, Mic2, PanelsTopLeft, ScrollText, Video } from 'lucide-react'
-import type { ElementType } from 'react'
-import type { MaterialType } from '@red-video-flow/workflow-core'
+import { Image, Library } from 'lucide-react'
 import { useAddNodeMenu } from './AddNodeMenu.logic'
 import { AddNodeMenuPrimitive as Menu } from './AddNodeMenu.primitives'
-
-type NodeItem = {
-  materialType?: MaterialType
-  label: string
-  icon: ElementType
-  tag?: string
-}
-
-const nodeItems: NodeItem[] = [
-  { materialType: 'text', label: '文本', icon: FileText },
-  { materialType: 'image', label: '图片', icon: Image },
-  { materialType: 'video', label: '视频', icon: Video },
-  { label: '视频合成', icon: Clapperboard, tag: 'Beta' },
-  { label: '导演台', icon: PanelsTopLeft, tag: 'New' },
-  { label: '音频', icon: Mic2, tag: '即将支持' },
-  { label: '脚本', icon: ScrollText, tag: '即将支持' },
-  { label: '素材库', icon: Library, tag: 'New' },
-]
 
 export function AddNodeMenu() {
   const menu = useAddNodeMenu()
@@ -36,20 +16,15 @@ export function AddNodeMenu() {
     >
       <Menu.SectionTitle>添加节点</Menu.SectionTitle>
       <Menu.ItemList>
-        {nodeItems.map((item) => {
-          const Icon = item.icon
+        {menu.nodeTypes.map((nodeType) => {
+          const Icon = nodeType.icon
           return (
             <Menu.Item
-              key={item.label}
-              unavailable={!item.materialType}
-              onClick={() => {
-                if (item.materialType) menu.createNode(item.materialType)
-              }}
-              disabled={!item.materialType}
+              key={nodeType.id}
+              onClick={() => menu.createNode(nodeType.materialType)}
             >
               <Icon size={22} />
-              <span>{item.label}</span>
-              {item.tag ? <small>{item.tag}</small> : null}
+              <span>{nodeType.menuLabel}</span>
             </Menu.Item>
           )
         })}

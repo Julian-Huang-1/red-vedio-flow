@@ -56,6 +56,22 @@ function migrate(sqlite: Database.Database) {
       FOREIGN KEY (workflow_id) REFERENCES workflows(id)
     );
 
+    CREATE TABLE IF NOT EXISTS executions (
+      id TEXT PRIMARY KEY,
+      plugin_id TEXT NOT NULL,
+      contribution_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      input_json TEXT,
+      result_json TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      started_at INTEGER,
+      finished_at INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS visual_tasks (
       id TEXT PRIMARY KEY,
       workflow_id TEXT NOT NULL,
@@ -81,6 +97,8 @@ function migrate(sqlite: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);
     CREATE INDEX IF NOT EXISTS idx_runs_node_id ON runs(node_id);
     CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
+    CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+    CREATE INDEX IF NOT EXISTS idx_executions_plugin ON executions(plugin_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_visual_tasks_provider_submit
       ON visual_tasks(provider, submit_id)
       WHERE submit_id IS NOT NULL;

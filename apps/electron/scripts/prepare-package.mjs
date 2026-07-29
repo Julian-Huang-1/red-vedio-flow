@@ -28,6 +28,7 @@ await mkdir(stageDir, { recursive: true })
 await mkdir(resolve(stageDir, 'dist'), { recursive: true })
 await cp(resolve(electronDir, 'dist/main.js'), resolve(stageDir, 'dist/main.js'))
 await cp(resolve(repoRoot, 'apps/web/dist'), resolve(stageDir, 'web-dist'), { recursive: true })
+await cp(resolve(repoRoot, 'plugins'), resolve(stageDir, 'builtin-plugins'), { recursive: true })
 
 const stagePackage = {
   name: sourcePackage.name,
@@ -46,7 +47,10 @@ const stagePackage = {
     asar: sourcePackage.build.asar,
     asarUnpack: sourcePackage.build.asarUnpack,
     files: sourcePackage.build.files,
-    extraResources: [{ from: 'web-dist', to: 'web-dist' }],
+    extraResources: [
+      { from: 'web-dist', to: 'web-dist' },
+      { from: 'builtin-plugins', to: 'builtin-plugins' },
+    ],
     directories: { output: resolve(electronDir, 'release') },
     mac: sourcePackage.build.mac,
     win: sourcePackage.build.win,

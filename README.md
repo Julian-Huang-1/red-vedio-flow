@@ -29,6 +29,7 @@ Red Video Flow 是一个本地优先的 AI 视频工作流工具。它把你已�
 
 - **可视化素材工作流**：使用文本、图片、视频节点组织创作过程与依赖关系。
 - **本地 Agent 自动发现**：扫描 `PATH` 和常用安装目录，识别本机已安装的 Agent CLI。
+- **进程级插件系统**：Agent、视觉模型、命令、节点执行器和后台任务通过独立进程注册，单个插件故障不会拖垮本地服务。
 - **上下文自动注入**：执行节点时自动携带当前节点、上游素材、引用节点与最近对话。
 - **文本与视觉任务分流**：文本节点交给 Agent CLI，图片和视频节点交给视觉模型。
 - **视觉任务断点恢复**：服务端持久化 `submitId`、租约、重试和超时状态，页面刷新或服务重启后自动续查。
@@ -42,8 +43,9 @@ Red Video Flow 是一个本地优先的 AI 视频工作流工具。它把你已�
 flowchart LR
     UI["可视化工作流编辑器"] --> SERVER["本地服务"]
     SERVER --> DB[("SQLite 工作流、运行与视觉任务")]
-    SERVER --> AGENT["本地 Agent CLI"]
-    SERVER --> MODEL["视觉模型 CLI"]
+    SERVER --> PLUGINS["插件宿主（JSON-RPC / NDJSON）"]
+    PLUGINS --> AGENT["Agent CLI 插件"]
+    PLUGINS --> MODEL["视觉模型 / API 插件"]
     AGENT --> RESULT["文本节点结果"]
     MODEL --> ASSET["图片 / 视频素材"]
     RESULT --> SERVER
@@ -110,6 +112,8 @@ export GEMINI_BIN=/path/to/gemini
 
 视觉节点当前接入即梦 Dreamina CLI，覆盖文生图、图生图、文生视频、图生视频、多帧生视频和图片放大等能力。
 
+Agent CLI 与 Dreamina 已从核心服务迁移为内置进程插件。第三方视觉 API 可以通过独立插件接入，Token 可配置在本机 `plugin.json` 的 `secrets` 中。完整契约见[后端插件开发](docs/backend-plugins.md)。
+
 ## Workflow CLI
 
 `rvf` 面向开发者和 Agent，输出稳定 JSON。它可以读取工作流、查询上下游节点、增量修改节点，以及完整执行一个文本或视觉节点。
@@ -141,6 +145,11 @@ rvf workflow node run <workflowId> <nodeId> \
 rvf workflow node run <workflowId> <nodeId> \
   --prompt "电影感火星基地，纵向构图" \
   --model-id dreamina
+
+# 查看并调用插件命令
+rvf plugin list
+rvf command list
+rvf command run <commandId> --input '{"prompt":"..."}' --follow
 ```
 
 正常执行优先使用 `workflow node run`。自定义外部执行器可以使用 `start`、`heartbeat`、`complete` 和 `fail` 原子命令接管节点生命周期。
@@ -175,7 +184,11 @@ red-vedio-flow/
 │   ├── workflow-client/   # 浏览器侧 HTTP / SSE client
 │   ├── workflow-runtime/  # 文本 Agent / 视觉模型执行策略
 │   ├── workflow-cli/      # rvf 工作流 CLI
-│   └── local-backend/     # SQLite、工作流、素材与 Agent 服务
+│   ├── local-backend/     # SQLite、工作流、素材、插件宿主与执行管理
+│   ├── plugin-contract/   # 插件 manifest、JSON-RPC 与能力契约
+│   └── plugin-sdk/        # Node.js 插件开发辅助库
+├── plugins/               # 内置进程插件
+├── docs/                  # 架构与插件开发文档
 └── tests/                 # 端到端测试
 ```
 

@@ -1,18 +1,29 @@
 #!/usr/bin/env tsx
+import { readFileSync } from 'node:fs'
 import {
+  cancelPluginExecution,
   configureWorkflowClient,
   completeWorkflowNodeRun,
   createHttpTransport,
   failWorkflowNodeRun,
   fetchLocalAgents,
+  fetchPlugin,
+  fetchPluginCommand,
+  fetchPluginCommands,
+  fetchPluginExecution,
+  fetchPluginHealth,
+  fetchPlugins,
   fetchVisualTaskBySubmitId,
   fetchWorkflow,
   fetchWorkflows,
   heartbeatWorkflowNodeRun,
+  followPluginExecution,
   patchWorkflow,
   reconcileVisualTasks,
+  reloadPlugin,
   runNodeWithAgent,
   runVisualNode,
+  startPluginCommandExecution,
   startWorkflowNodeRun,
   type VisualTaskRecord,
 } from '@red-video-flow/workflow-client'
@@ -80,6 +91,18 @@ async function main() {
     await runVisualCommand(command, args, parsed.flags)
     return
   }
+  if (scope === 'plugin') {
+    await runPluginCommand(command, args)
+    return
+  }
+  if (scope === 'command') {
+    await runRegisteredCommand(command, args, parsed.flags)
+    return
+  }
+  if (scope === 'execution') {
+    await runExecutionCommand(command, args, parsed.flags)
+    return
+  }
   if (scope !== 'workflow') throw new Error(`unknown scope: ${scope}`)
 
   if (command === 'list') {
@@ -116,6 +139,89 @@ async function main() {
     return
   }
   throw new Error(`unknown workflow command: ${command}`)
+}
+
+async function runPluginCommand(command: string | undefined, args: string[]) {
+  if (command === 'list') {
+    printJson({ ok: true, ...(await fetchPlugins()) })
+    return
+  }
+  const pluginId = required(args[0], 'pluginId')
+  if (command === 'inspect') {
+    printJson({ ok: true, ...(await fetchPlugin(pluginId)) })
+    return
+  }
+  if (command === 'health') {
+    printJson({ ok: true, ...(await fetchPluginHealth(pluginId)) })
+    return
+  }
+  if (command === 'reload') {
+    printJson({ ok: true, ...(await reloadPlugin(pluginId)) })
+    return
+  }
+  throw new Error(`unknown plugin command: ${command ?? ''}`)
+}
+
+async function runRegisteredCommand(
+  command: string | undefined,
+  args: string[],
+  flags: ParsedArgs['flags'],
+) {
+  if (command === 'list') {
+    printJson({ ok: true, ...(await fetchPluginCommands()) })
+    return
+  }
+
+  const commandId = required(args[0], 'commandId')
+  if (command === 'describe') {
+    printJson({ ok: true, ...(await fetchPluginCommand(commandId)) })
+    return
+  }
+  if (command !== 'run') throw new Error(`unknown command operation: ${command ?? ''}`)
+
+  const input = readJsonInput(flags)
+  const started = await startPluginCommandExecution(
+    commandId,
+    input,
+    readNumberFlag(flags['timeout-ms']),
+  )
+  if (!readBooleanFlag(flags.follow, false)) {
+    printJson({ ok: true, execution: started.execution })
+    return
+  }
+
+  await followPluginExecution(started.execution.id, (event) => {
+    process.stdout.write(`${JSON.stringify({ type: 'execution-event', event })}\n`)
+  })
+  const completed = await fetchPluginExecution(started.execution.id)
+  printJson({ ok: completed.execution.status === 'succeeded', execution: completed.execution })
+  if (completed.execution.status !== 'succeeded') process.exitCode = 1
+}
+
+async function runExecutionCommand(
+  command: string | undefined,
+  args: string[],
+  flags: ParsedArgs['flags'],
+) {
+  const executionId = required(args[0], 'executionId')
+  if (command === 'get') {
+    printJson({ ok: true, ...(await fetchPluginExecution(executionId)) })
+    return
+  }
+  if (command === 'cancel') {
+    printJson({ ok: true, ...(await cancelPluginExecution(executionId)) })
+    return
+  }
+  if (command === 'follow') {
+    await followPluginExecution(executionId, (event) => {
+      process.stdout.write(`${JSON.stringify({ type: 'execution-event', event })}\n`)
+    }, {
+      afterSequence: readNumberFlag(flags.after),
+    })
+    printJson({ ok: true, ...(await fetchPluginExecution(executionId)) })
+    return
+  }
+  throw new Error(`unknown execution command: ${command ?? ''}`)
 }
 
 async function runNodeCommand(args: string[], flags: ParsedArgs['flags'], options: CliOptions) {
@@ -643,6 +749,19 @@ function readMaterialTypeFlag(value: string | true | undefined) {
   return materialType
 }
 
+function readJsonInput(flags: ParsedArgs['flags']) {
+  const inline = readStringFlag(flags.input)
+  const filePath = readStringFlag(flags['input-file'])
+  if (inline && filePath) throw new Error('use either --input or --input-file, not both')
+  const raw = filePath ? readFileSync(filePath, 'utf8') : inline
+  if (raw === undefined) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new Error('plugin command input must be valid JSON')
+  }
+}
+
 function readPollInterval(flags: ParsedArgs['flags']) {
   const value = readNumberFlag(flags['poll-interval-ms']) ?? defaultPollIntervalMs
   if (value <= 0) throw new Error('poll-interval-ms must be greater than 0')
@@ -704,6 +823,19 @@ function printHelp() {
       'rvf workflow upstream <workflowId> <nodeId>',
       'rvf workflow node get <workflowId> <nodeId>',
       'rvf visual query <submitId> [--node-kind image|video] [--wait]',
+    ],
+    pluginCommands: [
+      'rvf plugin list',
+      'rvf plugin inspect <pluginId>',
+      'rvf plugin health <pluginId>',
+      'rvf plugin reload <pluginId>',
+      'rvf command list',
+      'rvf command describe <commandId>',
+      "rvf command run <commandId> --input '{\"key\":\"value\"}' [--follow]",
+      'rvf command run <commandId> --input-file request.json [--follow]',
+      'rvf execution get <executionId>',
+      'rvf execution follow <executionId> [--after <sequence>]',
+      'rvf execution cancel <executionId>',
     ],
     graphCommands: [
       'rvf workflow node add <workflowId> <text|image|video> [--node-id <id>] [--title "..."] [--x 0 --y 0]',

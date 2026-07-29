@@ -12,7 +12,8 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "@red-video-flow/local-backend": "workspace:*"
+    "@red-video-flow/local-backend": "workspace:*",
+    "@red-video-flow/plugin-contract": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

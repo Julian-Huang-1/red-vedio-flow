@@ -7,6 +7,8 @@ import {
   type WheelEvent,
 } from 'react'
 import { useReactFlow, type NodeMouseHandler } from '@xyflow/react'
+import { useReactFlowNodeTypes } from '../../extension-system/nodeExtensions.logic'
+import { useCanvasUiStore } from '../../state/canvasUiStore'
 import { useWorkflowStore } from '../../store/workflowStore'
 
 const interactiveSelector =
@@ -14,19 +16,20 @@ const interactiveSelector =
 
 export function useWorkflowCanvas() {
   const { screenToFlowPosition } = useReactFlow()
+  const nodeTypes = useReactFlowNodeTypes()
   const [isTrackpadPanning, setIsTrackpadPanning] = useState(false)
   const trackpadIdleTimerRef = useRef<number>()
   const nodes = useWorkflowStore((state) => state.nodes)
   const edges = useWorkflowStore((state) => state.edges)
-  const composerNodeId = useWorkflowStore((state) => state.composerNodeId)
+  const composerNodeId = useCanvasUiStore((state) => state.composerNodeId)
   const onNodesChange = useWorkflowStore((state) => state.onNodesChange)
   const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange)
   const connectNodes = useWorkflowStore((state) => state.connectNodes)
-  const openAddNodeMenu = useWorkflowStore((state) => state.openAddNodeMenu)
+  const openAddNodeMenu = useCanvasUiStore((state) => state.openAddNodeMenu)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const beginEditNode = useWorkflowStore((state) => state.beginEditNode)
-  const closeCanvasPanel = useWorkflowStore((state) => state.closeCanvasPanel)
-  const closeWorkspacePanel = useWorkflowStore((state) => state.closeWorkspacePanel)
+  const closeCanvasPanel = useCanvasUiStore((state) => state.closeCanvasPanel)
+  const closeWorkspacePanel = useCanvasUiStore((state) => state.closeWorkspacePanel)
 
   const openMenuAtPointer = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -107,6 +110,7 @@ export function useWorkflowCanvas() {
     handleWheel,
     isTrackpadPanning,
     nodes,
+    nodeTypes,
     onEdgesChange,
     onNodesChange,
   }

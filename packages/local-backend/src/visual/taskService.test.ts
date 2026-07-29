@@ -1,28 +1,24 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMaterialNode } from '@red-video-flow/workflow-core'
 import { createLocalBackend, type LocalBackend } from '../context'
+import type { VisualServiceContract } from './service'
 
-const originalPath = process.env.PATH
 let backend: LocalBackend | undefined
 let dataDir: string | undefined
-let binDir: string | undefined
 
 afterEach(() => {
-  process.env.PATH = originalPath
   backend?.database.sqlite.close()
   backend = undefined
   if (dataDir) rmSync(dataDir, { recursive: true, force: true })
-  if (binDir) rmSync(binDir, { recursive: true, force: true })
   dataDir = undefined
-  binDir = undefined
 })
 
 function createBackend() {
   dataDir = mkdtempSync(join(tmpdir(), 'red-video-flow-visual-task-test-'))
-  backend = createLocalBackend({ dataDir })
+  backend = createLocalBackend({ dataDir, visual: createSuccessfulVisualService() })
   return backend
 }
 
@@ -46,30 +42,8 @@ function addVideoNode(localBackend: LocalBackend, input: { status?: 'empty' | 'r
   return { workflow: patched, node }
 }
 
-function installSuccessfulDreamina() {
-  binDir = mkdtempSync(join(tmpdir(), 'red-video-flow-dreamina-task-test-'))
-  const binPath = join(binDir, 'dreamina')
-  writeFileSync(
-    binPath,
-    `#!/bin/sh
-download_dir=""
-for arg in "$@"; do
-  case "$arg" in
-    --download_dir=*) download_dir="\${arg#--download_dir=}" ;;
-  esac
-done
-mkdir -p "$download_dir"
-printf 'fake-video' > "$download_dir/result.mp4"
-printf '%s\\n' '{"submit_id":"submit-success","gen_status":"success"}'
-`,
-  )
-  chmodSync(binPath, 0o755)
-  process.env.PATH = `${binDir}${delimiter}${originalPath ?? ''}`
-}
-
 describe('VisualTaskService', () => {
   it('claims a due task, downloads the result, and projects it exactly once', async () => {
-    installSuccessfulDreamina()
     const localBackend = createBackend()
     const { workflow, node } = addVideoNode(localBackend)
     const task = localBackend.visualTasks.start({
@@ -120,7 +94,6 @@ describe('VisualTaskService', () => {
   })
 
   it('resumes a persisted polling task after the backend is recreated', async () => {
-    installSuccessfulDreamina()
     const firstBackend = createBackend()
     const { workflow, node } = addVideoNode(firstBackend)
     const task = firstBackend.visualTasks.start({
@@ -133,7 +106,10 @@ describe('VisualTaskService', () => {
     const persistedDataDir = dataDir!
     firstBackend.database.sqlite.close()
 
-    backend = createLocalBackend({ dataDir: persistedDataDir })
+    backend = createLocalBackend({
+      dataDir: persistedDataDir,
+      visual: createSuccessfulVisualService(),
+    })
     expect(backend.visualTasks.bootstrap()).toEqual({ imported: 0 })
     const result = await backend.visualTasks.reconcileDue({
       owner: 'restarted-worker',
@@ -250,3 +226,25 @@ describe('VisualTaskService', () => {
     expect(localBackend.workflows.get(workflow.id)?.graph.nodes[0].data.status).toBe('running')
   })
 })
+
+function createSuccessfulVisualService(): VisualServiceContract {
+  return {
+    listModels: () => ({ models: [], installedCount: 0, invokableCount: 0 }),
+    invoke: async () => {
+      throw new Error('not used by this test')
+    },
+    query: async (input) => {
+      mkdirSync(input.downloadDir, { recursive: true })
+      const localPath = join(input.downloadDir, 'result.mp4')
+      writeFileSync(localPath, 'fake-video')
+      return {
+        submitId: input.submitId,
+        taskStatus: 'success',
+        localPath,
+        url: input.assetUrlForPath(localPath),
+        fileName: 'result.mp4',
+        mimeType: 'video/mp4',
+      }
+    },
+  }
+}

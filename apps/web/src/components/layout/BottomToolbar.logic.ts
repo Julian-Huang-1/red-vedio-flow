@@ -1,11 +1,13 @@
 import { useReactFlow } from '@xyflow/react'
-import { useWorkflowStore } from '../../store/workflowStore'
+import { useCanvasPanelContributions } from '../../extension-system/canvasExtensions.logic'
+import { useCanvasUiStore } from '../../state/canvasUiStore'
 
 export function useBottomToolbar() {
   const { screenToFlowPosition } = useReactFlow()
-  const activePanel = useWorkflowStore((state) => state.activeCanvasPanel)
-  const openAddNodeMenu = useWorkflowStore((state) => state.openAddNodeMenu)
-  const toggleCanvasPanel = useWorkflowStore((state) => state.toggleCanvasPanel)
+  const panels = useCanvasPanelContributions()
+  const activePanel = useCanvasUiStore((state) => state.activeCanvasPanel)
+  const openAddNodeMenu = useCanvasUiStore((state) => state.openAddNodeMenu)
+  const toggleCanvasPanel = useCanvasUiStore((state) => state.toggleCanvasPanel)
 
   const addNode = () => {
     const screen = { x: window.innerWidth / 2, y: Math.max(120, window.innerHeight / 2 - 140) }
@@ -15,7 +17,7 @@ export function useBottomToolbar() {
   return {
     activePanel,
     addNode,
+    panels,
     toggleCanvasPanel,
   }
 }
-

@@ -1,9 +1,12 @@
 import { useMemo } from 'react'
+import { useNodeTypeContributions } from '../../../extension-system/nodeExtensions.logic'
+import { useCanvasUiStore } from '../../../state/canvasUiStore'
 import { useWorkflowStore } from '../../../store/workflowStore'
 
 export function useAddNodeMenu() {
-  const menu = useWorkflowStore((state) => state.addNodeMenu)
+  const menu = useCanvasUiStore((state) => state.addNodeMenu)
   const createNode = useWorkflowStore((state) => state.createNode)
+  const nodeTypes = useNodeTypeContributions()
   const position = useMemo(
     () => ({
       left: Math.min(menu.screenX, window.innerWidth - 280),
@@ -15,7 +18,7 @@ export function useAddNodeMenu() {
   return {
     createNode,
     isOpen: menu.open,
+    nodeTypes,
     position,
   }
 }
-

@@ -1,30 +1,14 @@
 import {
   Boxes,
   ChevronDown,
-  FileText,
-  Image,
   LocateFixed,
   MoreHorizontal,
   PanelLeftClose,
   Search,
-  Video,
 } from 'lucide-react'
-import type { MaterialType } from '@red-video-flow/workflow-core'
 import { useAssetManager, type AssetManagerFilter } from './AssetManager.logic'
 import { AssetManagerPrimitive as AssetUi } from './AssetManager.primitives'
 import styles from './AssetManager.module.less'
-
-const typeLabels: Record<MaterialType, string> = {
-  text: '文本',
-  image: '图片',
-  video: '视频',
-}
-
-const typeIcons = {
-  text: FileText,
-  image: Image,
-  video: Video,
-}
 
 export function AssetManager() {
   const manager = useAssetManager()
@@ -84,9 +68,11 @@ export function AssetManager() {
                     onChange={(event) => manager.setFilter(event.target.value as AssetManagerFilter)}
                   >
                     <option value="all">全部</option>
-                    <option value="text">文本</option>
-                    <option value="image">图片</option>
-                    <option value="video">视频</option>
+                    {manager.nodeTypes.map((nodeType) => (
+                      <option key={nodeType.id} value={nodeType.materialType}>
+                        {nodeType.menuLabel}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className={styles.searchBox}>
@@ -101,7 +87,8 @@ export function AssetManager() {
 
               <AssetUi.NodeList>
                 {manager.filteredNodes.map((node) => {
-                  const Icon = typeIcons[node.data.materialType]
+                  const nodeType = manager.getNodeType(node.data.materialType)
+                  const Icon = nodeType?.icon ?? Boxes
                   return (
                     <AssetUi.NodeRow key={node.id} data-material-type={node.data.materialType}>
                       <button
@@ -114,7 +101,7 @@ export function AssetManager() {
                       <Icon size={16} />
                       <div>
                         <span>{node.data.title}</span>
-                        <small>{typeLabels[node.data.materialType]} · {node.data.status}</small>
+                        <small>{nodeType?.menuLabel ?? node.data.materialType} · {node.data.status}</small>
                       </div>
                       <button className={styles.moreButton} title="更多操作">
                         <MoreHorizontal size={16} />

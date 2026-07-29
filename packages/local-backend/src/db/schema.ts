@@ -35,6 +35,25 @@ export const runs = sqliteTable('runs', {
   finishedAt: integer('finished_at'),
 })
 
+export const executions = sqliteTable('executions', {
+  id: text('id').primaryKey(),
+  pluginId: text('plugin_id').notNull(),
+  contributionId: text('contribution_id').notNull(),
+  kind: text('kind').notNull(),
+  status: text('status').notNull(),
+  inputJson: text('input_json'),
+  resultJson: text('result_json'),
+  errorCode: text('error_code'),
+  errorMessage: text('error_message'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  startedAt: integer('started_at'),
+  finishedAt: integer('finished_at'),
+}, (table) => [
+  index('idx_executions_status').on(table.status),
+  index('idx_executions_plugin').on(table.pluginId),
+])
+
 export const visualTasks = sqliteTable('visual_tasks', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),

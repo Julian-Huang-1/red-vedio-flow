@@ -45,4 +45,25 @@ describe('web component architecture', () => {
 
     expect(violations).toEqual([])
   })
+
+  it('keeps canvas page composition behind extension slots', () => {
+    const canvasPage = readFileSync(
+      join(sourceRoot, 'pages/canvas-editor/CanvasEditorPage.tsx'),
+      'utf8',
+    )
+
+    expect(canvasPage).toContain('<ExtensionSlot name="canvas.overlay"')
+    expect(canvasPage).not.toMatch(/components\/layout/)
+  })
+
+  it('keeps transient canvas UI state out of the workflow data store', () => {
+    const workflowStore = readFileSync(join(sourceRoot, 'store/workflowStore.ts'), 'utf8')
+    const contractStart = workflowStore.indexOf('type WorkflowStore')
+    const contractEnd = workflowStore.indexOf('\n}\n', contractStart)
+    const workflowStoreContract = workflowStore.slice(contractStart, contractEnd)
+    const uiStateDeclaration =
+      /^\s+(?:selectedNodeId|editingNodeId|composerNodeId|activeCanvasPanel|openWorkspacePanels|addNodeMenu):/m
+
+    expect(workflowStoreContract).not.toMatch(uiStateDeclaration)
+  })
 })

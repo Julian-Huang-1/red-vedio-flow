@@ -1,5 +1,5 @@
 import { Bot } from 'lucide-react'
-import { AgentMessageItem } from './AgentMessageItem'
+import { FeatureErrorBoundary } from '../../extension-system/FeatureErrorBoundary'
 import { useAgentMessageList } from './AgentMessageList.logic'
 import type { ChatMessage } from './agentChatTypes'
 import styles from './AgentDrawer.module.less'
@@ -20,7 +20,22 @@ export function AgentMessageList({ messages, isActive }: Props) {
           <p>可以询问如何拆解短视频工作流，或 @ 引用节点、资源来继续创作。</p>
         </div>
       ) : (
-        messages.map((message) => <AgentMessageItem key={message.id} message={message} />)
+        messages.map((message) => {
+          const renderer = messageList.getRenderer(message)
+          if (!renderer) {
+            return (
+              <div key={message.id} className={styles.message} data-status="error">
+                不支持的消息类型：{message.kind ?? 'text'}
+              </div>
+            )
+          }
+          const MessageRenderer = renderer.component
+          return (
+            <FeatureErrorBoundary key={message.id} contributionId={renderer.id}>
+              <MessageRenderer message={message} />
+            </FeatureErrorBoundary>
+          )
+        })
       )}
       <div ref={messageList.endRef} />
     </section>

@@ -1,25 +1,13 @@
 import type { Node } from '@xyflow/react'
-import { ArrowUp, Bot, FileText, Image, Play, X } from 'lucide-react'
-import type { ElementType } from 'react'
-import type { MaterialNodeData, MaterialType } from '@red-video-flow/workflow-core'
+import { ArrowUp, Bot, FileText, X } from 'lucide-react'
+import type { MaterialNodeData } from '@red-video-flow/workflow-core'
+import { getNodeTypeContribution } from '../../../extension-system/nodeExtensions.logic'
 import { useNodePromptComposer } from './NodePromptComposer.logic'
 import { NodePromptComposerPrimitive as Composer } from './NodePromptComposer.primitives'
 import styles from './NodePromptComposer.module.less'
 
-const icons: Record<MaterialType, ElementType> = {
-  text: FileText,
-  image: Image,
-  video: Play,
-}
-
-const placeholders: Record<MaterialType, string> = {
-  text: '给 AI 的生成指令。例如：扩写成 60 秒都市逆袭短剧脚本。',
-  image: '描述要生成或修改的画面。例如：女主站在雨夜写字楼门口，电影感，竖屏。',
-  video: '描述视频动作和镜头。例如：镜头缓慢推进，女主抬头看向镜头，6 秒。',
-}
-
 type Props = {
-  node: Node<MaterialNodeData, 'material'>
+  node: Node<MaterialNodeData, string>
 }
 
 const stopPropagation = (event: React.SyntheticEvent) => event.stopPropagation()
@@ -64,7 +52,7 @@ export function NodePromptComposer({ node }: Props) {
       <Composer.Input
         inputRef={composer.textareaRef}
         value={composer.prompt}
-        placeholder={placeholders[node.data.materialType]}
+        placeholder={composer.nodeDefinition?.promptPlaceholder ?? '描述希望生成的内容'}
         onMouseDown={stopPropagation}
         onMouseUp={stopPropagation}
         onPointerDown={stopPropagation}
@@ -78,10 +66,30 @@ export function NodePromptComposer({ node }: Props) {
       <Composer.Footer>
         <div className={styles.footerMeta}>
           {composer.isVisualNode ? (
-            <span className={styles.visualModel}>
+            <label className={styles.visualModel}>
               <Bot size={16} />
-              {composer.visualModelLabel}
-            </span>
+              <select
+                value={composer.selectedVisualProviderId ?? ''}
+                disabled={
+                  composer.visualProviderStatus === 'loading'
+                  || composer.availableVisualProviders.length === 0
+                }
+                onChange={(event) => composer.selectVisualProvider(event.target.value)}
+                aria-label="选择视觉模型"
+              >
+                {composer.availableVisualProviders.length === 0 ? (
+                  <option value="">
+                    {composer.visualProviderStatus === 'loading' ? '扫描中' : '视觉模型'}
+                  </option>
+                ) : (
+                  composer.availableVisualProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
           ) : (
             <label className={styles.agentSelect}>
               <Bot size={16} />
@@ -123,7 +131,7 @@ export function NodePromptComposer({ node }: Props) {
 }
 
 function MaterialPreview({ data }: { data: MaterialNodeData }) {
-  const Icon = icons[data.materialType]
+  const Icon = getNodeTypeContribution(data.materialType)?.icon ?? FileText
 
   if (data.materialType === 'image' && data.value.url) {
     return <img className={styles.materialPreview} src={data.value.url} alt={data.value.fileName ?? data.title} />

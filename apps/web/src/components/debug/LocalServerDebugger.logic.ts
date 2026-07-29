@@ -5,7 +5,7 @@ import {
   subscribeWorkflowDebugEvents,
   type WorkflowDebugEvent,
 } from '@red-video-flow/workflow-client'
-import { useWorkflowStore } from '../../store/workflowStore'
+import { useCanvasUiStore } from '../../state/canvasUiStore'
 
 export type DebugFilter = 'all' | 'http' | 'sse' | 'error'
 
@@ -17,7 +17,7 @@ export const debugFilters: Array<{ id: DebugFilter; label: string }> = [
 ]
 
 export function useLocalServerDebugger() {
-  const openWorkspacePanels = useWorkflowStore((state) => state.openWorkspacePanels)
+  const openWorkspacePanels = useCanvasUiStore((state) => state.openWorkspacePanels)
   const events = useSyncExternalStore(
     subscribeWorkflowDebugEvents,
     getWorkflowDebugEventsSnapshot,

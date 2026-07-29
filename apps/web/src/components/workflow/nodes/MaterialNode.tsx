@@ -1,23 +1,11 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { FileText, Image, Play } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import type { ElementType } from 'react'
-import { acceptedMimeTypes, type MaterialNodeData, type MaterialType } from '@red-video-flow/workflow-core'
+import { acceptedMimeTypes, type MaterialNodeData } from '@red-video-flow/workflow-core'
 import { NodePromptComposer } from '../prompt/NodePromptComposer'
 import { useMaterialNode } from './MaterialNode.logic'
 import { MaterialNodePrimitive as NodeUi } from './MaterialNode.primitives'
 import styles from './MaterialNode.module.less'
-
-const icons: Record<MaterialType, ElementType> = {
-  text: FileText,
-  image: Image,
-  video: Play,
-}
-
-const emptyText: Record<MaterialType, string> = {
-  text: '暂无文本内容',
-  image: '点击上传图片',
-  video: '点击上传视频',
-}
 
 const statusLabel: Record<MaterialNodeData['status'], string> = {
   empty: '空',
@@ -29,11 +17,11 @@ const statusLabel: Record<MaterialNodeData['status'], string> = {
 
 const textStarterActions = ['自己编写内容', '文生视频', '图片反推提示词', '文字生音乐']
 
-type MaterialFlowNode = Node<MaterialNodeData, 'material'>
+type MaterialFlowNode = Node<MaterialNodeData, string>
 
 export function MaterialNode({ id, data, selected }: NodeProps<MaterialFlowNode>) {
   const materialNode = useMaterialNode({ id, data })
-  const Icon = icons[data.materialType]
+  const Icon = materialNode.definition?.icon ?? FileText
 
   return (
     <NodeUi.Root
@@ -70,7 +58,12 @@ export function MaterialNode({ id, data, selected }: NodeProps<MaterialFlowNode>
             onContextMenu={(event) => event.stopPropagation()}
           />
         ) : (
-          <MaterialNodeBody data={data} icon={Icon} onTextStarterClick={materialNode.enterTextEdit} />
+          <MaterialNodeBody
+            data={data}
+            icon={Icon}
+            emptyText={materialNode.definition?.emptyText ?? '暂无内容'}
+            onTextStarterClick={materialNode.enterTextEdit}
+          />
         )}
       </NodeUi.Body>
 
@@ -95,10 +88,12 @@ export function MaterialNode({ id, data, selected }: NodeProps<MaterialFlowNode>
 function MaterialNodeBody({
   data,
   icon: Icon,
+  emptyText,
   onTextStarterClick,
 }: {
   data: MaterialNodeData
   icon: ElementType
+  emptyText: string
   onTextStarterClick: () => void
 }) {
   if (data.materialType === 'text' && data.value.text) {
@@ -135,7 +130,7 @@ function MaterialNodeBody({
   return (
     <div className={styles.emptyState}>
       <Icon size={48} />
-      <span>{emptyText[data.materialType]}</span>
+      <span>{emptyText}</span>
       {data.materialType === 'text' ? (
         <div className={styles.starterActions}>
           <small>尝试：</small>

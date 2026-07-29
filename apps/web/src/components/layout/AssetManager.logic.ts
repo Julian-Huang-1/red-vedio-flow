@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import type { MaterialType } from '@red-video-flow/workflow-core'
+import {
+  getNodeTypeContribution,
+  useNodeTypeContributions,
+} from '../../extension-system/nodeExtensions.logic'
+import { useCanvasUiStore } from '../../state/canvasUiStore'
 import { useWorkflowStore } from '../../store/workflowStore'
 import { useAnimatedPresence } from '../../ui/useAnimatedPresence'
 
@@ -9,11 +14,12 @@ export type AssetManagerFilter = 'all' | MaterialType
 
 export function useAssetManager() {
   const { setCenter } = useReactFlow()
+  const nodeTypes = useNodeTypeContributions()
   const nodes = useWorkflowStore((state) => state.nodes)
   const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
-  const openWorkspacePanels = useWorkflowStore((state) => state.openWorkspacePanels)
-  const toggleWorkspacePanel = useWorkflowStore((state) => state.toggleWorkspacePanel)
-  const closeWorkspacePanel = useWorkflowStore((state) => state.closeWorkspacePanel)
+  const openWorkspacePanels = useCanvasUiStore((state) => state.openWorkspacePanels)
+  const toggleWorkspacePanel = useCanvasUiStore((state) => state.toggleWorkspacePanel)
+  const closeWorkspacePanel = useCanvasUiStore((state) => state.closeWorkspacePanel)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const [tab, setTab] = useState<AssetManagerTab>('canvas')
   const [filter, setFilter] = useState<AssetManagerFilter>('all')
@@ -46,11 +52,13 @@ export function useAssetManager() {
     isMounted: presence.isMounted,
     isOpen,
     nodes,
+    nodeTypes,
     presenceState: presence.state,
     query,
     tab,
     workflowTitle,
     close: () => closeWorkspacePanel('assetManager'),
+    getNodeType: getNodeTypeContribution,
     locateNode,
     setFilter,
     setQuery,
@@ -58,4 +66,3 @@ export function useAssetManager() {
     toggle: () => toggleWorkspacePanel('assetManager'),
   }
 }
-

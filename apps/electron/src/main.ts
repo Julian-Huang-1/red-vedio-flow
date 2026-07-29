@@ -1,9 +1,11 @@
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import type { LocalServerHandle } from '@red-video-flow/local-server'
 
 let mainWindow: BrowserWindow | null = null
 let localServer: LocalServerHandle | null = null
+let backendClosed = false
+let backendClosing = false
 
 function devUrl() {
   return app.isPackaged ? null : process.env.RED_VIDEO_FLOW_ELECTRON_DEV_URL ?? 'http://127.0.0.1:5175'
@@ -18,6 +20,12 @@ function webDistDir() {
 async function startBackend() {
   process.env.RED_VIDEO_FLOW_DATA_DIR = join(app.getPath('userData'), 'data')
   process.env.RED_VIDEO_FLOW_WEB_DIST_DIR = webDistDir()
+  if (app.isPackaged) {
+    process.env.RED_VIDEO_FLOW_PLUGIN_DIRS = [
+      join(app.getPath('userData'), 'plugins'),
+      join(process.resourcesPath, 'builtin-plugins'),
+    ].join(delimiter)
+  }
 
   const { startLocalServer } = await import('@red-video-flow/local-server')
   return startLocalServer()
@@ -96,6 +104,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  if (localServer) void localServer.close()
+app.on('before-quit', (event) => {
+  if (!localServer || backendClosed) return
+  event.preventDefault()
+  if (backendClosing) return
+  backendClosing = true
+  void localServer.close()
+    .catch((error) => {
+      console.error('[red-video-flow] failed to stop local server', error)
+    })
+    .finally(() => {
+      backendClosed = true
+      localServer = null
+      app.quit()
+    })
 })

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { MaterialMessage, MaterialNode, MaterialValue, WorkflowPatchOperation } from '@red-video-flow/workflow-core'
 import type { AssetService } from '../assets/assetService.js'
 import type { WorkflowService } from '../workflows/workflowService.js'
-import type { VisualRunResult, VisualService } from './service.js'
+import type { VisualRunResult, VisualServiceContract } from './service.js'
 import {
   VisualTaskRepository,
   type VisualTaskRecord,
@@ -42,7 +42,7 @@ export class VisualTaskService {
   constructor(
     private readonly repository: VisualTaskRepository,
     private readonly workflows: WorkflowService,
-    private readonly visual: VisualService,
+    private readonly visual: VisualServiceContract,
     private readonly assets: AssetService,
     options: VisualTaskServiceOptions = {},
   ) {
@@ -272,7 +272,9 @@ export class VisualTaskService {
 
     try {
       const result = await this.visual.query({
+        executionId: task.id,
         submitId: task.submitId,
+        providerId: task.provider,
         nodeKind: task.nodeKind,
         downloadDir: join(this.assets.generatedDir, `task-${task.submitId}`),
         assetUrlForPath: (filePath) => this.assets.assetUrlForPath(filePath),

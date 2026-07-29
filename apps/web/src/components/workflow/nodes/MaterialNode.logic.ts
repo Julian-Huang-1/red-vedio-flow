@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ChangeEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { MaterialNodeData } from '@red-video-flow/workflow-core'
+import { useNodeTypeContribution } from '../../../extension-system/nodeExtensions.logic'
+import { useCanvasUiStore } from '../../../state/canvasUiStore'
 import { useWorkflowStore } from '../../../store/workflowStore'
 
 type UseMaterialNodeOptions = {
@@ -8,18 +10,19 @@ type UseMaterialNodeOptions = {
 }
 
 export function useMaterialNode({ id, data }: UseMaterialNodeOptions) {
+  const definition = useNodeTypeContribution(data.materialType)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const lastPointerDownAtRef = useRef(0)
   const attachFile = useWorkflowStore((state) => state.attachFileToNode)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const beginEditNode = useWorkflowStore((state) => state.beginEditNode)
-  const editingNodeId = useWorkflowStore((state) => state.editingNodeId)
-  const composerNodeId = useWorkflowStore((state) => state.composerNodeId)
+  const editingNodeId = useCanvasUiStore((state) => state.editingNodeId)
+  const composerNodeId = useCanvasUiStore((state) => state.composerNodeId)
   const node = useWorkflowStore((state) => state.nodes.find((item) => item.id === id))
   const updateTextNode = useWorkflowStore((state) => state.updateTextNode)
-  const canUpload = data.materialType === 'image' || data.materialType === 'video'
-  const isTextEditing = data.materialType === 'text' && editingNodeId === id
+  const canUpload = definition?.uploadable ?? false
+  const isTextEditing = Boolean(definition?.editable) && editingNodeId === id
   const shouldShowComposer = composerNodeId === id && editingNodeId !== id && node !== undefined
 
   const enterTextEdit = () => {
@@ -81,6 +84,7 @@ export function useMaterialNode({ id, data }: UseMaterialNodeOptions) {
 
   return {
     canUpload,
+    definition,
     enterTextEdit,
     handleBodyClick,
     handleBodyDoubleClick,

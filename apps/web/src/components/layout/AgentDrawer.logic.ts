@@ -1,33 +1,39 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { getUpstreamNodes, type MaterialNode } from '@red-video-flow/workflow-core'
 import { fetchWorkflow, runNodeWithAgent } from '@red-video-flow/workflow-client'
 import { useAgentsQuery, workflowQueryKeys } from '../../queries/workflowQueries'
+import { useAgentCatalogStore } from '../../state/agentCatalogStore'
+import { useAgentSessionStore } from '../../state/agentSessionStore'
+import { useCanvasUiStore } from '../../state/canvasUiStore'
 import { useWorkflowStore } from '../../store/workflowStore'
 import { useAnimatedPresence } from '../../ui/useAnimatedPresence'
-import { applyAgentRunEvent, type ChatMessage } from './agentChatTypes'
+import { applyAgentRunEvent } from './agentChatTypes'
 
 const mentionPattern = /@([^\s@]+)/g
 
 export function useAgentDrawer() {
   const queryClient = useQueryClient()
-  const openWorkspacePanels = useWorkflowStore((state) => state.openWorkspacePanels)
-  const closeWorkspacePanel = useWorkflowStore((state) => state.closeWorkspacePanel)
-  const agents = useWorkflowStore((state) => state.agents)
-  const agentStatus = useWorkflowStore((state) => state.agentStatus)
-  const selectedAgentId = useWorkflowStore((state) => state.selectedAgentId)
-  const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId)
+  const openWorkspacePanels = useCanvasUiStore((state) => state.openWorkspacePanels)
+  const closeWorkspacePanel = useCanvasUiStore((state) => state.closeWorkspacePanel)
+  const agents = useAgentCatalogStore((state) => state.agents)
+  const agentStatus = useAgentCatalogStore((state) => state.status)
+  const selectedAgentId = useAgentCatalogStore((state) => state.selectedAgentId)
+  const selectedNodeId = useCanvasUiStore((state) => state.selectedNodeId)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const workflowRevision = useWorkflowStore((state) => state.workflowRevision)
   const nodes = useWorkflowStore((state) => state.nodes)
   const edges = useWorkflowStore((state) => state.edges)
-  const applyAgentsResponse = useWorkflowStore((state) => state.applyAgentsResponse)
-  const setAgentQueryStatus = useWorkflowStore((state) => state.setAgentQueryStatus)
+  const applyAgentsResponse = useAgentCatalogStore((state) => state.applyResponse)
+  const setAgentQueryStatus = useAgentCatalogStore((state) => state.setQueryStatus)
   const applyRemoteWorkflow = useWorkflowStore((state) => state.applyRemoteWorkflow)
-  const selectAgent = useWorkflowStore((state) => state.selectAgent)
-  const [prompt, setPrompt] = useState('')
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [isSending, setIsSending] = useState(false)
+  const selectAgent = useAgentCatalogStore((state) => state.selectAgent)
+  const prompt = useAgentSessionStore((state) => state.prompt)
+  const messages = useAgentSessionStore((state) => state.messages)
+  const isSending = useAgentSessionStore((state) => state.isSending)
+  const setPrompt = useAgentSessionStore((state) => state.setPrompt)
+  const setMessages = useAgentSessionStore((state) => state.setMessages)
+  const setIsSending = useAgentSessionStore((state) => state.setSending)
   const isOpen = openWorkspacePanels.includes('agent')
   const presence = useAnimatedPresence(isOpen)
   const agentsQuery = useAgentsQuery(isOpen)
@@ -221,6 +227,8 @@ export function useAgentDrawer() {
     submit: () => void submit(),
   }
 }
+
+export type AgentDrawerController = ReturnType<typeof useAgentDrawer>
 
 function createDrawerChatNode(): MaterialNode {
   return {

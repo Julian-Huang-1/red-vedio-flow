@@ -10,7 +10,7 @@ export type AddNodeMenuState = {
   flowY: number
 }
 
-export type FlowNode = Node<MaterialNodeData, 'material'>
+export type FlowNode = Node<MaterialNodeData, string>
 
 export const materialTypeLabels: Record<MaterialType, string> = {
   text: '文本节点',
@@ -24,22 +24,36 @@ export const defaultNodeSize: Record<MaterialType, NodeSize> = {
   video: { width: 560, height: 280 },
 }
 
-export function createFlowNode(materialType: MaterialType, position: XYPosition): FlowNode {
+type CreateFlowNodePresentation = {
+  nodeTypeId?: string
+  title?: string
+  defaultSize?: NodeSize
+}
+
+export function createFlowNode(
+  materialType: MaterialType,
+  position: XYPosition,
+  presentation: CreateFlowNodePresentation = {},
+): FlowNode {
   return toFlowNode(
     createMaterialNode({
       id: createNodeId(materialType),
       materialType,
       position,
-      title: createNodeTitle(materialType),
-      size: defaultNodeSize[materialType],
+      title: createNodeTitle(presentation.title ?? materialTypeLabels[materialType]),
+      size: presentation.defaultSize ?? defaultNodeSize[materialType],
     }),
+    presentation.nodeTypeId,
   )
 }
 
-export function toFlowNode(node: MaterialNode): FlowNode {
+export function toFlowNode(
+  node: MaterialNode,
+  nodeTypeId = `material.${node.data.materialType}`,
+): FlowNode {
   return {
     ...node,
-    type: 'material',
+    type: nodeTypeId,
   }
 }
 
@@ -57,6 +71,6 @@ function createNodeId(materialType: MaterialType) {
   return `${materialType}-${Date.now()}-${Math.round(Math.random() * 1000)}`
 }
 
-function createNodeTitle(materialType: MaterialType) {
-  return `${materialTypeLabels[materialType]} ${Math.floor(Math.random() * 90) + 10}`
+function createNodeTitle(title: string) {
+  return `${title} ${Math.floor(Math.random() * 90) + 10}`
 }

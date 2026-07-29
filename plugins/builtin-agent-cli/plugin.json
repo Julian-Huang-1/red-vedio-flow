@@ -1,0 +1,167 @@
+{
+  "id": "builtin.agent-cli",
+  "name": "Built-in Agent CLI",
+  "version": "0.1.0",
+  "apiVersion": "1",
+  "backend": {
+    "runtime": "process",
+    "command": "${NODE}",
+    "args": ["backend/main.mjs"]
+  },
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "agent.run",
+        "title": "Run local Agent CLI",
+        "inputSchema": {
+          "type": "object",
+          "required": ["agentId", "prompt"],
+          "properties": {
+            "agentId": { "type": "string" },
+            "prompt": { "type": "string" },
+            "model": { "type": "string" },
+            "cwd": { "type": "string" }
+          }
+        }
+      }
+    ],
+    "agentProviders": [
+      {
+        "id": "claude",
+        "title": "Claude Code",
+        "vendor": "Anthropic",
+        "models": [
+          { "id": "default", "label": "Default (CLI config)" },
+          { "id": "sonnet", "label": "Sonnet" },
+          { "id": "opus", "label": "Opus" }
+        ]
+      },
+      {
+        "id": "openclaw",
+        "title": "OpenClaw",
+        "vendor": "OpenClaw",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "codex",
+        "title": "OpenAI Codex",
+        "vendor": "OpenAI",
+        "models": [
+          { "id": "default", "label": "Default (CLI config)" },
+          { "id": "gpt-5", "label": "gpt-5" },
+          { "id": "gpt-5-codex", "label": "gpt-5-codex" }
+        ]
+      },
+      {
+        "id": "cursor-agent",
+        "title": "Cursor Agent",
+        "vendor": "Cursor",
+        "models": [
+          { "id": "default", "label": "Default (CLI config)" },
+          { "id": "auto", "label": "auto" },
+          { "id": "gpt-5", "label": "gpt-5" }
+        ]
+      },
+      {
+        "id": "gemini",
+        "title": "Gemini CLI",
+        "vendor": "Google",
+        "models": [
+          { "id": "default", "label": "Default (CLI config)" },
+          { "id": "gemini-2.5-pro", "label": "gemini-2.5-pro" }
+        ]
+      },
+      {
+        "id": "copilot",
+        "title": "GitHub Copilot CLI",
+        "vendor": "GitHub",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "bob",
+        "title": "IBM Bob Shell",
+        "vendor": "IBM",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "opencode",
+        "title": "OpenCode",
+        "vendor": "Open",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "qwen",
+        "title": "Qwen Coder",
+        "vendor": "Alibaba",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "qoder",
+        "title": "Qoder CLI",
+        "vendor": "Qoder",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "codewhale",
+        "title": "CodeWhale",
+        "vendor": "CodeWhale",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "deepseek-tui",
+        "title": "DeepSeek TUI",
+        "vendor": "DeepSeek",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "aider",
+        "title": "Aider",
+        "vendor": "Aider",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "hermes",
+        "title": "Hermes",
+        "vendor": "Mature",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "kimi",
+        "title": "Kimi CLI",
+        "vendor": "Moonshot",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "devin",
+        "title": "Devin CLI",
+        "vendor": "Cognition",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "kiro",
+        "title": "Kiro CLI",
+        "vendor": "AWS",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "kilo",
+        "title": "Kilo Code",
+        "vendor": "Kilo",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "vibe",
+        "title": "Mistral Vibe CLI",
+        "vendor": "Mistral",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      },
+      {
+        "id": "pi",
+        "title": "Pi CLI",
+        "vendor": "Inflection",
+        "models": [{ "id": "default", "label": "Default (CLI config)" }]
+      }
+    ]
+  }
+}

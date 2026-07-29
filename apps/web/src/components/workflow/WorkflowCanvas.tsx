@@ -2,11 +2,6 @@ import { Background, BackgroundVariant, ReactFlow } from '@xyflow/react'
 import { useWorkflowCanvas } from './WorkflowCanvas.logic'
 import { WorkflowCanvasPrimitive as Canvas } from './WorkflowCanvas.primitives'
 import { AddNodeMenu } from './menus/AddNodeMenu'
-import { MaterialNode } from './nodes/MaterialNode'
-
-const nodeTypes = {
-  material: MaterialNode,
-}
 
 export function WorkflowCanvas() {
   const canvas = useWorkflowCanvas()
@@ -22,7 +17,7 @@ export function WorkflowCanvas() {
       <ReactFlow
         nodes={canvas.nodes}
         edges={canvas.edges}
-        nodeTypes={nodeTypes}
+        nodeTypes={canvas.nodeTypes}
         onNodesChange={canvas.onNodesChange}
         onEdgesChange={canvas.onEdgesChange}
         onConnect={canvas.connectNodes}

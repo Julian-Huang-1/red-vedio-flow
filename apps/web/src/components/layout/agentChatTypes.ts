@@ -15,6 +15,7 @@ export type AgentRunSummary = {
 
 export type ChatMessage = {
   id: string
+  kind?: string
   role: 'user' | 'assistant'
   text: string
   status: ChatMessageStatus

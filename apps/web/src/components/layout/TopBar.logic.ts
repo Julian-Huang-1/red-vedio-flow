@@ -9,28 +9,30 @@ import {
   useWorkflowListQuery,
   workflowQueryKeys,
 } from '../../queries/workflowQueries'
+import { useAgentCatalogStore } from '../../state/agentCatalogStore'
+import { useCanvasUiStore } from '../../state/canvasUiStore'
 import { useWorkflowStore } from '../../store/workflowStore'
 
 export function useTopBar() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const agents = useWorkflowStore((state) => state.agents)
+  const agents = useAgentCatalogStore((state) => state.agents)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
   const workflows = useWorkflowStore((state) => state.workflows)
   const workflowListStatus = useWorkflowStore((state) => state.workflowListStatus)
   const persistenceStatus = useWorkflowStore((state) => state.persistenceStatus)
   const hasLoadedWorkflow = useWorkflowStore((state) => state.hasLoadedWorkflow)
-  const openWorkspacePanels = useWorkflowStore((state) => state.openWorkspacePanels)
-  const applyAgentsResponse = useWorkflowStore((state) => state.applyAgentsResponse)
-  const setAgentQueryStatus = useWorkflowStore((state) => state.setAgentQueryStatus)
+  const openWorkspacePanels = useCanvasUiStore((state) => state.openWorkspacePanels)
+  const applyAgentsResponse = useAgentCatalogStore((state) => state.applyResponse)
+  const setAgentQueryStatus = useAgentCatalogStore((state) => state.setQueryStatus)
   const applyWorkflowList = useWorkflowStore((state) => state.applyWorkflowList)
   const setWorkflowListQueryStatus = useWorkflowStore((state) => state.setWorkflowListQueryStatus)
   const applyWorkflow = useWorkflowStore((state) => state.applyWorkflow)
   const flushWorkflowPatches = useWorkflowStore((state) => state.flushWorkflowPatches)
   const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow)
   const setPersistenceQueryStatus = useWorkflowStore((state) => state.setPersistenceQueryStatus)
-  const toggleWorkspacePanel = useWorkflowStore((state) => state.toggleWorkspacePanel)
+  const toggleWorkspacePanel = useCanvasUiStore((state) => state.toggleWorkspacePanel)
   const agentsQuery = useAgentsQuery()
   const workflowsQuery = useWorkflowListQuery()
   const createWorkflowMutation = useCreateWorkflowMutation()

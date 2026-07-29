@@ -42,6 +42,10 @@
       {
         "from": "../web/dist",
         "to": "web-dist"
+      },
+      {
+        "from": "../../plugins",
+        "to": "builtin-plugins"
       }
     ],
     "mac": {
