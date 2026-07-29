@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { MaterialMessage, MaterialNode, MaterialValue, WorkflowPatchOperation } from '@red-video-flow/workflow-core'
 import type { AssetService } from '../assets/assetService.js'
 import type { WorkflowService } from '../workflows/workflowService.js'
@@ -312,6 +312,17 @@ export class VisualTaskService {
     if (terminalStatuses.has(task.status)) return task
     const succeeded = Boolean(result.url) && result.taskStatus !== 'failed'
     if (succeeded) {
+      if (result.localPath && result.url) {
+        this.assets.register({
+          workflowId: task.workflowId,
+          kind: task.nodeKind,
+          url: result.url,
+          localPath: result.localPath,
+          fileName: result.fileName ?? basename(result.localPath),
+          mimeType: result.mimeType,
+          provider: task.provider,
+        })
+      }
       return this.finish(
         task,
         'succeeded',

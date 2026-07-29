@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import type { MaterialType } from '@red-video-flow/workflow-core'
 import {
@@ -8,6 +8,7 @@ import {
 import { useCanvasUiStore } from '../../state/canvasUiStore'
 import { useWorkflowStore } from '../../store/workflowStore'
 import { useAnimatedPresence } from '../../ui/useAnimatedPresence'
+import { fetchAssets, type UploadedAsset } from '@red-video-flow/workflow-client'
 
 export type AssetManagerTab = 'canvas' | 'assets'
 export type AssetManagerFilter = 'all' | MaterialType
@@ -17,6 +18,7 @@ export function useAssetManager() {
   const nodeTypes = useNodeTypeContributions()
   const nodes = useWorkflowStore((state) => state.nodes)
   const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
+  const workflowId = useWorkflowStore((state) => state.workflowId)
   const openWorkspacePanels = useCanvasUiStore((state) => state.openWorkspacePanels)
   const toggleWorkspacePanel = useCanvasUiStore((state) => state.toggleWorkspacePanel)
   const closeWorkspacePanel = useCanvasUiStore((state) => state.closeWorkspacePanel)
@@ -24,6 +26,8 @@ export function useAssetManager() {
   const [tab, setTab] = useState<AssetManagerTab>('canvas')
   const [filter, setFilter] = useState<AssetManagerFilter>('all')
   const [query, setQuery] = useState('')
+  const [assets, setAssets] = useState<UploadedAsset[]>([])
+  const [assetError, setAssetError] = useState<string>()
   const isOpen = openWorkspacePanels.includes('assetManager')
   const presence = useAnimatedPresence(isOpen)
 
@@ -35,6 +39,14 @@ export function useAssetManager() {
       return typeMatched && queryMatched
     })
   }, [filter, nodes, query])
+
+  useEffect(() => {
+    if (!isOpen || tab !== 'assets') return
+    setAssetError(undefined)
+    void fetchAssets(workflowId)
+      .then((result) => setAssets(result.assets))
+      .catch((error) => setAssetError(error instanceof Error ? error.message : String(error)))
+  }, [isOpen, tab, workflowId])
 
   const locateNode = (nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId)
@@ -48,6 +60,8 @@ export function useAssetManager() {
 
   return {
     filter,
+    assets,
+    assetError,
     filteredNodes,
     isMounted: presence.isMounted,
     isOpen,

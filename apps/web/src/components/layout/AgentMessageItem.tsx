@@ -13,6 +13,12 @@ export function AgentMessageItem({ message }: Props) {
   return (
     <div className={styles.message} data-role={message.role} data-status={message.status}>
       {message.text ? <div className={styles.messageText}>{message.text}</div> : null}
+      {message.role === 'assistant' && message.run ? (
+        <div className={styles.messageMeta}>
+          {message.run.agentLabel}
+          {message.run.modelId && message.run.modelId !== 'default' ? ` · ${message.run.modelId}` : ''}
+        </div>
+      ) : null}
 
       {message.role === 'assistant' && isRunning ? (
         <div className={styles.messageStatus}>

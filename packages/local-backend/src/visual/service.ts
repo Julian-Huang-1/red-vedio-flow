@@ -25,6 +25,7 @@ export type InvokeVisualModelInput = {
   nodeKind: string
   prompt: string
   upstream?: unknown[]
+  providerOptions?: Record<string, unknown>
   downloadDir: string
   assetUrlForPath: (filePath: string) => string
   onEvent?: (event: VisualEvent) => void

@@ -55,10 +55,24 @@ type WorkflowStore = {
   beginEditNode: (nodeId: string) => void
   attachFileToNode: (nodeId: string, file: File) => void
   updateTextNode: (nodeId: string, text: string) => void
+  setNodeServiceBoundary: (
+    nodeId: string,
+    role?: 'input' | 'output',
+    label?: string,
+  ) => void
+  setNodeVisualConfig: (
+    nodeId: string,
+    providerId?: string,
+    options?: Record<string, unknown>,
+  ) => void
   runNode: (
     nodeId: string,
     prompt: string,
-    options?: { agentId?: string; visualProviderId?: string },
+    options?: {
+      agentId?: string
+      visualProviderId?: string
+      visualProviderOptions?: Record<string, unknown>
+    },
   ) => Promise<void>
   applyWorkflowList: (workflows: WorkflowDocument[]) => void
   setWorkflowListQueryStatus: (status: WorkflowListStatus, error?: string) => void
@@ -309,7 +323,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
       composerNodeId: interaction.composerNodeId,
     })
 
-    void uploadAsset(file)
+    void uploadAsset(file, get().workflowId)
       .then((asset) => {
         set({
           nodes: get().nodes.map((node) => {
@@ -389,6 +403,50 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     ])
   },
 
+  setNodeServiceBoundary: (nodeId, role, label) => {
+    const normalizedLabel = label?.trim()
+    if (role && !normalizedLabel) return
+    set({
+      nodes: get().nodes.map((node) => node.id === nodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              serviceRole: role,
+              serviceLabel: role ? normalizedLabel : undefined,
+            },
+          }
+        : node),
+    })
+    enqueueWorkflowPatch([{
+      type: 'setNodeServiceBoundary',
+      nodeId,
+      role,
+      label: normalizedLabel,
+    }])
+  },
+
+  setNodeVisualConfig: (nodeId, providerId, options) => {
+    set({
+      nodes: get().nodes.map((node) => node.id === nodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              visualProviderId: providerId,
+              visualProviderOptions: options,
+            },
+          }
+        : node),
+    })
+    enqueueWorkflowPatch([{
+      type: 'setNodeVisualConfig',
+      nodeId,
+      providerId,
+      options,
+    }])
+  },
+
   applyWorkflowList: (workflows) => {
     set({ workflows, workflowListStatus: 'ready', workflowListError: undefined })
   },
@@ -447,6 +505,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
     if (!target || !prompt.trim()) return
 
     const upstream = getUpstreamNodes(nodes, edges, nodeId)
+    const isVisualTarget = target.data.materialType === 'image' || target.data.materialType === 'video'
     const userMessage = {
       id: `msg-${Date.now()}`,
       role: 'user' as const,
@@ -461,6 +520,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
               ...node,
               data: {
                 ...node.data,
+                visualProviderId: isVisualTarget
+                  ? options.visualProviderId ?? node.data.visualProviderId
+                  : node.data.visualProviderId,
+                visualProviderOptions: isVisualTarget
+                  ? options.visualProviderOptions ?? node.data.visualProviderOptions
+                  : node.data.visualProviderOptions,
                 status: 'running',
                 messages: [...node.data.messages, userMessage],
               },
@@ -469,6 +534,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
       ),
     })
     const startWorkflow = await enqueueWorkflowPatch([
+      ...(isVisualTarget ? [{
+        type: 'setNodeVisualConfig' as const,
+        nodeId,
+        providerId: options.visualProviderId,
+        options: options.visualProviderOptions,
+      }] : []),
       { type: 'setNodeStatus', nodeId, status: 'running' },
       { type: 'appendNodeMessage', nodeId, message: userMessage },
     ])
@@ -494,6 +565,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => {
             ...payload,
             workflowId: get().workflowId,
             modelId: options.visualProviderId,
+            providerOptions: options.visualProviderOptions,
           }),
       },
     )

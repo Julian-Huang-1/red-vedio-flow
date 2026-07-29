@@ -96,6 +96,10 @@ function parseContributions(value: unknown): PluginContributions | undefined {
           ['text-to-image', 'image-to-image', 'text-to-video', 'image-to-video', 'frames-to-video', 'image-upscale'],
           `contributes.visualProviders[${index}].capabilities`,
         ) ?? [],
+        optionsSchema: optionalRecord(
+          item.optionsSchema,
+          `contributes.visualProviders[${index}].optionsSchema`,
+        ),
       }
     }),
     agentProviders: parseArray(value.agentProviders, 'contributes.agentProviders', (item, index) => {

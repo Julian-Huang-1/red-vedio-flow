@@ -115,13 +115,13 @@ async function handle(request) {
   }
 }
 
-function executeAgent({ executionId, agentId, prompt, model, cwd, env }) {
+function executeAgent({ executionId, agentId, prompt, model, cwd, env, binPath }) {
   const definition = agents.find((agent) => agent.id === agentId)
   if (!definition) throw new Error(`unknown agent: ${String(agentId)}`)
   if (definition.protocol === 'acp' || definition.protocol === 'pi-rpc') {
     throw new Error(`${definition.label} is detectable but ${definition.protocol} execution is not implemented`)
   }
-  const bin = resolveAgentBin(definition)
+  const bin = binPath ? resolveOnPath(binPath) : resolveAgentBin(definition)
   if (!bin) throw new Error(`${definition.label} is not installed or is not on PATH`)
   let argv = buildArgv(agentId, model)
   if (definition.protocol === 'argv') argv = [...argv, prompt]

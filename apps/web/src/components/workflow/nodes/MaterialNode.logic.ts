@@ -21,6 +21,7 @@ export function useMaterialNode({ id, data }: UseMaterialNodeOptions) {
   const composerNodeId = useCanvasUiStore((state) => state.composerNodeId)
   const node = useWorkflowStore((state) => state.nodes.find((item) => item.id === id))
   const updateTextNode = useWorkflowStore((state) => state.updateTextNode)
+  const setNodeServiceBoundary = useWorkflowStore((state) => state.setNodeServiceBoundary)
   const canUpload = definition?.uploadable ?? false
   const isTextEditing = Boolean(definition?.editable) && editingNodeId === id
   const shouldShowComposer = composerNodeId === id && editingNodeId !== id && node !== undefined
@@ -98,5 +99,26 @@ export function useMaterialNode({ id, data }: UseMaterialNodeOptions) {
     shouldShowComposer,
     textareaRef,
     updateText: (value: string) => updateTextNode(id, value),
+    configureServiceBoundary: () => {
+      const nextRole = window.prompt(
+        '服务角色：输入 input、输出 output、清除 none',
+        data.serviceRole ?? 'none',
+      )?.trim().toLowerCase()
+      if (!nextRole) return
+      if (nextRole === 'none') {
+        setNodeServiceBoundary(id)
+        return
+      }
+      if (nextRole !== 'input' && nextRole !== 'output') return
+      const label = window.prompt(
+        '服务 Label（字母或下划线开头）',
+        data.serviceLabel ?? `${data.materialType}_${nextRole}`,
+      )?.trim()
+      if (!label || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) {
+        window.alert('Label 只能包含字母、数字和下划线，且不能以数字开头。')
+        return
+      }
+      setNodeServiceBoundary(id, nextRole, label)
+    },
   }
 }

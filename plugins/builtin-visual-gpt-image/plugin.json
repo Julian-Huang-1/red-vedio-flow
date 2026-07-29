@@ -1,0 +1,29 @@
+{
+  "id": "builtin.visual-gpt-image",
+  "name": "Built-in GPT Image Visual Provider",
+  "version": "0.1.0",
+  "apiVersion": "1",
+  "backend": {
+    "runtime": "process",
+    "command": "${NODE}",
+    "args": ["backend/main.mjs"]
+  },
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "visualProviders": [
+      {
+        "id": "gpt-image-2",
+        "title": "GPT Image 2",
+        "vendor": "OpenAI",
+        "capabilities": [
+          "text-to-image",
+          "image-to-image"
+        ]
+      }
+    ]
+  },
+  "secrets": {
+    "GPT_IMAGE_API_KEY": "MAASfd018690923149bc890e003129024aee",
+    "GPT_IMAGE_API_BASE_URL": "https://maas.devops.rednote.life/hackson/openai"
+  }
+}

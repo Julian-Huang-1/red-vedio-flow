@@ -13,6 +13,7 @@ export const workflows = sqliteTable('workflows', {
 
 export const assets = sqliteTable('assets', {
   id: text('id').primaryKey(),
+  workflowId: text('workflow_id'),
   kind: text('kind').notNull(),
   fileName: text('file_name').notNull(),
   mimeType: text('mime_type'),
@@ -82,4 +83,30 @@ export const visualTasks = sqliteTable('visual_tasks', {
     .where(sql`${table.status} IN ('submitting', 'polling')`),
   index('idx_visual_tasks_due').on(table.status, table.nextPollAt),
   index('idx_visual_tasks_node').on(table.workflowId, table.nodeId),
+])
+
+export const chatSessions = sqliteTable('chat_sessions', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  workflowId: text('workflow_id'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+})
+
+export const chatMessages = sqliteTable('chat_messages', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => chatSessions.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  role: text('role').notNull(),
+  text: text('text').notNull(),
+  status: text('status').notNull(),
+  agentId: text('agent_id'),
+  agentLabel: text('agent_label'),
+  modelId: text('model_id'),
+  error: text('error'),
+  runJson: text('run_json'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => [
+  index('idx_chat_messages_session').on(table.sessionId, table.createdAt),
 ])

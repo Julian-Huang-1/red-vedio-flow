@@ -5,6 +5,7 @@ export type ChatMessageStatus = 'pending' | 'streaming' | 'completed' | 'error'
 export type AgentRunSummary = {
   agentId: string
   agentLabel: string
+  modelId?: string
   bin?: string
   argv?: string[]
   stderr: string[]

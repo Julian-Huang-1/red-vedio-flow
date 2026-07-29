@@ -35,6 +35,7 @@ async function runAgent(runtime: LocalServerRuntime, ctx: RequestContext) {
     sendJson(res, 404, { error: `agent provider not found: ${agentId}` })
     return
   }
+  const registeredCli = runtime.agentRegistry.get(agentId)
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -51,6 +52,7 @@ async function runAgent(runtime: LocalServerRuntime, ctx: RequestContext) {
       prompt: nodePrompt,
       model: body.model,
       cwd: body.cwd,
+      binPath: registeredCli?.binPath,
       env: {
         RED_VIDEO_FLOW_BASE_URL: baseUrl,
         RVF_WORKFLOW_ID: body.workflowId,
@@ -147,6 +149,7 @@ async function runVisual(runtime: LocalServerRuntime, ctx: RequestContext) {
     nodeKind: body.nodeKind,
     prompt: body.prompt,
     upstream: body.upstream,
+    providerOptions: isRecord(body.providerOptions) ? body.providerOptions : undefined,
     downloadDir,
     assetUrlForPath: (filePath) => backend.assets.assetUrlForPath(filePath),
     onEvent: (event) => {

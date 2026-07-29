@@ -23,6 +23,10 @@ export type MaterialMessage = {
 export type MaterialNodeData = {
   materialType: MaterialType
   title: string
+  serviceRole?: 'input' | 'output'
+  serviceLabel?: string
+  visualProviderId?: string
+  visualProviderOptions?: Record<string, unknown>
   status: NodeStatus
   value: MaterialValue
   messages: MaterialMessage[]
@@ -72,6 +76,18 @@ export type WorkflowPatchOperation =
   | { type: 'moveNode'; nodeId: string; position: XYPosition }
   | { type: 'resizeNode'; nodeId: string; size: NodeSize }
   | { type: 'setNodeTitle'; nodeId: string; title: string }
+  | {
+      type: 'setNodeServiceBoundary'
+      nodeId: string
+      role?: 'input' | 'output'
+      label?: string
+    }
+  | {
+      type: 'setNodeVisualConfig'
+      nodeId: string
+      providerId?: string
+      options?: Record<string, unknown>
+    }
   | { type: 'setNodeStatus'; nodeId: string; status: NodeStatus }
   | { type: 'setNodeValue'; nodeId: string; value: MaterialValue }
   | { type: 'appendNodeMessage'; nodeId: string; message: MaterialMessage }

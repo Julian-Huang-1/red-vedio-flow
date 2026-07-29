@@ -33,6 +33,7 @@ function migrate(sqlite: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY,
+      workflow_id TEXT,
       kind TEXT NOT NULL,
       file_name TEXT NOT NULL,
       mime_type TEXT,
@@ -94,6 +95,31 @@ function migrate(sqlite: Database.Database) {
       FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      workflow_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'text',
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL,
+      agent_id TEXT,
+      agent_label TEXT,
+      model_id TEXT,
+      error TEXT,
+      run_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);
     CREATE INDEX IF NOT EXISTS idx_runs_node_id ON runs(node_id);
     CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
@@ -107,6 +133,8 @@ function migrate(sqlite: Database.Database) {
       WHERE status IN ('submitting', 'polling');
     CREATE INDEX IF NOT EXISTS idx_visual_tasks_due ON visual_tasks(status, next_poll_at);
     CREATE INDEX IF NOT EXISTS idx_visual_tasks_node ON visual_tasks(workflow_id, node_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at);
   `)
 
   const columns = sqlite.prepare(`PRAGMA table_info(workflows)`).all() as Array<{ name: string }>
@@ -119,4 +147,10 @@ function migrate(sqlite: Database.Database) {
     sqlite.exec(`ALTER TABLE runs ADD COLUMN heartbeat_at INTEGER NOT NULL DEFAULT 0;`)
     sqlite.exec(`UPDATE runs SET heartbeat_at = started_at WHERE heartbeat_at = 0;`)
   }
+
+  const assetColumns = sqlite.prepare(`PRAGMA table_info(assets)`).all() as Array<{ name: string }>
+  if (!assetColumns.some((column) => column.name === 'workflow_id')) {
+    sqlite.exec(`ALTER TABLE assets ADD COLUMN workflow_id TEXT;`)
+  }
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_assets_workflow ON assets(workflow_id, created_at DESC);`)
 }

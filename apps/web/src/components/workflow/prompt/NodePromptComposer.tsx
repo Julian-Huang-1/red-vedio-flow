@@ -63,6 +63,71 @@ export function NodePromptComposer({ node }: Props) {
         onChange={(event) => composer.setPrompt(event.target.value)}
         onKeyDown={composer.handleKeyDown}
       />
+      {composer.visualProviderOptionDefinitions.length > 0 ? (
+        <div className={styles.providerOptions}>
+          {composer.visualProviderOptionDefinitions.map((definition) => (
+            <label className={styles.providerOption} key={definition.name}>
+              <span>{definition.title}</span>
+              {definition.enum ? (
+                <select
+                  value={String(
+                    composer.selectedVisualProviderOptions[definition.name]
+                    ?? definition.default
+                    ?? '',
+                  )}
+                  onChange={(event) => {
+                    const rawValue = event.target.value
+                    const value = definition.type === 'integer' || definition.type === 'number'
+                      ? Number(rawValue)
+                      : definition.type === 'boolean'
+                        ? rawValue === 'true'
+                        : rawValue
+                    composer.setVisualProviderOption(definition.name, value)
+                  }}
+                >
+                  {definition.enum.map((value, index) => (
+                    <option value={String(value)} key={String(value)}>
+                      {definition.enumNames?.[index] ?? String(value)}
+                    </option>
+                  ))}
+                </select>
+              ) : definition.type === 'boolean' ? (
+                <select
+                  value={String(
+                    composer.selectedVisualProviderOptions[definition.name]
+                    ?? definition.default
+                    ?? false,
+                  )}
+                  onChange={(event) => (
+                    composer.setVisualProviderOption(definition.name, event.target.value === 'true')
+                  )}
+                >
+                  <option value="true">是</option>
+                  <option value="false">否</option>
+                </select>
+              ) : (
+                <input
+                  type={definition.type === 'integer' || definition.type === 'number' ? 'number' : 'text'}
+                  min={definition.minimum}
+                  max={definition.maximum}
+                  step={definition.type === 'integer' ? 1 : undefined}
+                  value={String(
+                    composer.selectedVisualProviderOptions[definition.name]
+                    ?? definition.default
+                    ?? '',
+                  )}
+                  onChange={(event) => {
+                    const value = definition.type === 'integer' || definition.type === 'number'
+                      ? Number(event.target.value)
+                      : event.target.value
+                    composer.setVisualProviderOption(definition.name, value)
+                  }}
+                />
+              )}
+            </label>
+          ))}
+        </div>
+      ) : null}
       <Composer.Footer>
         <div className={styles.footerMeta}>
           {composer.isVisualNode ? (

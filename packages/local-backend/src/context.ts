@@ -10,6 +10,8 @@ import { AgentPromptService } from './agents/prompt.js'
 import { UnavailableVisualService, type VisualServiceContract } from './visual/service.js'
 import { VisualTaskRepository } from './visual/taskRepository.js'
 import { VisualTaskService, type VisualTaskServiceOptions } from './visual/taskService.js'
+import { ChatRepository } from './chats/chatRepository.js'
+import { ChatService } from './chats/chatService.js'
 
 export type CreateLocalBackendOptions = {
   dataDir: string
@@ -24,7 +26,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
   const workflowRepository = new WorkflowRepository(database)
   const workflows = new WorkflowService(workflowRepository)
   const runRepository = new RunRepository(database)
-  const assets = new AssetService(options.dataDir)
+  const assets = new AssetService(options.dataDir, database)
   const visual = options.visual ?? new UnavailableVisualService()
   const visualTaskRepository = new VisualTaskRepository(database)
   const visualTasks = new VisualTaskService(
@@ -45,6 +47,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     prompts: new AgentPromptService(),
     visual,
     visualTasks,
+    chats: new ChatService(new ChatRepository(database)),
   }
 }
 

@@ -39,6 +39,26 @@ export function applyWorkflowPatch(document: WorkflowDocument, ops: WorkflowPatc
           data: { ...node.data, title: op.title },
         }))
         break
+      case 'setNodeServiceBoundary':
+        nodes = updateNode(nodes, op.nodeId, (node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            serviceRole: op.role,
+            serviceLabel: op.role ? normalizeServiceLabel(op.label) : undefined,
+          },
+        }))
+        break
+      case 'setNodeVisualConfig':
+        nodes = updateNode(nodes, op.nodeId, (node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            visualProviderId: op.providerId,
+            visualProviderOptions: op.options,
+          },
+        }))
+        break
       case 'setNodeStatus':
         nodes = updateNode(nodes, op.nodeId, (node) => ({
           ...node,
@@ -74,6 +94,15 @@ export function applyWorkflowPatch(document: WorkflowDocument, ops: WorkflowPatc
     title,
     graph: { nodes, edges },
   }
+}
+
+function normalizeServiceLabel(value: string | undefined) {
+  const label = value?.trim()
+  if (!label) throw new WorkflowPatchError('service label is required')
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) {
+    throw new WorkflowPatchError(`invalid service label: ${label}`)
+  }
+  return label
 }
 
 function updateNode(nodes: MaterialNode[], nodeId: string, update: (node: MaterialNode) => MaterialNode) {

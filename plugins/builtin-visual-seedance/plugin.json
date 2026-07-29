@@ -1,0 +1,70 @@
+{
+  "id": "builtin.visual-seedance",
+  "name": "Built-in Doubao Seedance Visual Provider",
+  "version": "0.1.0",
+  "apiVersion": "1",
+  "backend": {
+    "runtime": "process",
+    "command": "${NODE}",
+    "args": ["backend/main.mjs"]
+  },
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "visualProviders": [
+      {
+        "id": "doubao-seedance-2",
+        "title": "豆包 Seedance 2.0",
+        "vendor": "ByteDance",
+        "capabilities": [
+          "text-to-video",
+          "image-to-video"
+        ],
+        "optionsSchema": {
+          "type": "object",
+          "properties": {
+            "ratio": {
+              "type": "string",
+              "title": "画面比例",
+              "enum": ["adaptive", "16:9", "9:16", "4:3", "3:4", "1:1", "21:9"],
+              "default": "adaptive"
+            },
+            "duration": {
+              "type": "integer",
+              "title": "时长（秒）",
+              "enum": [-1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+              "enumNames": ["自动", "4 秒", "5 秒", "6 秒", "7 秒", "8 秒", "9 秒", "10 秒", "11 秒", "12 秒", "13 秒", "14 秒", "15 秒"],
+              "default": 5
+            },
+            "resolution": {
+              "type": "string",
+              "title": "分辨率",
+              "enum": ["480p", "720p", "1080p"],
+              "default": "720p"
+            },
+            "generate_audio": {
+              "type": "boolean",
+              "title": "生成音频",
+              "default": true
+            },
+            "watermark": {
+              "type": "boolean",
+              "title": "添加水印",
+              "default": false
+            },
+            "seed": {
+              "type": "integer",
+              "title": "随机种子",
+              "minimum": -1,
+              "maximum": 4294967295,
+              "default": -1
+            }
+          }
+        }
+      }
+    ]
+  },
+  "secrets": {
+    "DOUBAO_SEEDANCE_API_KEY": "MAASfd018690923149bc890e003129024aee",
+    "DOUBAO_SEEDANCE_API_BASE_URL": "https://maas.devops.xiaohongshu.com/hackson/openai"
+  }
+}

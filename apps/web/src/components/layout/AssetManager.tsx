@@ -116,10 +116,27 @@ export function AssetManager() {
               </AssetUi.NodeList>
             </>
           ) : (
-            <div className={styles.assetsEmpty}>
-              <Boxes size={28} />
-              <p>上传图片、视频或生成结果后，会在这里沉淀为工作流资产。</p>
-            </div>
+            manager.assets.length > 0 ? (
+              <div className={styles.assetGrid}>
+                {manager.assets.map((asset) => (
+                  <article key={asset.id} className={styles.assetCard} data-asset-kind={asset.kind}>
+                    {asset.kind === 'image' ? (
+                      <img src={asset.url} alt={asset.fileName} />
+                    ) : asset.kind === 'video' ? (
+                      <video src={asset.url} muted playsInline preload="metadata" />
+                    ) : (
+                      <Boxes size={24} />
+                    )}
+                    <span>{asset.fileName}</span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.assetsEmpty}>
+                <Boxes size={28} />
+                <p>{manager.assetError ?? '当前画布还没有素材。上传或生成后会在这里显示。'}</p>
+              </div>
+            )
           )}
 
           <AssetUi.Footer>

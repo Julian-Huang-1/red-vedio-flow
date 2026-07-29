@@ -35,6 +35,20 @@ export function MaterialNode({ id, data, selected }: NodeProps<MaterialFlowNode>
       <NodeUi.Title>
         <Icon size={20} />
         <span>{data.title}</span>
+        <button
+          className={styles.serviceBoundary}
+          data-role={data.serviceRole}
+          title="设置为应用输入或输出"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            materialNode.configureServiceBoundary()
+          }}
+        >
+          {data.serviceRole
+            ? `${data.serviceRole === 'input' ? 'IN' : 'OUT'} · ${data.serviceLabel}`
+            : 'I/O'}
+        </button>
         <NodeUi.Status>{statusLabel[data.status]}</NodeUi.Status>
       </NodeUi.Title>
 

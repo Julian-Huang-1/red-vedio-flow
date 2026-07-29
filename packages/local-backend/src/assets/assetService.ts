@@ -1,23 +1,37 @@
 import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { extname, join, normalize, relative } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { desc, eq } from 'drizzle-orm'
+import type { LocalDatabase } from '../db/client.js'
+import { assets } from '../db/schema.js'
 
 export type UploadAssetInput = {
   fileName: string
   mimeType?: string
   bytes: Buffer
+  workflowId: string
 }
 
 export type UploadedAsset = {
+  id: string
+  workflowId: string
+  kind: string
   url: string
   localPath: string
   fileName: string
+  mimeType?: string
+  provider?: string
+  createdAt: number
 }
 
 export class AssetService {
   readonly uploadDir: string
   readonly generatedDir: string
 
-  constructor(private readonly dataDir: string) {
+  constructor(
+    private readonly dataDir: string,
+    private readonly database: LocalDatabase,
+  ) {
     this.uploadDir = join(dataDir, 'uploads')
     this.generatedDir = join(dataDir, 'generated')
     mkdirSync(this.uploadDir, { recursive: true })
@@ -29,11 +43,53 @@ export class AssetService {
     const storedName = `${Date.now()}-${Math.round(Math.random() * 10000)}-${fileName}`
     const filePath = join(this.uploadDir, storedName)
     writeFileSync(filePath, input.bytes)
-    return {
+    return this.register({
+      workflowId: input.workflowId,
+      kind: kindFromMimeType(input.mimeType),
       url: this.assetUrlForPath(filePath),
       localPath: filePath,
       fileName,
+      mimeType: input.mimeType,
+    })
+  }
+
+  list(workflowId: string) {
+    return this.database.db.select().from(assets)
+      .where(eq(assets.workflowId, workflowId))
+      .orderBy(desc(assets.createdAt))
+      .all()
+      .map(toUploadedAsset)
+  }
+
+  register(input: {
+    workflowId: string
+    kind: string
+    url: string
+    localPath: string
+    fileName: string
+    mimeType?: string
+    provider?: string
+  }): UploadedAsset {
+    const existing = this.database.sqlite.prepare(
+      `SELECT id FROM assets WHERE workflow_id = ? AND local_path = ? LIMIT 1`,
+    ).get(input.workflowId, input.localPath) as { id: string } | undefined
+    if (existing) {
+      const row = this.database.db.select().from(assets).where(eq(assets.id, existing.id)).get()
+      return toUploadedAsset(row!)
     }
+    const record: typeof assets.$inferInsert = {
+      id: randomUUID(),
+      workflowId: input.workflowId,
+      kind: input.kind,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      localPath: input.localPath,
+      url: input.url,
+      provider: input.provider,
+      createdAt: Date.now(),
+    }
+    this.database.db.insert(assets).values(record).run()
+    return toUploadedAsset(record as typeof assets.$inferSelect)
   }
 
   resolveAssetPath(assetUrl: string) {
@@ -51,6 +107,26 @@ export class AssetService {
     const rel = relative(this.dataDir, filePath).split('/').map(encodeURIComponent).join('/')
     return `/api/assets/${rel}`
   }
+}
+
+function toUploadedAsset(row: typeof assets.$inferSelect): UploadedAsset {
+  return {
+    id: row.id,
+    workflowId: row.workflowId ?? '',
+    kind: row.kind,
+    url: row.url,
+    localPath: row.localPath,
+    fileName: row.fileName,
+    mimeType: row.mimeType ?? undefined,
+    provider: row.provider ?? undefined,
+    createdAt: row.createdAt,
+  }
+}
+
+function kindFromMimeType(mimeType?: string) {
+  if (mimeType?.startsWith('image/')) return 'image'
+  if (mimeType?.startsWith('video/')) return 'video'
+  return 'file'
 }
 
 export function contentTypeFor(filePath: string) {

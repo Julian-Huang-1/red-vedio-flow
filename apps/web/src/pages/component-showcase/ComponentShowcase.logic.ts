@@ -23,19 +23,3 @@ export function useComponentShowcase() {
     setQuery,
   }
 }
-
-export function useCopyFeedback(value: string) {
-  const [copied, setCopied] = useState(false)
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1200)
-  }
-
-  return {
-    copied,
-    copy: () => void copy(),
-  }
-}
-

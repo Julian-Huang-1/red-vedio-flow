@@ -4,6 +4,7 @@ import {
   createWorkflow,
   deleteWorkflow,
   fetchLocalAgents,
+  fetchAgentModels,
   fetchVisualModels,
   fetchWorkflow,
   fetchWorkflows,
@@ -11,9 +12,19 @@ import {
 
 export const workflowQueryKeys = {
   agents: ['agents'] as const,
+  agentModels: (agentId: string) => ['agent-models', agentId] as const,
   visualModels: ['visual-models'] as const,
   workflows: ['workflows'] as const,
   workflow: (workflowId: string) => ['workflow', workflowId] as const,
+}
+
+export function useAgentModelsQuery(agentId?: string, enabled = true) {
+  return useQuery({
+    queryKey: workflowQueryKeys.agentModels(agentId ?? ''),
+    queryFn: () => fetchAgentModels(agentId!),
+    enabled: enabled && Boolean(agentId),
+    staleTime: Number.POSITIVE_INFINITY,
+  })
 }
 
 export function useAgentsQuery(enabled = true) {

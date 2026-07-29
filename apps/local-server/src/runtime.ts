@@ -7,8 +7,16 @@ import {
   createLocalBackend,
 } from '@red-video-flow/local-backend'
 import type { LocalServerConfig } from './config.js'
+import { AgentRegistry } from './agentRegistry.js'
+import { AgentRegistrationTokens } from './agentRegistrationTokens.js'
+import { AgentModelUpdateTokens } from './agentModelUpdateTokens.js'
+import { RuntimeInfoStore } from './runtimeInfo.js'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
+  const agentRegistry = new AgentRegistry(config.dataDir)
+  const agentRegistrationTokens = new AgentRegistrationTokens()
+  const agentModelUpdateTokens = new AgentModelUpdateTokens()
+  const runtimeInfo = new RuntimeInfoStore(config.runtimeFilePath)
   const plugins = new PluginManager({
     pluginDirs: config.pluginDirs,
     requestTimeoutMs: config.pluginRequestTimeoutMs,
@@ -79,6 +87,10 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
 
   return {
     config,
+    agentRegistry,
+    agentRegistrationTokens,
+    agentModelUpdateTokens,
+    runtimeInfo,
     backend,
     plugins,
     executions,

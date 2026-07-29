@@ -6,12 +6,144 @@
   z-index: 35;
   display: grid;
   width: 376px;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto auto;
   overflow: hidden;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   background: #202020;
   box-shadow: -24px 0 68px rgba(0, 0, 0, 0.45);
   will-change: transform, opacity;
+}
+
+.historyPanel {
+  position: absolute;
+  inset: 62px 0 0;
+  z-index: 5;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: #202020;
+}
+
+.historyToolbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+
+  label {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 7px;
+    border-radius: 9px;
+    padding: 0 10px;
+    color: #999;
+    background: #2c2c2c;
+  }
+
+  input {
+    min-width: 0;
+    flex: 1;
+    height: 36px;
+    border: 0;
+    outline: 0;
+    color: #eee;
+    background: transparent;
+  }
+
+  > button {
+    width: 36px;
+    border: 0;
+    border-radius: 9px;
+    color: #eee;
+    background: #383838;
+    cursor: pointer;
+  }
+}
+
+.historyList {
+  overflow-y: auto;
+  padding: 0 10px 12px;
+}
+
+.historyItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 9px;
+  padding: 3px;
+
+  &[data-active] {
+    background: #343434;
+  }
+
+  &:hover {
+    background: #2d2d2d;
+  }
+}
+
+.historyMain {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 0;
+  padding: 8px;
+  color: #eee;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+
+  strong {
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  time {
+    color: #888;
+    font-size: 11px;
+  }
+}
+
+.historyItemActions {
+  display: flex;
+
+  button {
+    display: inline-grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    color: #999;
+    background: transparent;
+    cursor: pointer;
+
+    &:hover {
+      color: #eee;
+      background: #444;
+    }
+  }
+}
+
+.historyEmpty {
+  padding: 28px 10px;
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+}
+
+.newChatLabel {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.headerActions button[data-active] {
+  color: #fff;
+  background: #383838;
 }
 
 .drawer[data-state='open'] {
@@ -25,6 +157,7 @@
 
 .header {
   display: flex;
+  min-width: 0;
   min-height: 62px;
   align-items: center;
   justify-content: space-between;
@@ -49,9 +182,17 @@
 }
 
 .title {
+  min-width: 0;
+  overflow: hidden;
   color: #fff;
   font-size: 15px;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerActions {
+  flex: 0 0 auto;
 }
 
 .headerActions button,
@@ -67,8 +208,64 @@
 }
 
 .skillBlock {
+  min-width: 0;
   border-bottom: 0;
   padding: 10px 14px 12px;
+}
+
+.registrationBlock {
+  margin: 0 14px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  color: #ededed;
+  background: #292929;
+
+  strong {
+    font-size: 13px;
+  }
+
+  p {
+    margin: 4px 0 0;
+    color: #999;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}
+
+.registrationActions {
+  display: flex;
+  max-height: 92px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+  overflow-y: auto;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    border-radius: 8px;
+    padding: 7px 9px;
+    color: #e8e8e8;
+    background: #383838;
+    cursor: pointer;
+    font-size: 12px;
+
+    &:hover {
+      background: #444;
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.65;
+    }
+  }
+}
+
+.registrationError {
+  color: #ffaaa3 !important;
 }
 
 .blockTitle {
@@ -114,6 +311,7 @@
 
 .messages {
   display: flex;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
   gap: 10px;
@@ -159,6 +357,12 @@
 .messageText {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.messageMeta {
+  margin-top: 6px;
+  color: #858585;
+  font-size: 11px;
 }
 
 .messageStatus,
@@ -233,6 +437,7 @@
 
 .composer {
   position: relative;
+  min-width: 0;
   border-top: 0;
   padding: 10px 14px 14px;
 
@@ -313,6 +518,7 @@
 
 .composerFooter {
   min-height: 48px;
+  flex-wrap: wrap;
   justify-content: space-between;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-top: 0;

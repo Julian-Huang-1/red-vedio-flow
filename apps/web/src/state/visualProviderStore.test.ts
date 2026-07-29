@@ -24,8 +24,33 @@ describe('visual provider store', () => {
     useVisualProviderStore.setState({
       providers: [],
       selectedProviderIds: {},
+      providerOptions: {},
       status: 'idle',
       error: undefined,
+    })
+  })
+
+  it('initializes and updates provider options from the provider schema', () => {
+    useVisualProviderStore.getState().applyResponse({
+      models: [{
+        ...videoProvider,
+        optionsSchema: {
+          type: 'object',
+          properties: {
+            ratio: { type: 'string', enum: ['16:9', '9:16'], default: '16:9' },
+          },
+        },
+      }],
+      installedCount: 1,
+      invokableCount: 1,
+    })
+
+    expect(useVisualProviderStore.getState().providerOptions['video-only']).toEqual({
+      ratio: '16:9',
+    })
+    useVisualProviderStore.getState().setProviderOption('video-only', 'ratio', '9:16')
+    expect(useVisualProviderStore.getState().providerOptions['video-only']).toEqual({
+      ratio: '9:16',
     })
   })
 

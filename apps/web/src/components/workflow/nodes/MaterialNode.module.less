@@ -23,6 +23,28 @@
   font-size: 12px;
 }
 
+.serviceBoundary {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font-size: 11px;
+
+  &[data-role='input'] {
+    color: #8dd8ff;
+    border-color: rgba(65, 181, 240, 0.35);
+    background: rgba(65, 181, 240, 0.12);
+  }
+
+  &[data-role='output'] {
+    color: #a7efbd;
+    border-color: rgba(83, 203, 121, 0.35);
+    background: rgba(83, 203, 121, 0.12);
+  }
+}
+
 .body {
   width: 100%;
   min-width: 360px;

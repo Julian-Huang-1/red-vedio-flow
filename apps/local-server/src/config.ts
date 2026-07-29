@@ -1,6 +1,7 @@
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 export type LocalServerOptions = {
   preferredPort?: number
@@ -8,6 +9,11 @@ export type LocalServerOptions = {
   webDistDir?: string
   pluginDirs?: string[]
   cwd?: string
+  runtimeFilePath?: string
+  rvfCliCommand?: string
+  webMode?: 'static' | 'vite' | 'none'
+  viteRoot?: string
+  distribution?: 'source' | 'electron'
 }
 
 export type LocalServerConfig = {
@@ -18,6 +24,10 @@ export type LocalServerConfig = {
   workspaceRoot: string
   cwd: string
   rvfCliCommand: string
+  runtimeFilePath: string
+  webMode: 'static' | 'vite' | 'none'
+  viteRoot: string
+  distribution: 'source' | 'electron'
   runTimeoutMs: number
   runReaperIntervalMs: number
   visualTaskIntervalMs: number
@@ -59,7 +69,17 @@ export function resolveLocalServerConfig(
     distDir: resolve(options.webDistDir ?? env.RED_VIDEO_FLOW_WEB_DIST_DIR ?? join(appDir, '../web/dist')),
     workspaceRoot,
     cwd: resolve(options.cwd ?? process.cwd()),
-    rvfCliCommand: env.RVF_CLI_COMMAND ?? 'pnpm --filter @red-video-flow/workflow-cli start --',
+    rvfCliCommand: options.rvfCliCommand
+      ?? env.RVF_CLI_COMMAND
+      ?? sourceRvfCliCommand(workspaceRoot),
+    runtimeFilePath: resolve(
+      options.runtimeFilePath
+        ?? env.RED_VIDEO_FLOW_RUNTIME_FILE
+        ?? join(homedir(), '.red-video-flow/runtime.json'),
+    ),
+    webMode: options.webMode ?? readWebMode(env.RED_VIDEO_FLOW_WEB_MODE),
+    viteRoot: resolve(options.viteRoot ?? env.RED_VIDEO_FLOW_VITE_ROOT ?? join(workspaceRoot, 'apps/web')),
+    distribution: options.distribution ?? 'source',
     runTimeoutMs: readNumber(env.RED_VIDEO_FLOW_RUN_TIMEOUT_MS, 120_000, 'run timeout'),
     runReaperIntervalMs: readNumber(env.RED_VIDEO_FLOW_RUN_REAPER_INTERVAL_MS, 30_000, 'run reaper interval'),
     visualTaskIntervalMs: readNumber(env.RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS, 5_000, 'visual task interval'),
@@ -71,6 +91,24 @@ export function resolveLocalServerConfig(
     pluginShutdownGraceMs: readNumber(env.RED_VIDEO_FLOW_PLUGIN_SHUTDOWN_GRACE_MS, 3_000, 'plugin shutdown grace'),
     pluginDirs: pluginDirs.map((item) => resolve(item)),
   }
+}
+
+function sourceRvfCliCommand(workspaceRoot: string) {
+  const tsxPackagePath = createRequire(import.meta.url).resolve('tsx/package.json')
+  const tsxCliPath = join(dirname(tsxPackagePath), 'dist/cli.mjs')
+  const rvfEntryPath = join(workspaceRoot, 'packages/workflow-cli/src/index.ts')
+  return [process.execPath, tsxCliPath, rvfEntryPath].map(shellQuote).join(' ')
+}
+
+function shellQuote(value: string) {
+  if (process.platform === 'win32') return `"${value.replaceAll('"', '""')}"`
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+function readWebMode(value: string | undefined): LocalServerConfig['webMode'] {
+  if (value === undefined) return 'static'
+  if (value === 'static' || value === 'vite' || value === 'none') return value
+  throw new Error(`invalid web mode: ${value}`)
 }
 
 function readNumber(value: string | undefined, fallback: number, label: string) {

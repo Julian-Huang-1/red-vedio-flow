@@ -37,6 +37,7 @@ export type PluginVisualProviderContribution = {
   title: string
   vendor?: string
   capabilities: VisualCapability[]
+  optionsSchema?: JsonSchema
 }
 
 export type PluginAgentProviderContribution = {

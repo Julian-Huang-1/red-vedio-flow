@@ -6,6 +6,7 @@ import {
   completeWorkflowNodeRun,
   createHttpTransport,
   failWorkflowNodeRun,
+  fetchRegisteredAgentCli,
   fetchLocalAgents,
   fetchPlugin,
   fetchPluginCommand,
@@ -21,10 +22,14 @@ import {
   patchWorkflow,
   reconcileVisualTasks,
   reloadPlugin,
+  registerAgentCli,
   runNodeWithAgent,
   runVisualNode,
   startPluginCommandExecution,
   startWorkflowNodeRun,
+  unregisterAgentCli,
+  updateAgentModels,
+  verifyRegisteredAgentCli,
   type VisualTaskRecord,
 } from '@red-video-flow/workflow-client'
 import {
@@ -41,6 +46,7 @@ import {
   type WorkflowDocument,
   type WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
+import { discoverRuntimeBaseUrl } from './runtimeDiscovery.js'
 
 type CliOptions = {
   baseUrl: string
@@ -75,7 +81,7 @@ main().catch((error) => {
 async function main() {
   const parsed = parseArgs(process.argv.slice(2))
   const options: CliOptions = {
-    baseUrl: String(parsed.flags['base-url'] ?? process.env.RED_VIDEO_FLOW_BASE_URL ?? 'http://127.0.0.1:5176'),
+    baseUrl: await discoverRuntimeBaseUrl(readStringFlag(parsed.flags['base-url'])),
     baseRevision: readNumberFlag(parsed.flags['base-revision']),
   }
 
@@ -89,6 +95,10 @@ async function main() {
 
   if (scope === 'visual') {
     await runVisualCommand(command, args, parsed.flags)
+    return
+  }
+  if (scope === 'agent') {
+    await runAgentCommand(command, args, parsed.flags)
     return
   }
   if (scope === 'plugin') {
@@ -139,6 +149,60 @@ async function main() {
     return
   }
   throw new Error(`unknown workflow command: ${command}`)
+}
+
+async function runAgentCommand(
+  command: string | undefined,
+  args: string[],
+  flags: ParsedArgs['flags'],
+) {
+  if (command === 'list') {
+    printJson({ ok: true, ...(await fetchLocalAgents()) })
+    return
+  }
+  if (command === 'models') {
+    const action = required(args[0], 'agent models action')
+    if (action !== 'update') throw new Error(`unknown agent models command: ${action}`)
+    const agentId = required(args[1] ?? readStringFlag(flags.id), 'agentId')
+    const updateToken = required(readStringFlag(flags['update-token']), 'update-token')
+    const discovery = readAgentModelDiscoveryInput(flags)
+    printJson({
+      ok: true,
+      ...(await updateAgentModels(agentId, updateToken, discovery)),
+    })
+    return
+  }
+  const agentId = required(args[0] ?? readStringFlag(flags.id), 'agentId')
+  if (command === 'register') {
+    const binPath = required(readStringFlag(flags.bin), 'bin')
+    const registrationToken = required(
+      readStringFlag(flags['registration-token']),
+      'registration-token',
+    )
+    printJson({
+      ok: true,
+      ...(await registerAgentCli(agentId, binPath, registrationToken)),
+    })
+    return
+  }
+  if (command === 'inspect') {
+    printJson({ ok: true, ...(await fetchRegisteredAgentCli(agentId)) })
+    return
+  }
+  if (command === 'unregister') {
+    printJson({ ok: true, ...(await unregisterAgentCli(agentId)) })
+    return
+  }
+  if (command === 'verify') {
+    const result = await verifyRegisteredAgentCli(
+      agentId,
+      readNumberFlag(flags['timeout-ms']),
+    )
+    printJson({ ok: result.verification.verified, ...result })
+    if (!result.verification.verified) process.exitCode = 1
+    return
+  }
+  throw new Error(`unknown agent command: ${command ?? ''}`)
 }
 
 async function runPluginCommand(command: string | undefined, args: string[]) {
@@ -762,6 +826,28 @@ function readJsonInput(flags: ParsedArgs['flags']) {
   }
 }
 
+function readAgentModelDiscoveryInput(flags: ParsedArgs['flags']) {
+  const useStdin = readBooleanFlag(flags.stdin, false)
+  const inline = readStringFlag(flags.input)
+  const filePath = readStringFlag(flags['input-file'])
+  const selected = [useStdin, Boolean(inline), Boolean(filePath)].filter(Boolean).length
+  if (selected !== 1) throw new Error('use exactly one of --stdin, --input, or --input-file')
+  const raw = useStdin
+    ? readFileSync(0, 'utf8')
+    : filePath
+      ? readFileSync(filePath, 'utf8')
+      : inline!
+  try {
+    const value = JSON.parse(raw)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error()
+    }
+    return value as Parameters<typeof updateAgentModels>[2]
+  } catch {
+    throw new Error('agent model discovery input must be valid JSON')
+  }
+}
+
 function readPollInterval(flags: ParsedArgs['flags']) {
   const value = readNumberFlag(flags['poll-interval-ms']) ?? defaultPollIntervalMs
   if (value <= 0) throw new Error('poll-interval-ms must be greater than 0')
@@ -823,6 +909,15 @@ function printHelp() {
       'rvf workflow upstream <workflowId> <nodeId>',
       'rvf workflow node get <workflowId> <nodeId>',
       'rvf visual query <submitId> [--node-kind image|video] [--wait]',
+    ],
+    agentCommands: [
+      'rvf agent list',
+      'rvf agent register <agentId> --bin <absolute-path> --registration-token <token>',
+      'rvf agent register --id <agentId> --bin <absolute-path> --registration-token <token>',
+      'rvf agent inspect <agentId>',
+      'rvf agent verify <agentId> [--timeout-ms 3000]',
+      'rvf agent unregister <agentId>',
+      'rvf agent models update <agentId> --update-token <token> --stdin',
     ],
     pluginCommands: [
       'rvf plugin list',

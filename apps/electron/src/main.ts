@@ -8,7 +8,7 @@ let backendClosed = false
 let backendClosing = false
 
 function devUrl() {
-  return app.isPackaged ? null : process.env.RED_VIDEO_FLOW_ELECTRON_DEV_URL ?? 'http://127.0.0.1:5175'
+  return app.isPackaged ? null : process.env.RED_VIDEO_FLOW_ELECTRON_DEV_URL ?? null
 }
 
 function webDistDir() {
@@ -18,8 +18,7 @@ function webDistDir() {
 }
 
 async function startBackend() {
-  process.env.RED_VIDEO_FLOW_DATA_DIR = join(app.getPath('userData'), 'data')
-  process.env.RED_VIDEO_FLOW_WEB_DIST_DIR = webDistDir()
+  const userDataDir = app.getPath('userData')
   if (app.isPackaged) {
     process.env.RED_VIDEO_FLOW_PLUGIN_DIRS = [
       join(app.getPath('userData'), 'plugins'),
@@ -28,7 +27,35 @@ async function startBackend() {
   }
 
   const { startLocalServer } = await import('@red-video-flow/local-server')
-  return startLocalServer()
+  return startLocalServer({
+    preferredPort: 0,
+    dataDir: join(userDataDir, 'data'),
+    webDistDir: webDistDir(),
+    runtimeFilePath: join(userDataDir, 'runtime.json'),
+    rvfCliCommand: app.isPackaged ? bundledRvfCommand() : developmentRvfCommand(),
+    webMode: app.isPackaged ? 'static' : 'vite',
+    viteRoot: join(app.getAppPath(), '../web'),
+    distribution: app.isPackaged ? 'electron' : 'source',
+  })
+}
+
+function bundledRvfCommand() {
+  return shellQuote(join(process.resourcesPath, process.platform === 'win32' ? 'bin/rvf.cmd' : 'bin/rvf'))
+}
+
+function developmentRvfCommand() {
+  const nodePath = process.env.RED_VIDEO_FLOW_DEV_NODE
+  if (!nodePath) return undefined
+  return [
+    nodePath,
+    join(app.getAppPath(), '../local-server/node_modules/tsx/dist/cli.mjs'),
+    join(app.getAppPath(), '../../packages/workflow-cli/src/index.ts'),
+  ].map(shellQuote).join(' ')
+}
+
+function shellQuote(value: string) {
+  if (process.platform === 'win32') return `"${value.replaceAll('"', '""')}"`
+  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
 function installMenu(url: string) {
@@ -61,7 +88,7 @@ async function createWindow() {
   const url = devUrl()
 
   if (!url && !localServer) localServer = await startBackend()
-  const appUrl = url ?? localServer?.url
+  const appUrl = url ?? localServer?.runtime.baseUrl
   if (!appUrl) throw new Error('Unable to resolve application URL')
 
   installMenu(appUrl)

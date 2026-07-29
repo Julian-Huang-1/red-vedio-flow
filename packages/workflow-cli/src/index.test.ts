@@ -18,6 +18,7 @@ let baseUrl = ''
 let workflow: WorkflowDocument
 let visualResult: Record<string, unknown>
 let visualTask: Record<string, unknown>
+let agentModelUpdate: Record<string, unknown> | undefined
 
 function createWorkflow(nodes: WorkflowDocument['graph']['nodes'] = []): WorkflowDocument {
   return {
@@ -78,6 +79,7 @@ beforeEach(async () => {
     completedAt: 2,
     projectedAt: 2,
   }
+  agentModelUpdate = undefined
 
   server = http.createServer(async (req, res) => {
     try {
@@ -136,6 +138,17 @@ beforeEach(async () => {
         sendJson(res, 200, { claimed: 0, completed: 0, pending: 0, failed: 0 })
         return
       }
+      if (req.method === 'POST' && url.pathname === '/api/agents/codex/models') {
+        const update = await readJson(req) as Record<string, unknown>
+        agentModelUpdate = update
+        sendJson(res, 200, {
+          agentId: 'codex',
+          ...(update.discovery as Record<string, unknown>),
+          source: 'agent',
+          discoveredAt: new Date().toISOString(),
+        })
+        return
+      }
       sendJson(res, 404, { error: 'not found' })
     } catch (error) {
       sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
@@ -155,12 +168,12 @@ afterEach(async () => {
   server = undefined
 })
 
-function runCli(args: string[]) {
+function runCli(args: string[], stdin?: string) {
   return new Promise<any>((resolveRun, rejectRun) => {
     const child = spawn(cliBin, [cliEntry, ...args, `--base-url=${baseUrl}`], {
       cwd: workspaceRoot,
       env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''
     let stderr = ''
@@ -173,6 +186,7 @@ function runCli(args: string[]) {
       stderr += chunk
     })
     child.on('error', rejectRun)
+    child.stdin.end(stdin)
     child.on('close', (code) => {
       if (code !== 0) {
         rejectRun(new Error(stderr || stdout || `CLI exited with ${code}`))
@@ -182,6 +196,26 @@ function runCli(args: string[]) {
     })
   })
 }
+
+describe('agent model commands', () => {
+  it('updates discovered models from stdin', async () => {
+    const discovery = {
+      models: [{ id: 'gpt-test', label: 'GPT Test', available: true }],
+      defaultModelId: 'gpt-test',
+      confidence: 'account',
+    }
+    const result = await runCli(
+      ['agent', 'models', 'update', 'codex', '--update-token=test-token', '--stdin'],
+      JSON.stringify(discovery),
+    )
+
+    expect(result).toMatchObject({ ok: true, agentId: 'codex', source: 'agent' })
+    expect(agentModelUpdate).toEqual({
+      updateToken: 'test-token',
+      discovery,
+    })
+  })
+})
 
 describe('workflow CLI graph commands', () => {
   it('adds and removes nodes and edges through incremental patches', async () => {

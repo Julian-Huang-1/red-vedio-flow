@@ -7,7 +7,8 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "tsc --noEmit && tsup",
+    "build": "tsc --noEmit && tsup && pnpm build:rvf",
+    "build:rvf": "tsup --config tsup.rvf.config.ts",
     "pack:dir": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --dir",
     "dist": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage",
     "dist:mac": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --mac",
@@ -25,7 +26,8 @@
     "electron": "^37.2.3",
     "electron-builder": "^26.0.12",
     "tsup": "^8.5.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5"
   },
   "build": {
     "appId": "com.redvideoflow.desktop",
@@ -46,6 +48,14 @@
       {
         "from": "../../plugins",
         "to": "builtin-plugins"
+      },
+      {
+        "from": "dist/rvf",
+        "to": "rvf"
+      },
+      {
+        "from": "dist/bin",
+        "to": "bin"
       }
     ],
     "mac": {

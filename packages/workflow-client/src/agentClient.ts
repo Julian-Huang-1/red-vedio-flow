@@ -1,4 +1,5 @@
 import type { LocalAgent, MaterialNode, WorkflowEdge } from '@red-video-flow/workflow-core'
+import type { AgentModelDiscovery } from '@red-video-flow/workflow-core'
 import { recordWorkflowSseEvent } from './debugEvents'
 import { getWorkflowClientTransport, readJsonResponse } from './transport'
 
@@ -17,6 +18,7 @@ export type VisualModel = {
   invokable: boolean
   binPath?: string | null
   capabilities: string[]
+  optionsSchema?: Record<string, unknown>
 }
 
 export type VisualModelListResponse = {
@@ -27,6 +29,7 @@ export type VisualModelListResponse = {
 
 export type RunNodePayload = {
   agentId: string
+  model?: string
   node: MaterialNode
   upstream: MaterialNode[]
   referencedNodes?: MaterialNode[]
@@ -52,9 +55,15 @@ export type RunNodeEvents = {
 }
 
 export type UploadedAsset = {
+  id: string
+  workflowId: string
+  kind: string
   url: string
   localPath: string
   fileName: string
+  mimeType?: string
+  provider?: string
+  createdAt: number
 }
 
 export type VisualRunResult = {
@@ -103,14 +112,132 @@ export async function fetchLocalAgents() {
   return readJsonResponse<AgentListResponse>(response, '本地 Agent 服务不可用')
 }
 
+export type RegisteredAgentCli = {
+  id: string
+  binPath: string
+  registeredAt: string
+}
+
+export async function registerAgentCli(id: string, binPath: string, registrationToken: string) {
+  const response = await getWorkflowClientTransport().request('/api/agents/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, binPath, registrationToken }),
+  })
+  return readJsonResponse<{ agent: RegisteredAgentCli }>(response, 'Agent CLI 注册失败')
+}
+
+export type AgentRegistrationGrant = {
+  token: string
+  agentId: string
+  expiresAt: string
+  command: string
+  prompt: string
+  distribution: 'source' | 'electron'
+  requiresNodeInstallation: false
+  modelUpdateTokenExpiresAt: string
+}
+
+export async function createAgentRegistrationToken(agentId: string) {
+  const response = await getWorkflowClientTransport().request('/api/agent-registration-tokens', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId }),
+  })
+  return readJsonResponse<AgentRegistrationGrant>(response, '创建 Agent 注册提示失败')
+}
+
+export async function fetchRegisteredAgentCli(id: string) {
+  const response = await getWorkflowClientTransport().request(`/api/agents/${encodeURIComponent(id)}`)
+  return readJsonResponse<{ agent: RegisteredAgentCli }>(response, 'Agent CLI 查询失败')
+}
+
+export async function unregisterAgentCli(id: string) {
+  const response = await getWorkflowClientTransport().request(`/api/agents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  return readJsonResponse<{ agent: RegisteredAgentCli }>(response, 'Agent CLI 注销失败')
+}
+
+export async function verifyRegisteredAgentCli(id: string, timeoutMs?: number) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/agents/${encodeURIComponent(id)}/verify`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeoutMs }),
+    },
+  )
+  return readJsonResponse<{
+    verification: {
+      id: string
+      binPath: string
+      verified: boolean
+      exitCode: number | null
+      version: string
+    }
+  }>(response, 'Agent CLI 验证失败')
+}
+
+export type AgentModelsResponse = AgentModelDiscovery & {
+  agentId: string
+}
+
+export async function fetchAgentModels(id: string) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/agents/${encodeURIComponent(id)}/models`,
+  )
+  return readJsonResponse<AgentModelsResponse>(response, 'Agent 模型发现失败')
+}
+
+export type AgentModelUpdateGrant = {
+  token: string
+  agentId: string
+  expiresAt: string
+  command: string
+  prompt: string
+}
+
+export async function createAgentModelUpdateToken(agentId: string) {
+  const response = await getWorkflowClientTransport().request('/api/agent-model-update-tokens', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId }),
+  })
+  return readJsonResponse<AgentModelUpdateGrant>(response, '创建 Agent 模型更新指令失败')
+}
+
+export async function updateAgentModels(
+  agentId: string,
+  updateToken: string,
+  discovery: Omit<AgentModelDiscovery, 'source' | 'discoveredAt'>,
+) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/agents/${encodeURIComponent(agentId)}/models`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updateToken, discovery }),
+    },
+  )
+  return readJsonResponse<AgentModelsResponse>(response, '更新 Agent 模型失败')
+}
+
 export async function fetchVisualModels() {
   const response = await getWorkflowClientTransport().request('/api/visual-models')
   return readJsonResponse<VisualModelListResponse>(response, '本地视觉模型服务不可用')
 }
 
-export async function uploadAsset(file: File) {
+export async function fetchAssets(workflowId: string) {
   const response = await getWorkflowClientTransport().request(
-    `/api/upload-asset?fileName=${encodeURIComponent(file.name)}&mimeType=${encodeURIComponent(file.type)}`,
+    `/api/assets?workflowId=${encodeURIComponent(workflowId)}`,
+  )
+  return readJsonResponse<{ assets: UploadedAsset[] }>(response, '读取画布素材失败')
+}
+
+export async function uploadAsset(file: File, workflowId: string) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/upload-asset?fileName=${encodeURIComponent(file.name)}&mimeType=${encodeURIComponent(file.type)}&workflowId=${encodeURIComponent(workflowId)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
@@ -122,12 +249,18 @@ export async function uploadAsset(file: File) {
   return (await response.json()) as UploadedAsset
 }
 
-export async function runVisualNode(payload: Omit<RunNodePayload, 'agentId'> & { modelId?: string }) {
+export async function runVisualNode(
+  payload: Omit<RunNodePayload, 'agentId'> & {
+    modelId?: string
+    providerOptions?: Record<string, unknown>
+  },
+) {
   const response = await getWorkflowClientTransport().request('/api/run-visual-node', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       modelId: payload.modelId ?? 'dreamina',
+      providerOptions: payload.providerOptions,
       workflowId: payload.workflowId,
       nodeKind: payload.node.data.materialType,
       prompt: payload.prompt,
@@ -201,6 +334,7 @@ export async function runNodeWithAgent(payload: RunNodePayload, events: RunNodeE
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       agentId: payload.agentId,
+      model: payload.model,
       workflowId: payload.workflowId,
       workflowRevision: payload.workflowRevision,
       baseUrl: payload.baseUrl ?? getBrowserOrigin(),

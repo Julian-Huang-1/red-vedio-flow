@@ -8,10 +8,14 @@ type AgentSessionState = {
   messages: ChatMessage[]
   isSending: boolean
   executionId?: string
+  sessionId?: string
+  selectedModelId?: string
   setPrompt: (prompt: string) => void
   setMessages: (messages: MessageUpdater) => void
   setSending: (isSending: boolean) => void
   setExecutionId: (executionId?: string) => void
+  setSessionId: (sessionId?: string) => void
+  setSelectedModelId: (modelId?: string) => void
   reset: () => void
 }
 
@@ -20,6 +24,8 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
   messages: [],
   isSending: false,
   executionId: undefined,
+  sessionId: undefined,
+  selectedModelId: undefined,
 
   setPrompt: (prompt) => set({ prompt }),
   setMessages: (messages) =>
@@ -28,5 +34,13 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
     })),
   setSending: (isSending) => set({ isSending }),
   setExecutionId: (executionId) => set({ executionId }),
-  reset: () => set({ prompt: '', messages: [], isSending: false, executionId: undefined }),
+  setSessionId: (sessionId) => set({ sessionId }),
+  setSelectedModelId: (selectedModelId) => set({ selectedModelId }),
+  reset: () => set({
+    prompt: '',
+    messages: [],
+    isSending: false,
+    executionId: undefined,
+    sessionId: undefined,
+  }),
 }))

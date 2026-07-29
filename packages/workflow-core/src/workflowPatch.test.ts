@@ -87,4 +87,25 @@ describe('applyWorkflowPatch', () => {
 
     expect(() => applyWorkflowPatch(document(), [{ type: 'removeEdge', edgeId: 'missing' }])).toThrow('edge not found')
   })
+
+  it('persists visual provider configuration on the node', () => {
+    const image = node('image-1', 'image')
+    const patched = applyWorkflowPatch(document([image]), [{
+      type: 'setNodeVisualConfig',
+      nodeId: image.id,
+      providerId: 'gpt-image-2',
+      options: {
+        size: '1024x1024',
+        quality: 'medium',
+      },
+    }])
+
+    expect(patched.graph.nodes[0]?.data).toMatchObject({
+      visualProviderId: 'gpt-image-2',
+      visualProviderOptions: {
+        size: '1024x1024',
+        quality: 'medium',
+      },
+    })
+  })
 })

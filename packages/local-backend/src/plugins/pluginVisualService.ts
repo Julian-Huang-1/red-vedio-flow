@@ -58,7 +58,10 @@ export class PluginVisualService implements VisualServiceContract {
             capability,
             prompt: input.prompt,
             inputs: upstreamAssets(input.upstream),
-            options: { downloadDir: input.downloadDir },
+            options: {
+              ...input.providerOptions,
+              downloadDir: input.downloadDir,
+            },
             idempotencyKey: input.idempotencyKey ?? executionId,
           },
         },

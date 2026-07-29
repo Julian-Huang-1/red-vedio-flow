@@ -7,6 +7,7 @@ import { useAgentCatalogStore } from '../../../state/agentCatalogStore'
 import { useCanvasUiStore } from '../../../state/canvasUiStore'
 import {
   supportsVisualNodeKind,
+  visualProviderOptionDefinitions,
   useVisualProviderStore,
   type VisualNodeKind,
 } from '../../../state/visualProviderStore'
@@ -28,15 +29,18 @@ export function useNodePromptComposer(node: Node<MaterialNodeData, string>) {
   const visualNodeKind = isVisualMaterialType(node.data.materialType)
     ? node.data.materialType
     : undefined
-  const selectedVisualProviderId = useVisualProviderStore(
+  const defaultVisualProviderId = useVisualProviderStore(
     (state) => visualNodeKind ? state.selectedProviderIds[visualNodeKind] : undefined,
   )
   const visualProviderStatus = useVisualProviderStore((state) => state.status)
   const applyVisualProviders = useVisualProviderStore((state) => state.applyResponse)
   const setVisualProviderQueryStatus = useVisualProviderStore((state) => state.setQueryStatus)
   const selectVisualProvider = useVisualProviderStore((state) => state.selectProvider)
+  const providerOptions = useVisualProviderStore((state) => state.providerOptions)
+  const setProviderOption = useVisualProviderStore((state) => state.setProviderOption)
   const closeComposer = useCanvasUiStore((state) => state.closeComposer)
   const runNode = useWorkflowStore((state) => state.runNode)
+  const setNodeVisualConfig = useWorkflowStore((state) => state.setNodeVisualConfig)
   const isVisualNode = node.data.materialType === 'image' || node.data.materialType === 'video'
   const agentsQuery = useAgentsQuery(!isVisualNode)
   const visualModelsQuery = useVisualModelsQuery(isVisualNode)
@@ -49,6 +53,26 @@ export function useNodePromptComposer(node: Node<MaterialNodeData, string>) {
       : [],
     [visualNodeKind, visualProviders],
   )
+  const selectedVisualProviderId = availableVisualProviders.some(
+    (provider) => provider.id === node.data.visualProviderId,
+  )
+    ? node.data.visualProviderId
+    : defaultVisualProviderId
+  const selectedVisualProvider = availableVisualProviders.find(
+    (provider) => provider.id === selectedVisualProviderId,
+  )
+  const availableVisualProviderOptions = useMemo(
+    () => visualProviderOptionDefinitions(selectedVisualProvider),
+    [selectedVisualProvider],
+  )
+  const selectedVisualProviderOptions = selectedVisualProviderId
+    ? {
+        ...(providerOptions[selectedVisualProviderId] ?? {}),
+        ...(node.data.visualProviderId === selectedVisualProviderId
+          ? node.data.visualProviderOptions ?? {}
+          : {}),
+      }
+    : {}
   const sendDisabled =
     node.data.status === 'running'
     || !prompt.trim()
@@ -66,6 +90,7 @@ export function useNodePromptComposer(node: Node<MaterialNodeData, string>) {
     await runNode(node.id, value, {
       agentId: selectedAgentId,
       visualProviderId: selectedVisualProviderId,
+      visualProviderOptions: selectedVisualProviderOptions,
     })
     setPrompt('')
   }
@@ -124,6 +149,26 @@ export function useNodePromptComposer(node: Node<MaterialNodeData, string>) {
   ])
 
   useEffect(() => {
+    if (
+      !isVisualNode
+      || node.data.visualProviderId
+      || !selectedVisualProviderId
+    ) return
+    setNodeVisualConfig(
+      node.id,
+      selectedVisualProviderId,
+      providerOptions[selectedVisualProviderId] ?? {},
+    )
+  }, [
+    isVisualNode,
+    node.data.visualProviderId,
+    node.id,
+    providerOptions,
+    selectedVisualProviderId,
+    setNodeVisualConfig,
+  ])
+
+  useEffect(() => {
     setPrompt('')
   }, [node.id])
 
@@ -148,7 +193,18 @@ export function useNodePromptComposer(node: Node<MaterialNodeData, string>) {
     prompt,
     selectAgent,
     selectVisualProvider: (providerId: string) => {
-      if (visualNodeKind) selectVisualProvider(visualNodeKind, providerId)
+      if (!visualNodeKind) return
+      selectVisualProvider(visualNodeKind, providerId)
+      setNodeVisualConfig(node.id, providerId, providerOptions[providerId] ?? {})
+    },
+    setVisualProviderOption: (name: string, value: unknown) => {
+      if (!selectedVisualProviderId) return
+      const nextOptions = {
+        ...selectedVisualProviderOptions,
+        [name]: value,
+      }
+      setProviderOption(selectedVisualProviderId, name, value)
+      setNodeVisualConfig(node.id, selectedVisualProviderId, nextOptions)
     },
     selectedAgentId,
     selectedVisualProviderId,
@@ -158,6 +214,8 @@ export function useNodePromptComposer(node: Node<MaterialNodeData, string>) {
     textareaRef,
     visibleInputMaterials,
     visualProviderStatus,
+    visualProviderOptionDefinitions: availableVisualProviderOptions,
+    selectedVisualProviderOptions,
   }
 }
 

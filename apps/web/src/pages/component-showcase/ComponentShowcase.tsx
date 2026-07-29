@@ -1,6 +1,6 @@
 import { ReactFlowProvider } from '@xyflow/react'
-import { ArrowLeft, Check, Clipboard, Search } from 'lucide-react'
-import { useComponentShowcase, useCopyFeedback } from './ComponentShowcase.logic'
+import { ArrowLeft, Search } from 'lucide-react'
+import { useComponentShowcase } from './ComponentShowcase.logic'
 import { ComponentShowcasePrimitive as Showcase } from './ComponentShowcase.primitives'
 import type { ShowcaseItem } from './showcaseRegistry'
 import styles from './ComponentShowcase.module.less'
@@ -17,8 +17,8 @@ export function ComponentShowcase() {
             返回工作流
           </a>
           <div className={styles.sidebarTitle}>
-            <h1>Component Registry</h1>
-            <p>组件预览、代码片段和可复制 Prompt。</p>
+            <h1>Components</h1>
+            <p>组件展示与状态预览。</p>
           </div>
           <label className={styles.searchBox}>
             <Search size={16} />
@@ -62,41 +62,8 @@ function ShowcaseDetail({ item }: { item: ShowcaseItem }) {
       </header>
 
       <Showcase.Panel>
-        <div className={styles.panelHeader}>
-          <h3>Preview</h3>
-        </div>
         <div className={styles.previewStage}>{item.preview()}</div>
       </Showcase.Panel>
-
-      <section className={styles.resourceGrid}>
-        <RegistryBlock title="Code" value={item.code} />
-        <RegistryBlock title="Prompt" value={item.prompt} />
-      </section>
     </>
-  )
-}
-
-function RegistryBlock({ title, value }: { title: string; value: string }) {
-  return (
-    <article className={styles.registryBlock}>
-      <div className={styles.panelHeader}>
-        <h3>{title}</h3>
-        <CopyButton value={value} label={`复制 ${title}`} />
-      </div>
-      <pre>
-        <code>{value}</code>
-      </pre>
-    </article>
-  )
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const feedback = useCopyFeedback(value)
-
-  return (
-    <button className={styles.copyButton} data-copied={feedback.copied || undefined} onClick={feedback.copy}>
-      {feedback.copied ? <Check size={15} /> : <Clipboard size={15} />}
-      {feedback.copied ? '已复制' : label}
-    </button>
   )
 }
