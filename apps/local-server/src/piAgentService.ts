@@ -6,8 +6,8 @@ import {
   SessionManager,
   createAgentSession,
   type AgentSessionEvent,
+  type SessionEntry,
   type SessionInfo,
-  type SessionMessageEntry,
 } from '@earendil-works/pi-coding-agent'
 
 export type PiAgentModel = {
@@ -25,12 +25,39 @@ export type PiAgentSessionSummary = {
   messageCount: number
 }
 
+export type PiAgentContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string; redacted?: boolean }
+  | { type: 'image'; data: string; mimeType: string }
+  | { type: 'toolCall'; id: string; name: string; arguments: unknown }
+
 export type PiAgentMessage = {
   id: string
-  role: 'user' | 'assistant'
+  role:
+    | 'user'
+    | 'assistant'
+    | 'toolResult'
+    | 'bashExecution'
+    | 'custom'
+    | 'branchSummary'
+    | 'compactionSummary'
   text: string
   createdAt: number
   status: 'completed' | 'stopped' | 'error'
+  content: PiAgentContentBlock[]
+  errorMessage?: string
+  toolCallId?: string
+  toolName?: string
+  isError?: boolean
+  details?: unknown
+  command?: string
+  exitCode?: number
+  cancelled?: boolean
+  truncated?: boolean
+  customType?: string
+  display?: boolean
+  fromId?: string
+  tokensBefore?: number
 }
 
 export type PiAgentSessionDetail = PiAgentSessionSummary & {
@@ -41,6 +68,7 @@ export type PiAgentSessionDetail = PiAgentSessionSummary & {
 export type PiAgentStreamEvent =
   | { type: 'run-start'; runId: string }
   | { type: 'text-delta'; delta: string }
+  | { type: 'thinking-delta'; delta: string }
   | { type: 'tool-start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool-update'; toolCallId: string; toolName: string; result: unknown }
   | { type: 'tool-end'; toolCallId: string; toolName: string; result: unknown; isError: boolean }
@@ -356,6 +384,11 @@ export class PiAgentService {
       && event.assistantMessageEvent.type === 'text_delta'
     ) {
       emit({ type: 'text-delta', delta: event.assistantMessageEvent.delta })
+    } else if (
+      event.type === 'message_update'
+      && event.assistantMessageEvent.type === 'thinking_delta'
+    ) {
+      emit({ type: 'thinking-delta', delta: event.assistantMessageEvent.delta })
     } else if (event.type === 'tool_execution_start') {
       emit({
         type: 'tool-start',
@@ -403,33 +436,173 @@ function projectSessionSummary(session: SessionInfo): PiAgentSessionSummary {
   }
 }
 
-function projectSessionEntry(entry: unknown): PiAgentMessage[] {
-  if (!isSessionMessageEntry(entry)) return []
-  const { message } = entry
-  if (message.role !== 'user' && message.role !== 'assistant') return []
-  const text = typeof message.content === 'string'
-    ? message.content
-    : message.content
-      .filter((item) => item.type === 'text')
-      .map((item) => item.text)
-      .join('')
-  return [{
-    id: entry.id,
-    role: message.role,
-    text,
-    createdAt: message.timestamp,
-    status: message.role === 'assistant'
-      ? message.stopReason === 'aborted'
+export function projectSessionEntry(entry: SessionEntry): PiAgentMessage[] {
+  if (entry.type === 'compaction') {
+    return [{
+      id: entry.id,
+      role: 'compactionSummary',
+      text: entry.summary,
+      content: [{ type: 'text', text: entry.summary }],
+      createdAt: Date.parse(entry.timestamp),
+      status: 'completed',
+      tokensBefore: entry.tokensBefore,
+    }]
+  }
+  if (entry.type === 'branch_summary') {
+    return [{
+      id: entry.id,
+      role: 'branchSummary',
+      text: entry.summary,
+      content: [{ type: 'text', text: entry.summary }],
+      createdAt: Date.parse(entry.timestamp),
+      status: 'completed',
+      fromId: entry.fromId,
+    }]
+  }
+  if (entry.type === 'custom_message') {
+    if (!entry.display) return []
+    const content = projectContent(entry.content)
+    return [{
+      id: entry.id,
+      role: 'custom',
+      text: textFromContent(content),
+      content,
+      createdAt: Date.parse(entry.timestamp),
+      status: 'completed',
+      customType: entry.customType,
+      display: entry.display,
+      details: entry.details,
+    }]
+  }
+  if (entry.type !== 'message') return []
+
+  const message = entry.message
+  if (message.role === 'user') {
+    const content = projectContent(message.content)
+    return [baseMessage(entry.id, 'user', content, message.timestamp)]
+  }
+  if (message.role === 'assistant') {
+    const content = projectContent(message.content)
+    return [{
+      ...baseMessage(entry.id, 'assistant', content, message.timestamp),
+      status: message.stopReason === 'aborted'
         ? 'stopped'
         : message.stopReason === 'error'
           ? 'error'
-          : 'completed'
-      : 'completed',
-  }]
+          : 'completed',
+      errorMessage: message.errorMessage,
+    }]
+  }
+  if (message.role === 'toolResult') {
+    const content = projectContent(message.content)
+    return [{
+      ...baseMessage(entry.id, 'toolResult', content, message.timestamp),
+      status: message.isError ? 'error' : 'completed',
+      toolCallId: message.toolCallId,
+      toolName: message.toolName,
+      isError: message.isError,
+      details: message.details,
+    }]
+  }
+  if (message.role === 'bashExecution') {
+    const content = [{ type: 'text' as const, text: message.output }]
+    return [{
+      ...baseMessage(entry.id, 'bashExecution', content, message.timestamp),
+      status: message.cancelled ? 'stopped' : message.exitCode ? 'error' : 'completed',
+      command: message.command,
+      exitCode: message.exitCode,
+      cancelled: message.cancelled,
+      truncated: message.truncated,
+    }]
+  }
+  if (message.role === 'custom') {
+    if (!message.display) return []
+    const content = projectContent(message.content)
+    return [{
+      ...baseMessage(entry.id, 'custom', content, message.timestamp),
+      customType: message.customType,
+      display: message.display,
+      details: message.details,
+    }]
+  }
+  if (message.role === 'branchSummary') {
+    const content = [{ type: 'text' as const, text: message.summary }]
+    return [{
+      ...baseMessage(entry.id, 'branchSummary', content, message.timestamp),
+      fromId: message.fromId,
+    }]
+  }
+  if (message.role === 'compactionSummary') {
+    const content = [{ type: 'text' as const, text: message.summary }]
+    return [{
+      ...baseMessage(entry.id, 'compactionSummary', content, message.timestamp),
+      tokensBefore: message.tokensBefore,
+    }]
+  }
+  return []
 }
 
-function isSessionMessageEntry(entry: unknown): entry is SessionMessageEntry {
-  return Boolean(entry && typeof entry === 'object' && (entry as { type?: string }).type === 'message')
+function baseMessage(
+  id: string,
+  role: PiAgentMessage['role'],
+  content: PiAgentContentBlock[],
+  createdAt: number,
+): PiAgentMessage {
+  return {
+    id,
+    role,
+    text: textFromContent(content),
+    content,
+    createdAt,
+    status: 'completed',
+  }
+}
+
+function projectContent(content: unknown): PiAgentContentBlock[] {
+  if (typeof content === 'string') return [{ type: 'text', text: content }]
+  if (!Array.isArray(content)) return []
+  return content.flatMap((item): PiAgentContentBlock[] => {
+    if (!item || typeof item !== 'object') return []
+    const block = item as Record<string, unknown>
+    if (block.type === 'text' && typeof block.text === 'string') {
+      return [{ type: 'text', text: block.text }]
+    }
+    if (block.type === 'thinking' && typeof block.thinking === 'string') {
+      return [{
+        type: 'thinking',
+        thinking: block.thinking,
+        redacted: block.redacted === true || undefined,
+      }]
+    }
+    if (
+      block.type === 'image'
+      && typeof block.data === 'string'
+      && typeof block.mimeType === 'string'
+    ) {
+      return [{ type: 'image', data: block.data, mimeType: block.mimeType }]
+    }
+    if (
+      block.type === 'toolCall'
+      && typeof block.id === 'string'
+      && typeof block.name === 'string'
+    ) {
+      return [{
+        type: 'toolCall',
+        id: block.id,
+        name: block.name,
+        arguments: block.arguments,
+      }]
+    }
+    return []
+  })
+}
+
+function textFromContent(content: PiAgentContentBlock[]) {
+  return content
+    .filter((block): block is Extract<PiAgentContentBlock, { type: 'text' }> =>
+      block.type === 'text')
+    .map((block) => block.text)
+    .join('')
 }
 
 function projectModelId(manager: SessionManager) {

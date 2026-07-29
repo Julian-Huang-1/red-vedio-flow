@@ -2,7 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { PiAgentService, PiAgentSessionNotFoundError } from './piAgentService.js'
+import {
+  PiAgentService,
+  PiAgentSessionNotFoundError,
+  projectSessionEntry,
+} from './piAgentService.js'
 
 describe('PiAgentService sessions', () => {
   let dataDir: string
@@ -47,5 +51,96 @@ describe('PiAgentService sessions', () => {
     expect(await service.listSessions()).toEqual([])
     await expect(service.getSession('session-persisted'))
       .rejects.toBeInstanceOf(PiAgentSessionNotFoundError)
+  })
+})
+
+describe('PiAgentService message projection', () => {
+  it('preserves assistant thinking, tool calls, errors, and tool results', () => {
+    const assistant = projectSessionEntry({
+      type: 'message',
+      id: 'assistant-1',
+      parentId: null,
+      timestamp: new Date(0).toISOString(),
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '分析中' },
+          { type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: 'a.ts' } },
+        ],
+        api: 'openai-responses',
+        provider: 'rednote-maas',
+        model: 'Claude Sonnet 5',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'error',
+        errorMessage: 'provider failed',
+        timestamp: 0,
+      },
+    })
+    expect(assistant[0]).toMatchObject({
+      role: 'assistant',
+      status: 'error',
+      errorMessage: 'provider failed',
+      content: [
+        { type: 'thinking', thinking: '分析中' },
+        { type: 'toolCall', id: 'tool-1', name: 'read' },
+      ],
+    })
+
+    const toolResult = projectSessionEntry({
+      type: 'message',
+      id: 'result-1',
+      parentId: 'assistant-1',
+      timestamp: new Date(1).toISOString(),
+      message: {
+        role: 'toolResult',
+        toolCallId: 'tool-1',
+        toolName: 'read',
+        content: [{ type: 'text', text: 'file content' }],
+        isError: false,
+        timestamp: 1,
+      },
+    })
+    expect(toolResult[0]).toMatchObject({
+      role: 'toolResult',
+      toolCallId: 'tool-1',
+      toolName: 'read',
+      text: 'file content',
+    })
+  })
+
+  it('projects compaction and branch summaries', () => {
+    expect(projectSessionEntry({
+      type: 'compaction',
+      id: 'compact-1',
+      parentId: null,
+      timestamp: new Date(0).toISOString(),
+      summary: '压缩摘要',
+      firstKeptEntryId: 'message-1',
+      tokensBefore: 1200,
+    })[0]).toMatchObject({
+      role: 'compactionSummary',
+      text: '压缩摘要',
+      tokensBefore: 1200,
+    })
+
+    expect(projectSessionEntry({
+      type: 'branch_summary',
+      id: 'branch-1',
+      parentId: null,
+      timestamp: new Date(0).toISOString(),
+      summary: '分支摘要',
+      fromId: 'message-1',
+    })[0]).toMatchObject({
+      role: 'branchSummary',
+      text: '分支摘要',
+      fromId: 'message-1',
+    })
   })
 })

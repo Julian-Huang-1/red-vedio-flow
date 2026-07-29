@@ -15,10 +15,36 @@ export type PiAgentSessionSummaryDto = {
 
 export type PiAgentMessageDto = {
   id: string
-  role: 'user' | 'assistant'
+  role:
+    | 'user'
+    | 'assistant'
+    | 'toolResult'
+    | 'bashExecution'
+    | 'custom'
+    | 'branchSummary'
+    | 'compactionSummary'
   text: string
   createdAt: number
   status: 'completed' | 'stopped' | 'error'
+  content: Array<
+    | { type: 'text'; text: string }
+    | { type: 'thinking'; thinking: string; redacted?: boolean }
+    | { type: 'image'; data: string; mimeType: string }
+    | { type: 'toolCall'; id: string; name: string; arguments: unknown }
+  >
+  errorMessage?: string
+  toolCallId?: string
+  toolName?: string
+  isError?: boolean
+  details?: unknown
+  command?: string
+  exitCode?: number
+  cancelled?: boolean
+  truncated?: boolean
+  customType?: string
+  display?: boolean
+  fromId?: string
+  tokensBefore?: number
 }
 
 export type PiAgentSessionDetailDto = PiAgentSessionSummaryDto & {
@@ -29,7 +55,26 @@ export type PiAgentSessionDetailDto = PiAgentSessionSummaryDto & {
 export type PiAgentEvent =
   | { type: 'run-start'; runId: string }
   | { type: 'text-delta'; delta: string }
-  | { type: 'tool-start' | 'tool-update' | 'tool-end'; toolCallId: string; toolName: string }
+  | { type: 'thinking-delta'; delta: string }
+  | {
+      type: 'tool-start'
+      toolCallId: string
+      toolName: string
+      args: unknown
+    }
+  | {
+      type: 'tool-update'
+      toolCallId: string
+      toolName: string
+      result: unknown
+    }
+  | {
+      type: 'tool-end'
+      toolCallId: string
+      toolName: string
+      result: unknown
+      isError: boolean
+    }
   | { type: 'run-end'; status: 'completed' | 'stopped' }
   | { type: 'error'; message: string }
 

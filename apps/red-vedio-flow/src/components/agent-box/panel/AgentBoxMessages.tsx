@@ -4,6 +4,7 @@ import { AgentBox } from '../AgentBox'
 import { selectActiveMessageIds, useAgentBoxStore } from '../agentBoxStore'
 import { usePiAgentPromptMutation } from '../piAgentQueries'
 import { Button } from '@/components/ui/button'
+import { AgentMessageContent } from './AgentMessageContent'
 
 function AgentMessageItem({ id }: { id: string }) {
   const message = useAgentBoxStore((state) => state.messagesById[id])
@@ -19,9 +20,13 @@ function AgentMessageItem({ id }: { id: string }) {
 
   if (!message) return null
 
+  if (message.role !== 'user' && message.role !== 'assistant') {
+    return <AgentMessageContent message={message} />
+  }
+
   return (
     <AgentBox.Message role={message.role} data-status={message.status}>
-      <div className="whitespace-pre-wrap">{message.text}</div>
+      <AgentMessageContent message={message} />
       {attachments.length ? (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {attachments.map((attachment) => (

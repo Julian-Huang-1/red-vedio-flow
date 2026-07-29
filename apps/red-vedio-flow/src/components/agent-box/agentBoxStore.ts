@@ -228,16 +228,89 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
             set({ runStatus: 'streaming', activeRunId: event.runId })
             return
           }
+          if (
+            event.type === 'tool-start'
+            || event.type === 'tool-update'
+            || event.type === 'tool-end'
+          ) {
+            const toolMessageId = `tool-${event.toolCallId}`
+            set((state) => {
+              const current = state.messagesById[toolMessageId]
+              const activeSession = state.sessionsById[sessionId]
+              const details = event.type === 'tool-start' ? event.args : event.result
+              return {
+                messagesById: {
+                  ...state.messagesById,
+                  [toolMessageId]: {
+                    id: toolMessageId,
+                    role: 'toolResult',
+                    text: '',
+                    content: [],
+                    status: event.type === 'tool-end'
+                      ? event.isError ? 'error' : 'completed'
+                      : 'streaming',
+                    createdAt: current?.createdAt ?? Date.now(),
+                    attachmentIds: [],
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    isError: event.type === 'tool-end' ? event.isError : false,
+                    details,
+                  },
+                },
+                sessionsById: activeSession && !activeSession.messageIds.includes(toolMessageId)
+                  ? {
+                      ...state.sessionsById,
+                      [sessionId]: {
+                        ...activeSession,
+                        messageIds: [...activeSession.messageIds, toolMessageId],
+                      },
+                    }
+                  : state.sessionsById,
+              }
+            })
+            return
+          }
+          if (event.type === 'thinking-delta') {
+            set((state) => {
+              const current = state.messagesById[assistantMessageId]
+              if (!current) return state
+              const content = current.content ? [...current.content] : []
+              const last = content[content.length - 1]
+              if (last?.type === 'thinking') {
+                content[content.length - 1] = {
+                  ...last,
+                  thinking: last.thinking + event.delta,
+                }
+              } else {
+                content.push({ type: 'thinking', thinking: event.delta })
+              }
+              return {
+                messagesById: {
+                  ...state.messagesById,
+                  [assistantMessageId]: { ...current, content },
+                },
+              }
+            })
+            return
+          }
           if (event.type !== 'text-delta') return
         set((state) => {
           const current = state.messagesById[assistantMessageId]
           if (!current) return state
+          const content = current.content ? [...current.content] : []
+          const last = content[content.length - 1]
+          if (last?.type === 'text') {
+            content[content.length - 1] = { ...last, text: last.text + event.delta }
+          } else {
+            content.push({ type: 'text', text: event.delta })
+          }
           return {
             messagesById: {
               ...state.messagesById,
               [assistantMessageId]: {
                 ...current,
                 text: current.text + event.delta,
+                content,
               },
             },
           }
