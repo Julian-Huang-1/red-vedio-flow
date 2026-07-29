@@ -1,5 +1,8 @@
 import type { LocalServerRuntime } from '../runtime.js'
-import { PiAgentSessionNotFoundError } from '../piAgentService.js'
+import {
+  PiAgentSessionNotFoundError,
+  type PiAgentAttachmentInput,
+} from '../piAgentService.js'
 import { HttpError, readJson, sendJson, writeSse, type RequestContext } from '../http.js'
 
 export async function handlePiAgentRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
@@ -69,13 +72,14 @@ export async function handlePiAgentRoutes(runtime: LocalServerRuntime, ctx: Requ
   }
 
   if (req.method !== 'POST' || match[2] !== 'prompt') return false
-  const body = await readJson(req)
+  const body = await readJson(req, 24 * 1024 * 1024)
   const message = typeof body.message === 'string' ? body.message.trim() : ''
   if (!message) throw new HttpError(400, 'message is required')
 
   const contexts = Array.isArray(body.contexts)
     ? body.contexts.filter((item: unknown) => item && typeof item === 'object')
     : undefined
+  const attachments = parseAttachments(body.attachments)
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache',
@@ -97,6 +101,7 @@ export async function handlePiAgentRoutes(runtime: LocalServerRuntime, ctx: Requ
       message,
       modelId: typeof body.modelId === 'string' ? body.modelId : undefined,
       contexts,
+      attachments,
     },
     (event) => {
       if (!disconnected && !res.writableEnded) writeSse(res, event)
@@ -104,4 +109,29 @@ export async function handlePiAgentRoutes(runtime: LocalServerRuntime, ctx: Requ
   )
   if (!res.writableEnded) res.end()
   return true
+}
+
+function parseAttachments(value: unknown): PiAgentAttachmentInput[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new HttpError(400, 'attachments must be an array')
+  return value.map((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw new HttpError(400, `attachments[${index}] must be an object`)
+    }
+    const candidate = item as Record<string, unknown>
+    if (
+      typeof candidate.name !== 'string'
+      || typeof candidate.mimeType !== 'string'
+      || typeof candidate.size !== 'number'
+      || typeof candidate.data !== 'string'
+    ) {
+      throw new HttpError(400, `attachments[${index}] is invalid`)
+    }
+    return {
+      name: candidate.name,
+      mimeType: candidate.mimeType,
+      size: candidate.size,
+      data: candidate.data,
+    }
+  })
 }

@@ -146,12 +146,26 @@ const initialState: AgentBoxState = {
 
 export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
   const applySessionDetail = (detail: PiAgentSessionDetailDto) => {
+    const hydratedAttachments = Object.fromEntries(
+      detail.messages.flatMap((message) =>
+        (message.attachments ?? []).map((attachment, index) => {
+          const id = `${message.id}-attachment-${index}`
+          return [id, { id, ...attachment }]
+        }),
+      ),
+    )
     const messages = Object.fromEntries(detail.messages.map((message) => [
       message.id,
-      { ...message, attachmentIds: [] },
+      {
+        ...message,
+        attachmentIds: (message.attachments ?? []).map(
+          (_attachment, index) => `${message.id}-attachment-${index}`,
+        ),
+      },
     ]))
     set((state) => ({
       messagesById: { ...state.messagesById, ...messages },
+      attachmentsById: { ...state.attachmentsById, ...hydratedAttachments },
       sessionsById: {
         ...state.sessionsById,
         [detail.id]: {
@@ -185,6 +199,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     sessionId: string,
     prompt: string,
     runner: PromptRunner = streamPiAgentPrompt,
+    attachments: AgentAttachment[] = [],
   ) => {
     const assistantMessageId = createId('message-assistant')
     const runId = createId('run')
@@ -221,7 +236,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
         .map(({ kind, title }) => ({ kind, title }))
       await runner(
         sessionId,
-        { message: prompt, modelId: state.selectedModelId, contexts },
+        { message: prompt, modelId: state.selectedModelId, contexts, attachments },
         controller.signal,
         (event: PiAgentEvent) => {
           if (event.type === 'run-start') {
@@ -448,6 +463,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
         name: file.name,
         mimeType: file.type || 'application/octet-stream',
         size: file.size,
+        file,
       }
       set((state) => ({
         pendingAttachments: [...state.pendingAttachments, attachment],
@@ -518,7 +534,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
           },
         },
       }))
-      await runAssistant(sessionId, userMessage.text, runner)
+      await runAssistant(sessionId, userMessage.text, runner, state.pendingAttachments)
     },
     stop: (aborter = abortPiAgentPrompt) => {
       const state = get()

@@ -32,8 +32,8 @@ export async function readBuffer(req: IncomingMessage, maxBytes = Number.POSITIV
   return Buffer.concat(chunks)
 }
 
-export async function readJson(req: IncomingMessage) {
-  const body = (await readBuffer(req, 2 * 1024 * 1024)).toString('utf8')
+export async function readJson(req: IncomingMessage, maxBytes = 2 * 1024 * 1024) {
+  const body = (await readBuffer(req, maxBytes)).toString('utf8')
   if (!body) return {}
   try {
     return JSON.parse(body)

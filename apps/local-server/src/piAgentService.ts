@@ -58,6 +58,7 @@ export type PiAgentMessage = {
   display?: boolean
   fromId?: string
   tokensBefore?: number
+  attachments?: PiAgentAttachmentMetadata[]
 }
 
 export type PiAgentSessionDetail = PiAgentSessionSummary & {
@@ -79,6 +80,15 @@ type ActiveSession = {
   session: AgentSession
   modelId?: string
 }
+
+export type PiAgentAttachmentInput = {
+  name: string
+  mimeType: string
+  size: number
+  data: string
+}
+
+export type PiAgentAttachmentMetadata = Omit<PiAgentAttachmentInput, 'data'>
 
 type SessionMetadata = {
   id: string
@@ -166,7 +176,7 @@ export class PiAgentService {
     return {
       ...projectSessionSummary(info),
       title: metadata?.title || manager.getSessionName() || sessionTitle(info),
-      messages: manager.getBranch().flatMap(projectSessionEntry),
+      messages: projectSessionBranch(manager.getBranch()),
       modelId: active?.modelId ?? projectModelId(manager),
     }
   }
@@ -207,6 +217,7 @@ export class PiAgentService {
       message: string
       modelId?: string
       contexts?: Array<{ kind?: string; title?: string }>
+      attachments?: PiAgentAttachmentInput[]
     },
     emit: (event: PiAgentStreamEvent) => void,
   ) {
@@ -220,7 +231,8 @@ export class PiAgentService {
     emit({ type: 'run-start', runId })
     const unsubscribe = active.session.subscribe((event) => this.projectEvent(event, emit))
     try {
-      const prompt = formatPrompt(input.message, input.contexts)
+      const { images, textAttachments } = prepareAttachments(input.attachments)
+      const prompt = formatPrompt(input.message, input.contexts, textAttachments)
       if (!active.session.sessionName || active.session.sessionName === '新对话') {
         const title = input.message.slice(0, 24)
         active.session.sessionManager.appendSessionInfo(title)
@@ -233,7 +245,13 @@ export class PiAgentService {
           updatedAt: Date.now(),
         })
       }
-      await active.session.prompt(prompt)
+      if (input.attachments?.length) {
+        active.session.sessionManager.appendCustomEntry(
+          'red-video-flow.attachments',
+          input.attachments.map(({ data: _data, ...attachment }) => attachment),
+        )
+      }
+      await active.session.prompt(prompt, { images })
       emit({ type: 'run-end', status: 'completed' })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -331,7 +349,7 @@ export class PiAgentService {
       models: MAAS_MODELS.map((model) => ({
         ...model,
         reasoning: true,
-        input: ['text'] as const,
+        input: ['text', 'image'] as const,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128_000,
         maxTokens: 16_384,
@@ -542,6 +560,51 @@ export function projectSessionEntry(entry: SessionEntry): PiAgentMessage[] {
   return []
 }
 
+export function projectSessionBranch(entries: SessionEntry[]): PiAgentMessage[] {
+  const messages: PiAgentMessage[] = []
+  let pendingAttachments: PiAgentAttachmentMetadata[] | undefined
+
+  for (const entry of entries) {
+    if (
+      entry.type === 'custom'
+      && entry.customType === 'red-video-flow.attachments'
+    ) {
+      pendingAttachments = parseAttachmentMetadata(entry.data)
+      continue
+    }
+
+    const projected = projectSessionEntry(entry)
+    for (const message of projected) {
+      if (message.role === 'user' && pendingAttachments?.length) {
+        message.attachments = pendingAttachments
+        pendingAttachments = undefined
+      }
+      messages.push(message)
+    }
+  }
+
+  return messages
+}
+
+function parseAttachmentMetadata(value: unknown): PiAgentAttachmentMetadata[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const attachments = value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const candidate = item as Record<string, unknown>
+    if (
+      typeof candidate.name !== 'string'
+      || typeof candidate.mimeType !== 'string'
+      || typeof candidate.size !== 'number'
+    ) return []
+    return [{
+      name: candidate.name,
+      mimeType: candidate.mimeType,
+      size: candidate.size,
+    }]
+  })
+  return attachments.length ? attachments : undefined
+}
+
 function baseMessage(
   id: string,
   role: PiAgentMessage['role'],
@@ -616,14 +679,60 @@ function resolveModel(runtime: ModelRuntime, id: string) {
   return runtime.getModel(id.slice(0, separator), id.slice(separator + 1))
 }
 
-function formatPrompt(
+export function formatPrompt(
   message: string,
   contexts: Array<{ kind?: string; title?: string }> | undefined,
+  textAttachments: Array<{ name: string; text: string }> = [],
 ) {
   const validContexts = contexts?.filter((item) => item.title?.trim()) ?? []
-  if (!validContexts.length) return message
-  const contextText = validContexts
-    .map((item) => `- [${item.kind || 'context'}] ${item.title!.trim()}`)
-    .join('\n')
-  return `${message}\n\nAttached workflow context:\n${contextText}`
+  const sections = [message]
+  if (validContexts.length) {
+    sections.push(
+      `Attached workflow context:\n${validContexts
+        .map((item) => `- [${item.kind || 'context'}] ${item.title!.trim()}`)
+        .join('\n')}`,
+    )
+  }
+  for (const attachment of textAttachments) {
+    sections.push(`Attached file: ${attachment.name}\n\n${attachment.text}`)
+  }
+  return sections.join('\n\n')
+}
+
+export function prepareAttachments(attachments: PiAgentAttachmentInput[] | undefined) {
+  const images: Array<{ type: 'image'; data: string; mimeType: string }> = []
+  const textAttachments: Array<{ name: string; text: string }> = []
+  let totalSize = 0
+
+  for (const attachment of attachments ?? []) {
+    totalSize += attachment.size
+    if (attachment.size > 8 * 1024 * 1024 || totalSize > 16 * 1024 * 1024) {
+      throw new Error('附件大小超过限制：单个 8MB，总计 16MB')
+    }
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(attachment.data)) {
+      throw new Error(`附件编码无效：${attachment.name}`)
+    }
+    if (attachment.mimeType.startsWith('image/')) {
+      images.push({
+        type: 'image',
+        data: attachment.data,
+        mimeType: attachment.mimeType,
+      })
+      continue
+    }
+    if (
+      attachment.mimeType.startsWith('text/')
+      || attachment.mimeType === 'application/json'
+      || attachment.mimeType === 'application/xml'
+    ) {
+      textAttachments.push({
+        name: attachment.name,
+        text: Buffer.from(attachment.data, 'base64').toString('utf8'),
+      })
+      continue
+    }
+    throw new Error(`暂不支持该附件类型：${attachment.name} (${attachment.mimeType})`)
+  }
+
+  return { images, textAttachments }
 }

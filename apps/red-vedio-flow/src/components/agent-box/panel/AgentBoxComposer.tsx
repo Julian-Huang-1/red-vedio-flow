@@ -80,6 +80,7 @@ export function AgentBoxComposer() {
               ref={fileInputRef}
               type="file"
               multiple
+              accept="image/*,text/*,.json,.xml"
               className="hidden"
               onChange={(event) => {
                 Array.from(event.target.files ?? []).forEach(addAttachment)

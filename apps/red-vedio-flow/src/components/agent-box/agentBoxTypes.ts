@@ -28,6 +28,7 @@ export type AgentAttachment = {
   name: string
   mimeType: string
   size: number
+  file?: File
 }
 
 export type AgentContextItem = {

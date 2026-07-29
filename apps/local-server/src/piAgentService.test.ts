@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   PiAgentService,
   PiAgentSessionNotFoundError,
+  formatPrompt,
+  prepareAttachments,
+  projectSessionBranch,
   projectSessionEntry,
 } from './piAgentService.js'
 
@@ -142,5 +145,84 @@ describe('PiAgentService message projection', () => {
       text: '分支摘要',
       fromId: 'message-1',
     })
+  })
+})
+
+describe('PiAgentService attachments', () => {
+  it('restores persisted attachment metadata on the following user message', () => {
+    const messages = projectSessionBranch([
+      {
+        type: 'custom',
+        id: 'attachment-entry',
+        parentId: null,
+        timestamp: new Date(0).toISOString(),
+        customType: 'red-video-flow.attachments',
+        data: [{
+          name: 'storyboard.txt',
+          mimeType: 'text/plain',
+          size: 12,
+        }],
+      },
+      {
+        type: 'message',
+        id: 'user-1',
+        parentId: 'attachment-entry',
+        timestamp: new Date(1).toISOString(),
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: '分析附件' }],
+          timestamp: 1,
+        },
+      },
+    ])
+
+    expect(messages[0]).toMatchObject({
+      id: 'user-1',
+      attachments: [{
+        name: 'storyboard.txt',
+        mimeType: 'text/plain',
+        size: 12,
+      }],
+    })
+  })
+
+  it('maps images to Pi image content', () => {
+    const result = prepareAttachments([{
+      name: 'reference.png',
+      mimeType: 'image/png',
+      size: 3,
+      data: Buffer.from('png').toString('base64'),
+    }])
+
+    expect(result).toEqual({
+      images: [{
+        type: 'image',
+        data: Buffer.from('png').toString('base64'),
+        mimeType: 'image/png',
+      }],
+      textAttachments: [],
+    })
+  })
+
+  it('decodes text files and appends them to the prompt', () => {
+    const { textAttachments } = prepareAttachments([{
+      name: 'storyboard.txt',
+      mimeType: 'text/plain',
+      size: 12,
+      data: Buffer.from('第一幕：日出').toString('base64'),
+    }])
+
+    expect(formatPrompt('继续创作', undefined, textAttachments)).toBe(
+      '继续创作\n\nAttached file: storyboard.txt\n\n第一幕：日出',
+    )
+  })
+
+  it('rejects unsupported binary files', () => {
+    expect(() => prepareAttachments([{
+      name: 'archive.zip',
+      mimeType: 'application/zip',
+      size: 3,
+      data: Buffer.from('zip').toString('base64'),
+    }])).toThrow('暂不支持该附件类型')
   })
 })

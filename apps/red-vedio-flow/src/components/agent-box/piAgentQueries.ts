@@ -10,6 +10,7 @@ import {
   streamPiAgentPrompt,
   type PiAgentEvent,
 } from './piAgentClient'
+import type { AgentAttachment } from './agentBoxTypes'
 
 export const piAgentQueryKeys = {
   all: ['pi-agent'] as const,
@@ -90,6 +91,7 @@ export function usePiAgentPromptMutation() {
         message: string
         modelId?: string
         contexts: Array<{ kind: string; title: string }>
+        attachments?: AgentAttachment[]
       }
       signal: AbortSignal
       onEvent: (event: PiAgentEvent) => void

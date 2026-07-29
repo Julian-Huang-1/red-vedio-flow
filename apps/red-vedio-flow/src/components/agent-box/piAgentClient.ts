@@ -1,3 +1,5 @@
+import type { AgentAttachment } from './agentBoxTypes'
+
 export type PiAgentModelDto = {
   id: string
   provider: string
@@ -45,6 +47,11 @@ export type PiAgentMessageDto = {
   display?: boolean
   fromId?: string
   tokensBefore?: number
+  attachments?: Array<{
+    name: string
+    mimeType: string
+    size: number
+  }>
 }
 
 export type PiAgentSessionDetailDto = PiAgentSessionSummaryDto & {
@@ -132,6 +139,7 @@ export async function streamPiAgentPrompt(
     message: string
     modelId?: string
     contexts: Array<{ kind: string; title: string }>
+    attachments?: AgentAttachment[]
   },
   signal: AbortSignal,
   onEvent: (event: PiAgentEvent) => void,
@@ -141,7 +149,12 @@ export async function streamPiAgentPrompt(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({
+        ...input,
+        attachments: await Promise.all(
+          (input.attachments ?? []).map(serializeAttachment),
+        ),
+      }),
       signal,
     },
   )
@@ -170,6 +183,33 @@ export async function streamPiAgentPrompt(
       }
     }
   }
+}
+
+async function serializeAttachment(attachment: AgentAttachment) {
+  if (!attachment.file) {
+    throw new Error(`附件内容不可用：${attachment.name}`)
+  }
+  if (attachment.size > 8 * 1024 * 1024) {
+    throw new Error(`附件不能超过 8MB：${attachment.name}`)
+  }
+  return {
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    data: await fileToBase64(attachment.file),
+  }
+}
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error(`读取附件失败：${file.name}`))
+    reader.onload = () => {
+      const value = String(reader.result)
+      resolve(value.slice(value.indexOf(',') + 1))
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 export async function abortPiAgentPrompt(sessionId: string) {

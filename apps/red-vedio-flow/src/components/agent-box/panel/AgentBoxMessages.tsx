@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { File, RefreshCcw, Sparkles } from 'lucide-react'
+import { RefreshCcw, Sparkles } from 'lucide-react'
 import { AgentBox } from '../AgentBox'
 import { selectActiveMessageIds, useAgentBoxStore } from '../agentBoxStore'
 import { usePiAgentPromptMutation } from '../piAgentQueries'
 import { Button } from '@/components/ui/button'
+import { AgentMessageAttachments } from './AgentMessageAttachments'
 import { AgentMessageContent } from './AgentMessageContent'
 
 function AgentMessageItem({ id }: { id: string }) {
@@ -27,16 +28,7 @@ function AgentMessageItem({ id }: { id: string }) {
   return (
     <AgentBox.Message role={message.role} data-status={message.status}>
       <AgentMessageContent message={message} />
-      {attachments.length ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {attachments.map((attachment) => (
-            <span key={attachment.id} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px]">
-              <File size={12} />
-              {attachment.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <AgentMessageAttachments attachments={attachments} />
       {message.status === 'streaming' ? (
         <span className="mt-2 inline-block size-1.5 animate-pulse rounded-full bg-current opacity-60" />
       ) : null}
