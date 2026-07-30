@@ -153,6 +153,16 @@ function migrate(sqlite: Database.Database) {
       FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS workflow_app_runs (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -182,6 +192,10 @@ function migrate(sqlite: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_runs_node_id ON runs(node_id);
     CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
     CREATE INDEX IF NOT EXISTS idx_node_run_events_run ON node_run_events(run_id, id);
+    CREATE INDEX IF NOT EXISTS idx_workflow_app_runs_workflow
+      ON workflow_app_runs(workflow_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_workflow_app_runs_status
+      ON workflow_app_runs(status);
     CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
     CREATE INDEX IF NOT EXISTS idx_resources_workspace ON resources(workspace_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_resources_kind ON resources(workspace_id, kind);

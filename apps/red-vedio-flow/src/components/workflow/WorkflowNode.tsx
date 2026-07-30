@@ -52,6 +52,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const runError = useTaskStore((state) => (
     data.latestRunId ? state.runs[data.latestRunId]?.error?.message : undefined
   ))
+  const workflowNodeState = useTaskStore((state) => state.workflowRun?.nodeStates[id])
   const currentResult = data.results.find((result) => result.id === data.currentResultId)
   const copyableContent = getCopyableContent(currentResult, streamingText)
 
@@ -74,6 +75,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
       data-selected={selected ? '' : undefined}
       data-node-status={data.status}
       data-execution-state={runStatus ?? 'idle'}
+      data-workflow-execution-state={workflowNodeState?.status ?? 'idle'}
     >
       <div
         className="relative mx-auto w-[360px]"
@@ -92,7 +94,11 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             <Icon size={14} className="text-muted-foreground" />
             <h2 className="min-w-0 flex-1 truncate text-[13px] font-medium">{data.title}</h2>
             <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium tracking-wider text-muted-foreground">
-              {presentation.label}
+              {workflowNodeState?.status === 'running'
+                ? 'RUNNING'
+                : data.executionMode === 'input'
+                  ? 'INPUT'
+                  : presentation.label}
             </span>
             <Button
               type="button"
@@ -119,7 +125,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             result={currentResult}
             streamingText={streamingText}
             partialImage={partialImage}
-            error={runError}
+            error={runError ?? workflowNodeState?.error}
           />
         </div>
         <Handle
@@ -129,7 +135,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
         />
       </div>
 
-      {selected ? (
+      {selected && data.executionMode !== 'input' ? (
         <NodeComposer
           value={data.composer.prompt}
           attachments={data.composer.attachments}
@@ -169,6 +175,13 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             if (data.latestRunId) cancelRun(data.latestRunId)
           }}
         />
+      ) : selected && data.workflowInput ? (
+        <div className="nodrag mt-2 w-[520px] rounded-xl border bg-background px-4 py-3 text-xs text-muted-foreground shadow-sm">
+          运行时输入：<code className="text-foreground">{data.workflowInput.key}</code>
+          {' · '}
+          {data.workflowInput.valueType}
+          {data.workflowInput.required ? ' · 必填' : ' · 可选'}
+        </div>
       ) : null}
     </article>
   )

@@ -1,4 +1,8 @@
-import type { MaterialValue, WorkflowContract } from '@red-video-flow/workflow-core'
+import type {
+  GeneratedWorkflowModule,
+  MaterialValue,
+  WorkflowContract,
+} from '@red-video-flow/workflow-core'
 import { getWorkflowClientTransport, readJsonResponse } from './transport'
 
 export type WorkflowAppRun = {
@@ -7,6 +11,13 @@ export type WorkflowAppRun = {
   revision: number
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   inputs: Record<string, unknown>
+  nodeStates: Record<string, {
+    status: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped'
+    resultIds: string[]
+    startedAt?: number
+    finishedAt?: number
+    error?: string
+  }>
   outputs?: Record<string, MaterialValue>
   error?: string
   events: Array<{
@@ -30,13 +41,14 @@ export async function fetchWorkflowContract(workflowId: string) {
 export async function createWorkflowAppRun(
   workflowId: string,
   inputs: Record<string, unknown>,
+  revision?: number,
 ) {
   const response = await getWorkflowClientTransport().request(
     `/api/workflows/${encodeURIComponent(workflowId)}/runs`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inputs }),
+      body: JSON.stringify({ inputs, revision }),
     },
   )
   return readJsonResponse<{ run: WorkflowAppRun }>(response, '无法启动 Workflow')
@@ -49,10 +61,27 @@ export async function fetchWorkflowAppRun(runId: string) {
   return readJsonResponse<{ run: WorkflowAppRun }>(response, '无法查询 Workflow 运行状态')
 }
 
+export async function fetchWorkflowAppRuns(workflowId: string) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/workflows/${encodeURIComponent(workflowId)}/runs`,
+  )
+  return readJsonResponse<{ runs: WorkflowAppRun[] }>(response, '无法查询 Workflow 运行记录')
+}
+
 export async function cancelWorkflowAppRun(runId: string) {
   const response = await getWorkflowClientTransport().request(
     `/api/workflow-runs/${encodeURIComponent(runId)}/cancel`,
     { method: 'POST' },
   )
   return readJsonResponse<{ run: WorkflowAppRun }>(response, '无法取消 Workflow')
+}
+
+export async function fetchGeneratedWorkflowModule(
+  workflowId: string,
+  language: 'js' | 'ts' = 'ts',
+) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/workflows/${encodeURIComponent(workflowId)}/code?language=${language}`,
+  )
+  return readJsonResponse<GeneratedWorkflowModule>(response, '无法生成 Workflow 代码')
 }

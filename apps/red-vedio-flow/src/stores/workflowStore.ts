@@ -39,7 +39,7 @@ type WorkflowStore = {
   onNodesChange: (changes: NodeChange<WorkflowFlowNode>[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   connectNodes: (connection: Connection) => void
-  addNode: (kind: WorkflowNodeKind) => void
+  addNode: (kind: WorkflowNodeKind, executionMode?: 'input' | 'generate') => void
   undo: () => void
   redo: () => void
   selectNode: (nodeId?: string) => void
@@ -138,7 +138,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       ),
     }))
   },
-  addNode: (kind) => {
+  addNode: (kind, executionMode = 'generate') => {
     const count = get().nodes.length
     set(commitHistory(get(), {
       nodes: [
@@ -147,6 +147,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           `${kind}-${Date.now()}`,
           kind,
           { x: 160 + count * 48, y: 120 + count * 36 },
+          executionMode,
+          count + 1,
         ),
       ],
     }))
@@ -367,6 +369,8 @@ function createWorkflowNode(
   id: string,
   kind: WorkflowNodeKind,
   position: { x: number; y: number },
+  executionMode: 'input' | 'generate' = 'generate',
+  inputIndex = 1,
 ): WorkflowFlowNode {
   return {
     id,
@@ -377,6 +381,16 @@ function createWorkflowNode(
       status: 'empty',
       composer: createDefaultComposer(kind),
       results: [],
+      executionMode,
+      ...(executionMode === 'input' ? {
+        title: '工作流输入',
+        workflowInput: {
+          key: `input_${inputIndex}`,
+          title: `输入 ${inputIndex}`,
+          valueType: kind,
+          required: true,
+        },
+      } : {}),
     },
   }
 }
@@ -397,6 +411,10 @@ function toFlowNode(node: MaterialNode): WorkflowFlowNode {
       results: node.data.results ?? [],
       currentResultId: node.data.currentResultId,
       latestRunId: node.data.latestRunId,
+      executionMode: node.data.executionMode,
+      workflowInput: node.data.workflowInput,
+      serviceRole: node.data.serviceRole,
+      serviceLabel: node.data.serviceLabel,
     },
   }
 }
@@ -417,6 +435,10 @@ function toMaterialNode(node: WorkflowFlowNode): MaterialNode {
       results: node.data.results,
       currentResultId: node.data.currentResultId,
       latestRunId: node.data.latestRunId,
+      executionMode: node.data.executionMode,
+      workflowInput: node.data.workflowInput,
+      serviceRole: node.data.serviceRole,
+      serviceLabel: node.data.serviceLabel,
     },
   }
 }

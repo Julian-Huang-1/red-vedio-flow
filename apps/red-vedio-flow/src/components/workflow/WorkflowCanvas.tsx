@@ -8,9 +8,10 @@ import {
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { FileText, Image, Plus, Redo2, Undo2, Video } from 'lucide-react'
+import { FileInput, FileText, Image, LoaderCircle, Play, Plus, Redo2, Square, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { useTaskStore } from '@/stores/taskStore'
 import { WorkflowNode } from './WorkflowNode'
 import type { WorkflowNodeData } from './workflowTypes'
 
@@ -31,6 +32,10 @@ export function WorkflowCanvas() {
   const redo = useWorkflowStore((state) => state.redo)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const registeredNodeTypes = useMemo(() => nodeTypes, [])
+  const workflowRun = useTaskStore((state) => state.workflowRun)
+  const runWorkflow = useTaskStore((state) => state.runWorkflow)
+  const cancelWorkflow = useTaskStore((state) => state.cancelWorkflow)
+  const isWorkflowRunning = workflowRun?.status === 'queued' || workflowRun?.status === 'running'
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
@@ -57,6 +62,26 @@ export function WorkflowCanvas() {
         <NodeButton label="文本" icon={FileText} onClick={() => addNode('text')} />
         <NodeButton label="图片" icon={Image} onClick={() => addNode('image')} />
         <NodeButton label="视频" icon={Video} onClick={() => addNode('video')} />
+        <NodeButton label="输入" icon={FileInput} onClick={() => addNode('text', 'input')} />
+        <div className="mx-0.5 h-5 w-px bg-border" />
+        <Button
+          variant={isWorkflowRunning ? 'secondary' : 'default'}
+          size="sm"
+          className="h-8 gap-1.5"
+          aria-label={isWorkflowRunning ? '停止工作流' : '运行工作流'}
+          data-workflow-run=""
+          onClick={() => {
+            if (isWorkflowRunning) void cancelWorkflow()
+            else void runWorkflow()
+          }}
+        >
+          {workflowRun?.status === 'queued'
+            ? <LoaderCircle size={13} className="animate-spin" />
+            : isWorkflowRunning
+              ? <Square size={11} fill="currentColor" />
+              : <Play size={13} fill="currentColor" />}
+          {isWorkflowRunning ? '停止' : '运行工作流'}
+        </Button>
         <div className="mx-0.5 h-5 w-px bg-border" />
         <Button
           variant="ghost"
