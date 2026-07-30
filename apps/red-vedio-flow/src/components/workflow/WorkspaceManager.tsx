@@ -155,19 +155,21 @@ export function WorkspaceManager() {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5"
+            title="新建画布"
+            aria-label="新建画布"
             onClick={() => setCreating(true)}
           >
             <Plus className="size-4" />
-            新建画布
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5"
+            title="资源库"
+            aria-label="资源库"
             onClick={openLibrary}
           >
             <Library className="size-4" />
-            资源库
           </Button>
           {loading ? <LoaderCircle className="mr-1 size-4 animate-spin text-muted-foreground" /> : null}
         </>

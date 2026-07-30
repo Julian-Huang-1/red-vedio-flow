@@ -95,29 +95,6 @@ async function submit({ executionId, capability, prompt, inputs = [], options = 
     throw clientError('image-to-image requires at least one input image', 'MISSING_IMAGE')
   }
 
-  const content = [{ type: 'input_text', text: prompt }]
-  for (const asset of inputs) {
-    content.push({ type: 'input_image', image_url: await assetDataUrl(asset) })
-  }
-  const tool = compact({
-    type: 'image_generation',
-    action: options.action,
-    size: options.size,
-    quality: options.quality,
-    background: options.background,
-    output_format: outputFormat,
-    output_compression: boundedInteger(options.outputCompression, 80, 0, 100),
-    input_fidelity: options.inputFidelity,
-    moderation: options.moderation,
-    partial_images: boundedInteger(options.partialImages, 0, 0, 3),
-  })
-  const requestBody = compact({
-    model: resolveResponseModel(options.responseModel),
-    input: [{ role: 'user', content }],
-    tools: [tool],
-    previous_response_id: options.previousResponseId,
-    stream: Boolean(options.stream),
-  })
   let payload
   let apiMode
   if (capability === 'text-to-image') {
@@ -134,12 +111,13 @@ async function submit({ executionId, capability, prompt, inputs = [], options = 
       moderation: options.moderation,
     })
   } else {
-    apiMode = 'responses'
-    payload = await requestResponses(
-      executionId,
-      requestBody,
-      options.imageGenerationDeployment || MODEL,
-    )
+    apiMode = 'images-edits'
+    payload = await requestImagesEdit(executionId, {
+      prompt,
+      inputs,
+      options,
+      outputFormat,
+    })
   }
 
   const assets = await responseAssets(payload, {
@@ -162,6 +140,33 @@ async function submit({ executionId, capability, prompt, inputs = [], options = 
       imageGenerationCallIds: imageGenerationCalls(payload).map((item) => item.id).filter(Boolean),
     },
   }
+}
+
+async function requestImagesEdit(executionId, { prompt, inputs, options, outputFormat }) {
+  const form = new FormData()
+  form.set('model', MODEL)
+  form.set('prompt', prompt)
+  appendFormValue(form, 'n', 1)
+  appendFormValue(form, 'size', options.size)
+  appendFormValue(form, 'quality', options.quality)
+  appendFormValue(form, 'background', options.background)
+  appendFormValue(form, 'output_format', outputFormat)
+  appendFormValue(form, 'output_compression', boundedInteger(options.outputCompression, 80, 0, 100))
+  appendFormValue(form, 'input_fidelity', options.inputFidelity)
+  appendFormValue(form, 'moderation', options.moderation)
+
+  for (const [index, asset] of inputs.entries()) {
+    const image = await assetBlob(asset)
+    form.append(
+      inputs.length === 1 ? 'image' : 'image[]',
+      image.blob,
+      image.fileName || `input-${index + 1}.png`,
+    )
+  }
+  return requestJson(executionId, endpoint('/images/edits'), {
+    method: 'POST',
+    body: form,
+  })
 }
 
 function resolveResponseModel(value) {
@@ -368,6 +373,10 @@ function endpoint(pathname) {
 
 function compact(value) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined))
+}
+
+function appendFormValue(form, key, value) {
+  if (value !== undefined && value !== null && value !== '') form.set(key, String(value))
 }
 
 function normalizeOutputFormat(value) {

@@ -33,11 +33,15 @@ type WorkflowStore = {
   changeVersion: number
   nodes: WorkflowFlowNode[]
   edges: Edge[]
+  past: WorkflowSnapshot[]
+  future: WorkflowSnapshot[]
   selectedNodeId?: string
   onNodesChange: (changes: NodeChange<WorkflowFlowNode>[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   connectNodes: (connection: Connection) => void
   addNode: (kind: WorkflowNodeKind) => void
+  undo: () => void
+  redo: () => void
   selectNode: (nodeId?: string) => void
   updateComposer: (nodeId: string, patch: Partial<NodeComposerData>) => void
   addAttachment: (nodeId: string, attachment: AssetReference) => void
@@ -51,6 +55,15 @@ type WorkflowStore = {
   markSaved: (document: WorkflowDocument, savedVersion: number) => void
   toWorkflowDocument: () => WorkflowDocument
 }
+
+type WorkflowSnapshot = {
+  nodes: WorkflowFlowNode[]
+  edges: Edge[]
+  selectedNodeId?: string
+}
+
+const HISTORY_LIMIT = 50
+let activeHistoryGroup: { key: string; updatedAt: number } | undefined
 
 const nodeDefinitions: Record<
   WorkflowNodeKind,
@@ -84,17 +97,30 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   changeVersion: 0,
   nodes: [],
   edges: [],
+  past: [],
+  future: [],
   onNodesChange: (changes) => {
-    set({
-      nodes: applyNodeChanges(changes, get().nodes),
-      changeVersion: get().changeVersion + 1,
-    })
+    const nodes = applyNodeChanges(changes, get().nodes)
+    if (changes.every((change) => change.type === 'dimensions')) {
+      set({ nodes })
+      return
+    }
+    const positionChanges = changes.filter((change) => change.type === 'position')
+    const groupKey = positionChanges.length
+      ? `position:${positionChanges.map((change) => change.id).sort().join(',')}`
+      : undefined
+    set(commitHistory(get(), {
+      nodes,
+      selectedNodeId: nodes.find((node) => node.selected)?.id,
+    }, groupKey))
+    if (positionChanges.length && positionChanges.every((change) => !change.dragging)) {
+      activeHistoryGroup = undefined
+    }
   },
   onEdgesChange: (changes) => {
-    set({
+    set(commitHistory(get(), {
       edges: applyEdgeChanges(changes, get().edges),
-      changeVersion: get().changeVersion + 1,
-    })
+    }))
   },
   connectNodes: (connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return
@@ -102,7 +128,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       (edge) => edge.source === connection.source && edge.target === connection.target,
     )
     if (exists) return
-    set({
+    set(commitHistory(get(), {
       edges: addEdge(
         {
           ...connection,
@@ -110,12 +136,11 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         },
         get().edges,
       ),
-      changeVersion: get().changeVersion + 1,
-    })
+    }))
   },
   addNode: (kind) => {
     const count = get().nodes.length
-    set({
+    set(commitHistory(get(), {
       nodes: [
         ...get().nodes,
         createWorkflowNode(
@@ -124,20 +149,48 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           { x: 160 + count * 48, y: 120 + count * 36 },
         ),
       ],
-      changeVersion: get().changeVersion + 1,
+    }))
+  },
+  undo: () => {
+    activeHistoryGroup = undefined
+    const state = get()
+    const previous = state.past[state.past.length - 1]
+    if (!previous) return
+    set({
+      ...cloneSnapshot(previous),
+      past: state.past.slice(0, -1),
+      future: [snapshot(state), ...state.future].slice(0, HISTORY_LIMIT),
+      changeVersion: state.changeVersion + 1,
+    })
+  },
+  redo: () => {
+    activeHistoryGroup = undefined
+    const state = get()
+    const next = state.future[0]
+    if (!next) return
+    set({
+      ...cloneSnapshot(next),
+      past: [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+      future: state.future.slice(1),
+      changeVersion: state.changeVersion + 1,
     })
   },
   selectNode: (nodeId) => {
-    set({
+    const nodes = get().nodes.map((node) => ({
+      ...node,
+      selected: node.id === nodeId,
+    }))
+    if (
+      get().selectedNodeId === nodeId
+      && nodes.every((node, index) => node.selected === get().nodes[index]?.selected)
+    ) return
+    set(commitHistory(get(), {
       selectedNodeId: nodeId,
-      nodes: get().nodes.map((node) => ({
-        ...node,
-        selected: node.id === nodeId,
-      })),
-    })
+      nodes,
+    }))
   },
   updateComposer: (nodeId, patch) => {
-    set({
+    set(commitHistory(get(), {
       nodes: updateNodeData(get().nodes, nodeId, (data) => ({
         ...data,
         composer: {
@@ -150,8 +203,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           updatedAt: Date.now(),
         },
       })),
-      changeVersion: get().changeVersion + 1,
-    })
+    }, `composer:${nodeId}`))
   },
   addAttachment: (nodeId, attachment) => {
     const node = get().nodes.find((item) => item.id === nodeId)
@@ -161,41 +213,41 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     })
   },
   appendResult: (nodeId, result, makeCurrent = true) => {
-    set({
+    set(commitHistory(get(), {
       nodes: updateNodeData(get().nodes, nodeId, (data) => ({
         ...data,
         results: [...data.results, result],
         currentResultId: makeCurrent ? result.id : data.currentResultId,
       })),
-    })
+    }))
   },
   setCurrentResult: (nodeId, resultId) => {
-    set({
+    set(commitHistory(get(), {
       nodes: updateNodeData(get().nodes, nodeId, (data) => ({
         ...data,
         currentResultId: data.results.some((result) => result.id === resultId)
           ? resultId
           : data.currentResultId,
       })),
-      changeVersion: get().changeVersion + 1,
-    })
+    }))
   },
   setLatestRun: (nodeId, runId) => {
-    set({
+    set(commitHistory(get(), {
       nodes: updateNodeData(get().nodes, nodeId, (data) => ({
         ...data,
         latestRunId: runId,
       })),
-      changeVersion: get().changeVersion + 1,
-    })
+    }))
   },
   setNodeStatus: (nodeId, status) => {
-    set({
+    const node = get().nodes.find((item) => item.id === nodeId)
+    if (!node || node.data.status === status) return
+    set(commitHistory(get(), {
       nodes: updateNodeData(get().nodes, nodeId, (data) => ({
         ...data,
         status,
       })),
-    })
+    }))
   },
   syncRevision: (revision) => {
     if (revision === undefined || revision < get().revision) return
@@ -230,6 +282,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     }
   },
   loadWorkflow: (document) => {
+    activeHistoryGroup = undefined
     set({
       workflowId: document.id,
       workflowTitle: document.title,
@@ -240,6 +293,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         id: edge.id ?? `edge-${edge.source}-${edge.target}-${index}`,
       })),
       selectedNodeId: undefined,
+      past: [],
+      future: [],
       changeVersion: 0,
     })
   },
@@ -272,6 +327,40 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 // 仅开发环境挂到 window，方便在浏览器控制台调试（生产构建时会被 tree-shake 掉）
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   window.__workflowStore = useWorkflowStore
+}
+
+function snapshot(state: Pick<WorkflowStore, 'nodes' | 'edges' | 'selectedNodeId'>): WorkflowSnapshot {
+  return cloneSnapshot({
+    nodes: state.nodes,
+    edges: state.edges,
+    selectedNodeId: state.selectedNodeId,
+  })
+}
+
+function cloneSnapshot(value: WorkflowSnapshot): WorkflowSnapshot {
+  return structuredClone(value)
+}
+
+function commitHistory(
+  state: WorkflowStore,
+  patch: Partial<WorkflowSnapshot>,
+  groupKey?: string,
+): Partial<WorkflowStore> {
+  const now = Date.now()
+  const grouped = Boolean(
+    groupKey
+    && activeHistoryGroup?.key === groupKey
+    && now - activeHistoryGroup.updatedAt < 800,
+  )
+  activeHistoryGroup = groupKey ? { key: groupKey, updatedAt: now } : undefined
+  return {
+    ...patch,
+    past: grouped
+      ? state.past
+      : [...state.past, snapshot(state)].slice(-HISTORY_LIMIT),
+    future: [],
+    changeVersion: state.changeVersion + 1,
+  }
 }
 
 function createWorkflowNode(

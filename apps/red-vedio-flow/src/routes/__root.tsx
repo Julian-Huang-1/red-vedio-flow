@@ -5,6 +5,7 @@ import {
   AgentBoxPanel,
   useAgentBoxStore,
 } from '@/components/agent-box'
+import { WorkspaceManager } from '@/components/workflow'
 import { Button } from '@/components/ui/button'
 
 function RootLayout() {
@@ -17,9 +18,12 @@ function RootLayout() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b bg-card">
         <div className="flex h-16 w-full items-center justify-between px-6">
-          <Link to="/home" className="font-semibold tracking-tight">
-            red-vedio-flow
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/home" className="font-semibold tracking-tight">
+              Y
+            </Link>
+            <WorkspaceManager />
+          </div>
           <Button className="relative" onClick={openDrawer}>
             <Sparkles size={16} />
             打开 Agent

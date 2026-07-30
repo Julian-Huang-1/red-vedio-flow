@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -8,7 +8,7 @@ import {
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { FileText, Image, Plus, Video } from 'lucide-react'
+import { FileText, Image, Plus, Redo2, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { WorkflowNode } from './WorkflowNode'
@@ -25,8 +25,31 @@ export function WorkflowCanvas() {
   const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange)
   const connectNodes = useWorkflowStore((state) => state.connectNodes)
   const addNode = useWorkflowStore((state) => state.addNode)
+  const canUndo = useWorkflowStore((state) => state.past.length > 0)
+  const canRedo = useWorkflowStore((state) => state.future.length > 0)
+  const undo = useWorkflowStore((state) => state.undo)
+  const redo = useWorkflowStore((state) => state.redo)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const registeredNodeTypes = useMemo(() => nodeTypes, [])
+
+  useEffect(() => {
+    const handleHistoryShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, [contenteditable="true"]')) return
+      const modifier = event.metaKey || event.ctrlKey
+      const redoShortcut = modifier
+        && ((event.shiftKey && event.key.toLowerCase() === 'z')
+          || (!event.metaKey && event.key.toLowerCase() === 'y'))
+      const undoShortcut = modifier && !event.shiftKey && event.key.toLowerCase() === 'z'
+      if (!undoShortcut && !redoShortcut) return
+      event.preventDefault()
+      const store = useWorkflowStore.getState()
+      if (redoShortcut) store.redo()
+      else store.undo()
+    }
+    window.addEventListener('keydown', handleHistoryShortcut)
+    return () => window.removeEventListener('keydown', handleHistoryShortcut)
+  }, [])
   
   return (
     <div className="relative h-full w-full" data-workflow-canvas="">
@@ -34,6 +57,31 @@ export function WorkflowCanvas() {
         <NodeButton label="文本" icon={FileText} onClick={() => addNode('text')} />
         <NodeButton label="图片" icon={Image} onClick={() => addNode('image')} />
         <NodeButton label="视频" icon={Video} onClick={() => addNode('video')} />
+        <div className="mx-0.5 h-5 w-px bg-border" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          disabled={!canUndo}
+          aria-label="撤回"
+          title="撤回（⌘/Ctrl + Z）"
+          data-workflow-undo=""
+          onClick={undo}
+        >
+          <Undo2 size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          disabled={!canRedo}
+          aria-label="重做"
+          title="重做（⌘/Ctrl + Shift + Z）"
+          data-workflow-redo=""
+          onClick={redo}
+        >
+          <Redo2 size={14} />
+        </Button>
       </div>
 
       <ReactFlow
@@ -46,7 +94,6 @@ export function WorkflowCanvas() {
         onNodeClick={(_, node) => selectNode(node.id)}
         onEdgeClick={() => selectNode(undefined)}
         onPaneClick={() => selectNode(undefined)}
-        edgesSelectable
         elementsSelectable
         elevateEdgesOnSelect
         deleteKeyCode={['Backspace', 'Delete']}
