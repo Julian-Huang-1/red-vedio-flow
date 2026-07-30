@@ -40,10 +40,15 @@ type WorkflowStore = {
   onEdgesChange: (changes: EdgeChange[]) => void
   connectNodes: (connection: Connection) => void
   addNode: (kind: WorkflowNodeKind, executionMode?: 'input' | 'generate') => void
+  setWorkflowTitle: (title: string) => void
   undo: () => void
   redo: () => void
   selectNode: (nodeId?: string) => void
   updateComposer: (nodeId: string, patch: Partial<NodeComposerData>) => void
+  syncComposerUpstreamResults: (
+    nodeId: string,
+    upstreamResults: UpstreamResultReference[],
+  ) => void
   addAttachment: (nodeId: string, attachment: AssetReference) => void
   appendResult: (nodeId: string, result: NodeResult, makeCurrent?: boolean) => void
   setCurrentResult: (nodeId: string, resultId: string) => void
@@ -52,6 +57,7 @@ type WorkflowStore = {
   syncRevision: (revision?: number) => void
   buildRunInput: (nodeId: string) => NodeRunInput
   loadWorkflow: (document: WorkflowDocument) => void
+  syncExecutionState: (document: WorkflowDocument) => void
   markSaved: (document: WorkflowDocument, savedVersion: number) => void
   toWorkflowDocument: () => WorkflowDocument
 }
@@ -153,6 +159,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       ],
     }))
   },
+  setWorkflowTitle: (title) => {
+    const nextTitle = title.trim()
+    if (!nextTitle || nextTitle === get().workflowTitle) return
+    set({
+      workflowTitle: nextTitle,
+      changeVersion: get().changeVersion + 1,
+    })
+  },
   undo: () => {
     activeHistoryGroup = undefined
     const state = get()
@@ -206,6 +220,17 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         },
       })),
     }, `composer:${nodeId}`))
+  },
+  syncComposerUpstreamResults: (nodeId, upstreamResults) => {
+    set({
+      nodes: updateNodeData(get().nodes, nodeId, (data) => ({
+        ...data,
+        composer: {
+          ...data.composer,
+          upstreamResults,
+        },
+      })),
+    })
   },
   addAttachment: (nodeId, attachment) => {
     const node = get().nodes.find((item) => item.id === nodeId)
@@ -298,6 +323,31 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       past: [],
       future: [],
       changeVersion: 0,
+    })
+  },
+  syncExecutionState: (document) => {
+    if (document.id !== get().workflowId) return
+    const serverNodes = new Map(document.graph.nodes.map((node) => [node.id, node]))
+    set({
+      revision: Math.max(get().revision, document.revision),
+      nodes: get().nodes.map((node) => {
+        const serverNode = serverNodes.get(node.id)
+        if (!serverNode) return node
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            status: serverNode.data.status,
+            results: serverNode.data.results ?? [],
+            currentResultId: serverNode.data.currentResultId,
+            latestRunId: serverNode.data.latestRunId,
+            composer: {
+              ...node.data.composer,
+              upstreamResults: serverNode.data.composer?.upstreamResults ?? [],
+            },
+          },
+        }
+      }),
     })
   },
   markSaved: (document, savedVersion) => {

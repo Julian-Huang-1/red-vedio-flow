@@ -72,6 +72,7 @@ export type GenerationConfig =
 export type NodeComposerData = {
   prompt: string
   attachments: AssetReference[]
+  upstreamResults?: UpstreamResultReference[]
   model: ModelSelection
   generationConfig: GenerationConfig
   updatedAt: number
@@ -226,6 +227,7 @@ export function createDefaultComposer(
     return {
       prompt: '',
       attachments: [],
+      upstreamResults: [],
       model: { providerId: 'builtin.visual-gpt-image', modelId: 'gpt-image-2' },
       generationConfig: {
         type: 'openai-image',
@@ -252,6 +254,7 @@ export function createDefaultComposer(
     return {
       prompt: '',
       attachments: [],
+      upstreamResults: [],
       model: { providerId: 'builtin.visual-seedance', modelId: 'doubao-seedance-2' },
       generationConfig: {
         type: 'volc-video',
@@ -273,6 +276,7 @@ export function createDefaultComposer(
   return {
     prompt: '',
     attachments: [],
+    upstreamResults: [],
     model: { providerId: 'rednote-maas', modelId: 'GPT-5.6 Sol' },
     generationConfig: {
       type: 'openai-text',

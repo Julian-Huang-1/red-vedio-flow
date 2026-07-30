@@ -519,19 +519,21 @@ async function executeComposerNode(
   resultsByNodeId: Map<string, NodeResult[]>,
 ) {
   const composer = node.data.composer!
+  const upstreamResults = collectUpstreamResultReferences(
+    workflowRun.id,
+    node,
+    upstream,
+    workflow.graph.edges,
+    resultsByNodeId,
+  )
+  persistTopologyComposerContext(runtime, workflow.id, node.id, upstreamResults)
   const run = runtime.backend.runs.createNodeRun({
     workflowId: workflow.id,
     nodeId: node.id,
     input: {
       prompt: composer.prompt,
       attachments: composer.attachments,
-      upstreamResults: collectUpstreamResultReferences(
-        workflowRun.id,
-        node,
-        upstream,
-        workflow.graph.edges,
-        resultsByNodeId,
-      ),
+      upstreamResults,
       model: composer.model,
       generationConfig: composer.generationConfig,
     },
@@ -550,6 +552,30 @@ async function executeComposerNode(
     value: resultValue(results.at(-1)) ?? currentNode?.data.value ?? {},
     results,
   }
+}
+
+function persistTopologyComposerContext(
+  runtime: LocalServerRuntime,
+  workflowId: string,
+  nodeId: string,
+  upstreamResults: UpstreamResultReference[],
+) {
+  const current = runtime.backend.workflows.get(workflowId)
+  const node = current?.graph.nodes.find((item) => item.id === nodeId)
+  if (!current || !node?.data.composer) return
+  runtime.backend.workflows.patch({
+    id: workflowId,
+    baseRevision: current.revision,
+    ops: [{
+      type: 'setNodeComposer',
+      nodeId,
+      composer: {
+        ...node.data.composer,
+        upstreamResults,
+        updatedAt: Date.now(),
+      },
+    }],
+  })
 }
 
 async function waitForNodeRun(

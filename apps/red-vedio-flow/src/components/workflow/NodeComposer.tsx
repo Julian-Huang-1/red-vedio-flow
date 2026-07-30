@@ -47,6 +47,11 @@ export function NodeComposer({
   const [draft, setDraft] = useState(value)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const isRunning = executionStatus === 'queued' || executionStatus === 'running'
+  const acceptedFileTypes = kind === 'image'
+    ? 'image/*'
+    : kind === 'video'
+      ? 'video/*'
+      : 'image/*,video/*'
 
   useEffect(() => {
     if (!isComposingRef.current && value !== draft) {
@@ -111,7 +116,7 @@ export function NodeComposer({
             ref={fileInputRef}
             className="hidden"
             type="file"
-            accept="image/*,video/*"
+            accept={acceptedFileTypes}
             multiple
             onChange={(event) => {
               void onFilesSelected(Array.from(event.target.files ?? []))
@@ -122,7 +127,8 @@ export function NodeComposer({
             variant="ghost"
             size="icon"
             className="size-6 text-muted-foreground"
-            aria-label="添加素材"
+            aria-label={kind === 'image' ? '上传图片' : kind === 'video' ? '上传视频' : '添加素材'}
+            title={kind === 'image' ? '上传图片' : kind === 'video' ? '上传视频' : '添加素材'}
             onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip size={13} />

@@ -3,6 +3,7 @@ export type ResourceSource = 'upload' | 'generated' | 'imported'
 export type ResourceRelation =
   | 'generated'
   | 'attachment'
+  | 'node-content'
   | 'upstream-input'
   | 'last-frame'
   | 'cover'

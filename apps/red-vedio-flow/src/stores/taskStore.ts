@@ -62,6 +62,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const workflow = useWorkflowStore.getState()
     const input = workflow.buildRunInput(nodeId)
     if (!input.prompt.trim()) return undefined
+    workflow.syncComposerUpstreamResults(nodeId, input.upstreamResults)
 
     const run = get().createRun(workflow.workflowId, nodeId, input)
     workflow.setLatestRun(nodeId, run.id)
@@ -186,13 +187,23 @@ async function pollWorkflowAppRun(
   workflowId: string,
   set: (patch: Partial<TaskStore>) => void,
 ) {
+  let executionFingerprint = ''
   while (true) {
     const latest = (await fetchWorkflowAppRun(runId)).run
     set({ workflowRun: latest })
+    const nextFingerprint = Object.entries(latest.nodeStates)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([nodeId, state]) => `${nodeId}:${state.status}:${state.resultIds.join(',')}`)
+      .join('|')
+    if (nextFingerprint !== executionFingerprint) {
+      executionFingerprint = nextFingerprint
+      const document = await fetchWorkflow(workflowId)
+      useWorkflowStore.getState().syncExecutionState(document)
+    }
     if (!['queued', 'running'].includes(latest.status)) {
       if (latest.status === 'succeeded') {
         const document = await fetchWorkflow(workflowId)
-        useWorkflowStore.getState().loadWorkflow(document)
+        useWorkflowStore.getState().syncExecutionState(document)
       }
       return
     }

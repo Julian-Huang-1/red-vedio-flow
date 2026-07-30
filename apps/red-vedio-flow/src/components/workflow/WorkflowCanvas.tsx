@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -8,11 +8,12 @@ import {
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { FileInput, FileText, Image, LoaderCircle, Play, Plus, Redo2, Square, Undo2, Video } from 'lucide-react'
+import { Code2, FileInput, FileText, Image, LoaderCircle, Play, Plus, Redo2, Square, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { useTaskStore } from '@/stores/taskStore'
 import { WorkflowNode } from './WorkflowNode'
+import { WorkflowCodeDialog } from './WorkflowCodeDialog'
 import type { WorkflowNodeData } from './workflowTypes'
 
 const nodeTypes: NodeTypes = {
@@ -21,6 +22,7 @@ const nodeTypes: NodeTypes = {
 
 export function WorkflowCanvas() {
   const nodes = useWorkflowStore((state) => state.nodes)
+  const workflowId = useWorkflowStore((state) => state.workflowId)
   const edges = useWorkflowStore((state) => state.edges)
   const onNodesChange = useWorkflowStore((state) => state.onNodesChange)
   const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange)
@@ -32,6 +34,7 @@ export function WorkflowCanvas() {
   const redo = useWorkflowStore((state) => state.redo)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const registeredNodeTypes = useMemo(() => nodeTypes, [])
+  const [codeDialogOpen, setCodeDialogOpen] = useState(false)
   const workflowRun = useTaskStore((state) => state.workflowRun)
   const runWorkflow = useTaskStore((state) => state.runWorkflow)
   const cancelWorkflow = useTaskStore((state) => state.cancelWorkflow)
@@ -82,6 +85,17 @@ export function WorkflowCanvas() {
               : <Play size={13} fill="currentColor" />}
           {isWorkflowRunning ? '停止' : '运行工作流'}
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5"
+          aria-label="查看工作流代码"
+          data-workflow-view-code=""
+          onClick={() => setCodeDialogOpen(true)}
+        >
+          <Code2 size={14} />
+          查看代码
+        </Button>
         <div className="mx-0.5 h-5 w-px bg-border" />
         <Button
           variant="ghost"
@@ -125,6 +139,7 @@ export function WorkflowCanvas() {
         panOnDrag={false}
         panOnScroll
         zoomOnScroll={false}
+        proOptions={{ hideAttribution: true }}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         defaultEdgeOptions={{
@@ -146,6 +161,11 @@ export function WorkflowCanvas() {
           }}
         />
       </ReactFlow>
+      <WorkflowCodeDialog
+        open={codeDialogOpen}
+        workflowId={workflowId}
+        onOpenChange={setCodeDialogOpen}
+      />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Library, LoaderCircle, Plus, X } from 'lucide-react'
+import { Check, Library, LoaderCircle, Pencil, Plus, X } from 'lucide-react'
 import {
   createWorkflow,
   fetchWorkflow,
@@ -27,6 +27,8 @@ export function WorkspaceManager() {
   const openWorkspace = useWorkspaceStore((state) => state.openWorkspace)
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces)
   const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow)
+  const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
+  const setWorkflowTitle = useWorkflowStore((state) => state.setWorkflowTitle)
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [switching, setSwitching] = useState(false)
@@ -88,6 +90,16 @@ export function WorkspaceManager() {
   function submitCreate() {
     const nextTitle = title.trim() || `画布 ${(workflowsQuery.data?.workflows.length ?? 0) + 1}`
     createMutation.mutate(nextTitle)
+  }
+
+  async function renameCurrentWorkspace() {
+    if (!currentWorkspaceId) return
+    const nextTitle = window.prompt('重命名画布', workflowTitle)?.trim()
+    if (!nextTitle || nextTitle === workflowTitle) return
+    setWorkflowTitle(nextTitle)
+    await persistCurrentWorkflow()
+    await queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    await queryClient.invalidateQueries({ queryKey: ['workflow', currentWorkspaceId] })
   }
 
   const workflows = workflowsQuery.data?.workflows ?? []
@@ -155,6 +167,17 @@ export function WorkspaceManager() {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5"
+            title="重命名画布"
+            aria-label="重命名画布"
+            disabled={loading || !currentWorkspaceId}
+            onClick={() => void renameCurrentWorkspace()}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5"
             title="新建画布"
             aria-label="新建画布"
             onClick={() => setCreating(true)}
@@ -195,7 +218,7 @@ export function useWorkflowAutosave() {
 
 let activeSave: Promise<void> | undefined
 
-async function persistCurrentWorkflow() {
+export async function persistCurrentWorkflow() {
   if (activeSave) return activeSave
   activeSave = saveUntilCurrent()
   try {

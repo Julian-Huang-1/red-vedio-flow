@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Check, Copy, FileText, Image, Video } from 'lucide-react'
+import { Check, Copy, FileText, Image, LoaderCircle, Pencil, Upload, Video } from 'lucide-react'
 import { useTaskStore } from '@/stores/taskStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { createResourceBinding, uploadAsset } from '@red-video-flow/workflow-client'
 import { queryClient } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { NodeComposer } from './NodeComposer'
 import type { WorkflowFlowNode, WorkflowNodeKind } from './workflowTypes'
 
@@ -29,10 +30,16 @@ const nodePresentation = {
 
 export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>) {
   const [copied, setCopied] = useState(false)
+  const [uploadingContent, setUploadingContent] = useState(false)
+  const [uploadError, setUploadError] = useState<string>()
+  const [editingText, setEditingText] = useState(false)
+  const [textDraft, setTextDraft] = useState('')
+  const contentFileInputRef = useRef<HTMLInputElement>(null)
   const presentation = nodePresentation[data.kind]
   const Icon = presentation.icon
   const updateComposer = useWorkflowStore((state) => state.updateComposer)
   const addAttachment = useWorkflowStore((state) => state.addAttachment)
+  const appendResult = useWorkflowStore((state) => state.appendResult)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const submitNode = useTaskStore((state) => state.submitNode)
   const cancelRun = useTaskStore((state) => state.cancelRun)
@@ -65,6 +72,83 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const submit = () => {
     if (!data.composer.prompt.trim()) return
     void submitNode(id)
+  }
+
+  const uploadNodeContent = async (file: File) => {
+    const expectedType = data.kind === 'image' ? 'image/' : 'video/'
+    if (!file.type.startsWith(expectedType)) {
+      setUploadError(data.kind === 'image' ? '请选择图片文件' : '请选择视频文件')
+      return
+    }
+    setUploadingContent(true)
+    setUploadError(undefined)
+    try {
+      const asset = await uploadAsset(file, workflowId)
+      const reference = {
+        id: asset.id,
+        kind: data.kind,
+        url: asset.url,
+        name: asset.fileName,
+        mimeType: asset.mimeType,
+      } as const
+      const resultId = `upload-result-${asset.id}`
+      const runId = `upload-${asset.id}`
+      if (data.kind === 'image') {
+        appendResult(id, {
+          id: resultId,
+          runId,
+          type: 'image',
+          images: [{ ...reference, kind: 'image' }],
+          provider: { providerId: 'upload' },
+          createdAt: Date.now(),
+        })
+      } else {
+        appendResult(id, {
+          id: resultId,
+          runId,
+          type: 'video',
+          video: { ...reference, kind: 'video' },
+          provider: { providerId: 'upload' },
+          createdAt: Date.now(),
+        })
+      }
+      await createResourceBinding({
+        resourceId: asset.id,
+        workflowId,
+        nodeId: id,
+        runId,
+        resultId,
+        relation: 'node-content',
+      })
+      await queryClient.invalidateQueries({ queryKey: ['resources'] })
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setUploadingContent(false)
+    }
+  }
+
+  const openTextEditor = () => {
+    setTextDraft(currentResult?.type === 'text' ? currentResult.text : streamingText)
+    setEditingText(true)
+  }
+
+  const saveTextContent = () => {
+    const timestamp = Date.now()
+    appendResult(id, {
+      id: `manual-text-result-${timestamp}`,
+      runId: `manual-text-${timestamp}`,
+      type: 'text',
+      text: textDraft,
+      provider: { providerId: 'manual' },
+      createdAt: timestamp,
+    })
+    setEditingText(false)
+  }
+
+  const cancelTextEditing = () => {
+    setEditingText(false)
+    setTextDraft('')
   }
 
   return (
@@ -100,6 +184,62 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
                   ? 'INPUT'
                   : presentation.label}
             </span>
+            {data.kind === 'image' || data.kind === 'video' ? (
+              <>
+                <input
+                  ref={contentFileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept={data.kind === 'image' ? 'image/*' : 'video/*'}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) void uploadNodeContent(file)
+                    event.target.value = ''
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="nodrag nopan size-7 text-muted-foreground hover:text-foreground"
+                  aria-label={data.kind === 'image' ? '上传并覆盖节点图片' : '上传并覆盖节点视频'}
+                  title={data.kind === 'image' ? '上传图片到节点' : '上传视频到节点'}
+                  disabled={uploadingContent}
+                  data-workflow-node-upload=""
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    contentFileInputRef.current?.click()
+                  }}
+                >
+                  {uploadingContent
+                    ? <LoaderCircle className="size-3.5 animate-spin" />
+                    : <Upload className="size-3.5" />}
+                </Button>
+              </>
+            ) : null}
+            {data.kind === 'text' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="nodrag nopan size-7 text-muted-foreground hover:text-foreground"
+                aria-label="编辑节点文本"
+                title="编辑节点文本"
+                data-workflow-node-edit=""
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (editingText) {
+                    saveTextContent()
+                  } else {
+                    openTextEditor()
+                  }
+                }}
+              >
+                {editingText ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -120,13 +260,34 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </Button>
           </header>
-          <NodePreview
-            kind={data.kind}
-            result={currentResult}
-            streamingText={streamingText}
-            partialImage={partialImage}
-            error={runError ?? workflowNodeState?.error}
-          />
+          {data.kind === 'text' && editingText ? (
+            <Textarea
+              autoFocus
+              value={textDraft}
+              className="nodrag nopan h-[220px] resize-none rounded-none border-0 px-5 py-4 text-sm leading-6 shadow-none focus-visible:ring-0"
+              placeholder="输入节点文本内容"
+              data-workflow-node-textarea=""
+              onPointerDown={(event) => event.stopPropagation()}
+              onChange={(event) => setTextDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelTextEditing()
+                } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault()
+                  saveTextContent()
+                }
+              }}
+            />
+          ) : (
+            <NodePreview
+              kind={data.kind}
+              result={currentResult}
+              streamingText={streamingText}
+              partialImage={partialImage}
+              error={uploadError ?? runError ?? workflowNodeState?.error}
+            />
+          )}
         </div>
         <Handle
           type="source"
@@ -147,13 +308,14 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           onFilesSelected={async (files) => {
             for (const file of files) {
               const asset = await uploadAsset(file, workflowId)
-              addAttachment(id, {
+              const reference = {
                 id: asset.id,
                 kind: asset.kind === 'video' ? 'video' : asset.kind === 'image' ? 'image' : 'file',
                 url: asset.url,
                 name: asset.fileName,
                 mimeType: asset.mimeType,
-              })
+              } as const
+              addAttachment(id, reference)
               await createResourceBinding({
                 resourceId: asset.id,
                 workflowId,

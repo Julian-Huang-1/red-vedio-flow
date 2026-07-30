@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import type { UpstreamResultReference } from '@red-video-flow/workflow-core'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, sendJson, writeSse, type RequestContext } from '../http.js'
 import { startDurableWorkflowNodeRun } from '../nodeExecutionService.js'
@@ -58,6 +59,7 @@ async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext)
     return
   }
 
+  persistComposerUpstreamResults(runtime, workflowId, nodeId, body.input.upstreamResults)
   const run = runtime.backend.runs.createNodeRun({
     id: runId,
     workflowId,
@@ -91,6 +93,31 @@ async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext)
       message: error instanceof Error ? error.message : String(error),
       retryable: true,
     })
+  })
+}
+
+function persistComposerUpstreamResults(
+  runtime: LocalServerRuntime,
+  workflowId: string,
+  nodeId: string,
+  upstreamResults: unknown,
+) {
+  if (!Array.isArray(upstreamResults)) return
+  const workflow = runtime.backend.workflows.get(workflowId)
+  const node = workflow?.graph.nodes.find((item) => item.id === nodeId)
+  if (!workflow || !node?.data.composer) return
+  runtime.backend.workflows.patch({
+    id: workflowId,
+    baseRevision: workflow.revision,
+    ops: [{
+      type: 'setNodeComposer',
+      nodeId,
+      composer: {
+        ...node.data.composer,
+        upstreamResults: upstreamResults as UpstreamResultReference[],
+        updatedAt: Date.now(),
+      },
+    }],
   })
 }
 
