@@ -1,3 +1,4 @@
+import { createDefaultComposer } from './generationTypes'
 import type { MaterialNode, MaterialType, NodeSize, XYPosition } from './types'
 
 export type CreateMaterialNodeInput = {
@@ -20,6 +21,8 @@ export function createMaterialNode(input: CreateMaterialNodeInput): MaterialNode
       status: 'empty',
       value: {},
       messages: [],
+      composer: createDefaultComposer(input.materialType),
+      results: [],
     },
   }
 }

@@ -30,6 +30,10 @@ export type MaterialNodeData = {
   status: NodeStatus
   value: MaterialValue
   messages: MaterialMessage[]
+  composer?: NodeComposerData
+  results?: NodeResult[]
+  currentResultId?: string
+  latestRunId?: string
 }
 
 export type XYPosition = {
@@ -91,6 +95,10 @@ export type WorkflowPatchOperation =
   | { type: 'setNodeStatus'; nodeId: string; status: NodeStatus }
   | { type: 'setNodeValue'; nodeId: string; value: MaterialValue }
   | { type: 'appendNodeMessage'; nodeId: string; message: MaterialMessage }
+  | { type: 'setNodeComposer'; nodeId: string; composer: NodeComposerData }
+  | { type: 'appendNodeResult'; nodeId: string; result: NodeResult; makeCurrent?: boolean }
+  | { type: 'setNodeCurrentResult'; nodeId: string; resultId: string }
+  | { type: 'setNodeLatestRun'; nodeId: string; runId?: string }
   | { type: 'addEdge'; edge: WorkflowEdge }
   | { type: 'removeEdge'; edgeId?: string; source?: string; target?: string }
 
@@ -98,3 +106,4 @@ export type WorkflowPatchInput = {
   baseRevision: number
   ops: WorkflowPatchOperation[]
 }
+import type { NodeComposerData, NodeResult } from './generationTypes'

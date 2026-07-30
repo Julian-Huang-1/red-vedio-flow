@@ -77,6 +77,39 @@ export function applyWorkflowPatch(document: WorkflowDocument, ops: WorkflowPatc
           data: { ...node.data, messages: [...node.data.messages, op.message] },
         }))
         break
+      case 'setNodeComposer':
+        nodes = updateNode(nodes, op.nodeId, (node) => ({
+          ...node,
+          data: { ...node.data, composer: op.composer },
+        }))
+        break
+      case 'appendNodeResult':
+        nodes = updateNode(nodes, op.nodeId, (node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            results: [...(node.data.results ?? []), op.result],
+            currentResultId: op.makeCurrent === false ? node.data.currentResultId : op.result.id,
+          },
+        }))
+        break
+      case 'setNodeCurrentResult':
+        nodes = updateNode(nodes, op.nodeId, (node) => {
+          if (!(node.data.results ?? []).some((result) => result.id === op.resultId)) {
+            throw new WorkflowPatchError(`node result not found: ${op.resultId}`)
+          }
+          return {
+            ...node,
+            data: { ...node.data, currentResultId: op.resultId },
+          }
+        })
+        break
+      case 'setNodeLatestRun':
+        nodes = updateNode(nodes, op.nodeId, (node) => ({
+          ...node,
+          data: { ...node.data, latestRunId: op.runId },
+        }))
+        break
       case 'addEdge':
         ensureValidEdge(nodes, edges, op.edge)
         edges = [...edges, op.edge]

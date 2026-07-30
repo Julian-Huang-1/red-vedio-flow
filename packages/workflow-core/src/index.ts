@@ -1,5 +1,6 @@
 export * from './agentTypes'
 export * from './graphRules'
+export * from './generationTypes'
 export * from './graphSelectors'
 export * from './materialCatalog'
 export * from './nodeFactory'
