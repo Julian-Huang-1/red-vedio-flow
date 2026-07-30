@@ -56,3 +56,14 @@
     @apply m-0 min-w-80 bg-background font-sans text-foreground antialiased;
   }
 }
+
+@layer components {
+  [data-workflow-canvas] .react-flow__edge {
+    cursor: pointer;
+  }
+
+  [data-workflow-canvas] .react-flow__edge.selected .react-flow__edge-path {
+    stroke: hsl(var(--foreground));
+    stroke-width: 2.5;
+  }
+}

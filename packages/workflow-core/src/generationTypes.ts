@@ -95,6 +95,7 @@ type NodeResultBase = {
 export type TextNodeResult = NodeResultBase & {
   type: 'text'
   text: string
+  resourceId?: string
   structuredData?: unknown
 }
 
@@ -128,7 +129,14 @@ export type NodeRunInput = {
   generationConfig: GenerationConfig
 }
 
-export type NodeRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type NodeRunStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'interrupted'
 
 export type NodeRun = {
   id: string
@@ -148,6 +156,7 @@ export type NodeRun = {
     retryable: boolean
   }
   createdAt: number
+  updatedAt?: number
   startedAt?: number
   finishedAt?: number
 }
@@ -179,7 +188,7 @@ type ModelParameterFieldBase = {
 export type ModelParameterField =
   | (ModelParameterFieldBase & {
       type: 'select'
-      options: Array<{ label: string; value: string }>
+      options: Array<{ label: string; value: string | number | boolean }>
     })
   | (ModelParameterFieldBase & {
       type: 'number'
@@ -217,19 +226,24 @@ export function createDefaultComposer(
     return {
       prompt: '',
       attachments: [],
-      model: { providerId: 'openai', modelId: 'gpt-image-2' },
+      model: { providerId: 'builtin.visual-gpt-image', modelId: 'gpt-image-2' },
       generationConfig: {
         type: 'openai-image',
         version: 1,
-        action: 'auto',
-        size: 'auto',
-        quality: 'auto',
-        background: 'auto',
-        outputFormat: 'png',
-        inputFidelity: 'low',
-        moderation: 'auto',
-        stream: false,
-        partialImages: 0,
+        providerOptions: {
+          responseModel: 'gpt-5.6-sol',
+          imageGenerationDeployment: 'gpt-image-2',
+          action: 'auto',
+          size: 'auto',
+          quality: 'auto',
+          background: 'auto',
+          outputFormat: 'png',
+          outputCompression: 80,
+          inputFidelity: 'low',
+          moderation: 'auto',
+          stream: false,
+          partialImages: 0,
+        },
       },
       updatedAt: now,
     }
@@ -238,16 +252,20 @@ export function createDefaultComposer(
     return {
       prompt: '',
       attachments: [],
-      model: { providerId: 'doubao-seedance2.0', modelId: 'doubao-seedance-2' },
+      model: { providerId: 'builtin.visual-seedance', modelId: 'doubao-seedance-2' },
       generationConfig: {
         type: 'volc-video',
         version: 1,
-        ratio: 'adaptive',
-        duration: 5,
-        resolution: '720p',
-        cameraFixed: false,
-        watermark: false,
-        returnLastFrame: false,
+        providerOptions: {
+          ratio: 'adaptive',
+          duration: 5,
+          resolution: '720p',
+          generate_audio: true,
+          camera_fixed: false,
+          watermark: false,
+          seed: -1,
+          return_last_frame: false,
+        },
       },
       updatedAt: now,
     }
@@ -255,7 +273,7 @@ export function createDefaultComposer(
   return {
     prompt: '',
     attachments: [],
-    model: { providerId: 'openai', modelId: 'gpt-5' },
+    model: { providerId: 'rednote-maas', modelId: 'GPT-5.6 Sol' },
     generationConfig: {
       type: 'openai-text',
       version: 1,

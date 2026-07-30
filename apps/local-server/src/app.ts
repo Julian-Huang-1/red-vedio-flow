@@ -15,6 +15,7 @@ import { handleChatRoutes } from './routes/chatRoutes.js'
 import { handleWorkflowAppRoutes } from './routes/workflowAppRoutes.js'
 import { handleDefaultModelRoutes } from './routes/defaultModelRoutes.js'
 import { handlePiAgentRoutes } from './routes/piAgentRoutes.js'
+import { handleResourceRoutes } from './routes/resourceRoutes.js'
 
 type RequestHandlerOptions = {
   webFallback?: (req: IncomingMessage, res: ServerResponse) => void
@@ -48,6 +49,7 @@ export function createRequestHandler(
         handlePluginRoutes,
         handleDiscoveryRoutes,
         handleWorkflowRoutes,
+        handleResourceRoutes,
         handleAssetRoutes,
         handleRunRoutes,
         handleWorkflowAppRoutes,

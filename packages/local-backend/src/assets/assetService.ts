@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { desc, eq } from 'drizzle-orm'
 import type { LocalDatabase } from '../db/client.js'
 import { assets } from '../db/schema.js'
+import type { ResourceService } from '../resources/resourceService.js'
 
 export type UploadAssetInput = {
   fileName: string
@@ -31,6 +32,7 @@ export class AssetService {
   constructor(
     private readonly dataDir: string,
     private readonly database: LocalDatabase,
+    private readonly resources?: ResourceService,
   ) {
     this.uploadDir = join(dataDir, 'uploads')
     this.generatedDir = join(dataDir, 'generated')
@@ -50,6 +52,7 @@ export class AssetService {
       localPath: filePath,
       fileName,
       mimeType: input.mimeType,
+      source: 'upload',
     })
   }
 
@@ -69,13 +72,22 @@ export class AssetService {
     fileName: string
     mimeType?: string
     provider?: string
+    source?: 'upload' | 'generated' | 'imported'
+    sourceNodeId?: string
+    sourceRunId?: string
+    sourceResultId?: string
+    modelId?: string
+    prompt?: string
+    generationConfig?: Record<string, unknown>
   }): UploadedAsset {
     const existing = this.database.sqlite.prepare(
       `SELECT id FROM assets WHERE workflow_id = ? AND local_path = ? LIMIT 1`,
     ).get(input.workflowId, input.localPath) as { id: string } | undefined
     if (existing) {
       const row = this.database.db.select().from(assets).where(eq(assets.id, existing.id)).get()
-      return toUploadedAsset(row!)
+      const asset = toUploadedAsset(row!)
+      this.syncResource(asset, input)
+      return asset
     }
     const record: typeof assets.$inferInsert = {
       id: randomUUID(),
@@ -89,7 +101,9 @@ export class AssetService {
       createdAt: Date.now(),
     }
     this.database.db.insert(assets).values(record).run()
-    return toUploadedAsset(record as typeof assets.$inferSelect)
+    const asset = toUploadedAsset(record as typeof assets.$inferSelect)
+    this.syncResource(asset, input)
+    return asset
   }
 
   resolveAssetPath(assetUrl: string) {
@@ -106,6 +120,38 @@ export class AssetService {
   assetUrlForPath(filePath: string) {
     const rel = relative(this.dataDir, filePath).split('/').map(encodeURIComponent).join('/')
     return `/api/assets/${rel}`
+  }
+
+  private syncResource(
+    asset: UploadedAsset,
+    input: {
+      source?: 'upload' | 'generated' | 'imported'
+      sourceNodeId?: string
+      sourceRunId?: string
+      sourceResultId?: string
+      modelId?: string
+      prompt?: string
+      generationConfig?: Record<string, unknown>
+    },
+  ) {
+    if (!this.resources || !asset.workflowId) return
+    this.resources.upsertFile({
+      id: asset.id,
+      workspaceId: asset.workflowId,
+      kind: asset.kind === 'image' || asset.kind === 'video' ? asset.kind : 'file',
+      name: asset.fileName,
+      mimeType: asset.mimeType,
+      url: asset.url,
+      localPath: asset.localPath,
+      source: input.source ?? (asset.provider ? 'generated' : 'upload'),
+      sourceNodeId: input.sourceNodeId,
+      sourceRunId: input.sourceRunId,
+      sourceResultId: input.sourceResultId,
+      providerId: asset.provider,
+      modelId: input.modelId,
+      prompt: input.prompt,
+      generationConfig: input.generationConfig,
+    })
   }
 }
 

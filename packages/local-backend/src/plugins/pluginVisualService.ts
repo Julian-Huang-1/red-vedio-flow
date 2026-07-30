@@ -130,6 +130,22 @@ export class PluginVisualService implements VisualServiceContract {
         onEvent?.({ type: 'start', modelId, bin: data.bin, argv: data.argv.map(String) })
       } else if (event.params.type === 'progress' && typeof data.text === 'string') {
         onEvent?.({ type: 'stdout', text: data.text })
+      } else if (event.params.type === 'progress') {
+        onEvent?.({
+          type: 'progress',
+          progress: typeof data.progress === 'number' ? data.progress : undefined,
+          text: typeof data.text === 'string' ? data.text : undefined,
+        })
+      } else if (
+        event.params.type === 'partial_image'
+        && typeof data.base64 === 'string'
+      ) {
+        onEvent?.({
+          type: 'partial-image',
+          index: typeof data.index === 'number' ? data.index : 0,
+          base64: data.base64,
+          mimeType: typeof data.mimeType === 'string' ? data.mimeType : undefined,
+        })
       }
     })
   }
@@ -180,9 +196,10 @@ function submitResultToLegacy(
       text: result.text,
     }
   }
-  return assetToLegacy(result.assets[0], assetUrlForPath, {
+  return assetsToResult(result.assets, assetUrlForPath, {
     taskStatus: 'success',
     text: result.text,
+    metadata: result.metadata,
   })
 }
 
@@ -202,25 +219,32 @@ function queryResultToLegacy(
       text: result.message,
     }
   }
-  return assetToLegacy(result.assets[0], assetUrlForPath, {
+  return assetsToResult(result.assets, assetUrlForPath, {
     submitId,
     taskStatus: 'success',
     text: result.text,
+    metadata: result.metadata,
   })
 }
 
-function assetToLegacy(
-  asset: PluginAsset | undefined,
+function assetsToResult(
+  assets: PluginAsset[],
   assetUrlForPath: (filePath: string) => string,
   base: VisualRunResult,
 ): VisualRunResult {
-  if (!asset) return base
-  return {
-    ...base,
+  const projected = assets.map((asset) => ({
     url: asset.localPath ? assetUrlForPath(asset.localPath) : asset.remoteUrl,
     localPath: asset.localPath,
     fileName: asset.fileName,
     mimeType: asset.mimeType,
+    role: asset.role,
+  }))
+  const primary = projected.find((asset) => asset.role !== 'last_frame') ?? projected[0]
+  if (!primary) return { ...base, assets: [] }
+  return {
+    ...base,
+    ...primary,
+    assets: projected,
   }
 }
 

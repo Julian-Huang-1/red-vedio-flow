@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Paperclip, SlidersHorizontal } from 'lucide-react'
+import { ArrowUp, Paperclip, SlidersHorizontal, Square } from 'lucide-react'
 import type {
   AssetReference,
   GenerationConfig,
   ModelSelection,
+  NodeRunStatus,
 } from '@red-video-flow/workflow-core'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,10 +19,12 @@ type NodeComposerProps = {
   generationConfig: GenerationConfig
   placeholder: string
   onValueChange: (value: string) => void
-  onAttachment: (attachment: AssetReference) => void
+  onFilesSelected: (files: File[]) => Promise<void>
   onModelChange: (model: ModelSelection, config: GenerationConfig) => void
   onGenerationConfigChange: (config: GenerationConfig) => void
   onSubmit: () => void
+  executionStatus?: NodeRunStatus
+  onCancel?: () => void
 }
 
 export function NodeComposer({
@@ -32,15 +35,18 @@ export function NodeComposer({
   generationConfig,
   placeholder,
   onValueChange,
-  onAttachment,
+  onFilesSelected,
   onModelChange,
   onGenerationConfigChange,
   onSubmit,
+  executionStatus,
+  onCancel,
 }: NodeComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isComposingRef = useRef(false)
   const [draft, setDraft] = useState(value)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const isRunning = executionStatus === 'queued' || executionStatus === 'running'
 
   useEffect(() => {
     if (!isComposingRef.current && value !== draft) {
@@ -108,16 +114,7 @@ export function NodeComposer({
             accept="image/*,video/*"
             multiple
             onChange={(event) => {
-              for (const file of Array.from(event.target.files ?? [])) {
-                onAttachment({
-                  id: `local-${file.name}-${file.lastModified}`,
-                  kind: file.type.startsWith('video/') ? 'video' : 'image',
-                  url: URL.createObjectURL(file),
-                  name: file.name,
-                  mimeType: file.type,
-                  size: file.size,
-                })
-              }
+              void onFilesSelected(Array.from(event.target.files ?? []))
               event.target.value = ''
             }}
           />
@@ -147,12 +144,13 @@ export function NodeComposer({
         </div>
         <Button
           size="icon"
+          variant={isRunning ? 'secondary' : 'default'}
           className="size-6 rounded-lg"
-          aria-label="提交节点任务"
-          disabled={!draft.trim()}
-          onClick={onSubmit}
+          aria-label={isRunning ? '停止节点任务' : '提交节点任务'}
+          disabled={!isRunning && !draft.trim()}
+          onClick={isRunning ? onCancel : onSubmit}
         >
-          <ArrowUp size={13} />
+          {isRunning ? <Square size={11} fill="currentColor" /> : <ArrowUp size={13} />}
         </Button>
       </div>
       {settingsOpen ? (

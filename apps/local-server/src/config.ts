@@ -40,6 +40,7 @@ export type LocalServerConfig = {
   pluginShutdownGraceMs: number
   pluginDirs: string[]
   maasApiKey: string
+  textModelBaseUrl: string
 }
 
 const sourceDir = dirname(fileURLToPath(import.meta.url))
@@ -85,6 +86,10 @@ export function resolveLocalServerConfig(
     maasApiKey: options.maasApiKey
       ?? env.RED_VIDEO_FLOW_MAAS_API_KEY
       ?? 'MAASfd018690923149bc890e003129024aee',
+    textModelBaseUrl: trimTrailingSlash(
+      env.RED_VIDEO_FLOW_TEXT_MODEL_BASE_URL
+        ?? 'https://maas.devops.rednote.life/hackson/v1',
+    ),
     runTimeoutMs: readNumber(env.RED_VIDEO_FLOW_RUN_TIMEOUT_MS, 120_000, 'run timeout'),
     runReaperIntervalMs: readNumber(env.RED_VIDEO_FLOW_RUN_REAPER_INTERVAL_MS, 30_000, 'run reaper interval'),
     visualTaskIntervalMs: readNumber(env.RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS, 5_000, 'visual task interval'),
@@ -96,6 +101,10 @@ export function resolveLocalServerConfig(
     pluginShutdownGraceMs: readNumber(env.RED_VIDEO_FLOW_PLUGIN_SHUTDOWN_GRACE_MS, 3_000, 'plugin shutdown grace'),
     pluginDirs: pluginDirs.map((item) => resolve(item)),
   }
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, '')
 }
 
 function sourceRvfCliCommand(workspaceRoot: string) {

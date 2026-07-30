@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { FileText, Image, Video } from 'lucide-react'
+import { Check, Copy, FileText, Image, Video } from 'lucide-react'
 import { useTaskStore } from '@/stores/taskStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { createResourceBinding, uploadAsset } from '@red-video-flow/workflow-client'
+import { queryClient } from '@/lib/queryClient'
+import { Button } from '@/components/ui/button'
 import { NodeComposer } from './NodeComposer'
 import type { WorkflowFlowNode, WorkflowNodeKind } from './workflowTypes'
 
@@ -24,24 +28,42 @@ const nodePresentation = {
 }>
 
 export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>) {
+  const [copied, setCopied] = useState(false)
   const presentation = nodePresentation[data.kind]
   const Icon = presentation.icon
   const updateComposer = useWorkflowStore((state) => state.updateComposer)
   const addAttachment = useWorkflowStore((state) => state.addAttachment)
-  const buildRunInput = useWorkflowStore((state) => state.buildRunInput)
   const workflowId = useWorkflowStore((state) => state.workflowId)
-  const setLatestRun = useWorkflowStore((state) => state.setLatestRun)
-  const createRun = useTaskStore((state) => state.createRun)
+  const submitNode = useTaskStore((state) => state.submitNode)
+  const cancelRun = useTaskStore((state) => state.cancelRun)
   const runStatus = useTaskStore((state) => (
     data.latestRunId ? state.runs[data.latestRunId]?.status : undefined
   ))
+  const streamingText = useTaskStore((state) => (
+    data.latestRunId ? state.progress[data.latestRunId]?.text ?? '' : ''
+  ))
+  const partialImage = useTaskStore((state) => {
+    if (!data.latestRunId) return undefined
+    const images = state.progress[data.latestRunId]?.partialImages
+    if (!images) return undefined
+    const indexes = Object.keys(images).map(Number).sort((left, right) => right - left)
+    return indexes.length ? images[indexes[0]] : undefined
+  })
+  const runError = useTaskStore((state) => (
+    data.latestRunId ? state.runs[data.latestRunId]?.error?.message : undefined
+  ))
   const currentResult = data.results.find((result) => result.id === data.currentResultId)
+  const copyableContent = getCopyableContent(currentResult, streamingText)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 1_500)
+    return () => window.clearTimeout(timer)
+  }, [copied])
 
   const submit = () => {
-    debugger
     if (!data.composer.prompt.trim()) return
-    const run = createRun(workflowId, id, buildRunInput(id))
-    setLatestRun(id, run.id)
+    void submitNode(id)
   }
 
   return (
@@ -50,6 +72,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
       data-workflow-node=""
       data-kind={data.kind}
       data-selected={selected ? '' : undefined}
+      data-node-status={data.status}
       data-execution-state={runStatus ?? 'idle'}
     >
       <div
@@ -71,8 +94,33 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium tracking-wider text-muted-foreground">
               {presentation.label}
             </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="nodrag nopan -mr-1 size-7 text-muted-foreground hover:text-foreground"
+              aria-label="复制节点内容"
+              title={copyableContent ? '复制节点内容' : '暂无可复制内容'}
+              disabled={!copyableContent}
+              data-workflow-node-copy=""
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={async (event) => {
+                event.stopPropagation()
+                if (!copyableContent) return
+                await navigator.clipboard.writeText(copyableContent)
+                setCopied(true)
+              }}
+            >
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            </Button>
           </header>
-          <NodePreview kind={data.kind} result={currentResult} />
+          <NodePreview
+            kind={data.kind}
+            result={currentResult}
+            streamingText={streamingText}
+            partialImage={partialImage}
+            error={runError}
+          />
         </div>
         <Handle
           type="source"
@@ -90,7 +138,25 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           generationConfig={data.composer.generationConfig}
           placeholder={data.promptPlaceholder}
           onValueChange={(prompt) => updateComposer(id, { prompt })}
-          onAttachment={(attachment) => addAttachment(id, attachment)}
+          onFilesSelected={async (files) => {
+            for (const file of files) {
+              const asset = await uploadAsset(file, workflowId)
+              addAttachment(id, {
+                id: asset.id,
+                kind: asset.kind === 'video' ? 'video' : asset.kind === 'image' ? 'image' : 'file',
+                url: asset.url,
+                name: asset.fileName,
+                mimeType: asset.mimeType,
+              })
+              await createResourceBinding({
+                resourceId: asset.id,
+                workflowId,
+                nodeId: id,
+                relation: 'attachment',
+              })
+            }
+            await queryClient.invalidateQueries({ queryKey: ['resources'] })
+          }}
           onModelChange={(model, generationConfig) => {
             updateComposer(id, { model, generationConfig })
           }}
@@ -98,19 +164,57 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             updateComposer(id, { generationConfig })
           }}
           onSubmit={submit}
+          executionStatus={runStatus}
+          onCancel={() => {
+            if (data.latestRunId) cancelRun(data.latestRunId)
+          }}
         />
       ) : null}
     </article>
   )
 }
 
+function getCopyableContent(
+  result: WorkflowFlowNode['data']['results'][number] | undefined,
+  streamingText: string,
+) {
+  if (streamingText) return streamingText
+  if (result?.type === 'text') return result.text
+  if (result?.type === 'image') return result.images[0]?.url
+  if (result?.type === 'video') return result.video.url
+  return undefined
+}
+
 function NodePreview({
   kind,
   result,
+  streamingText,
+  partialImage,
+  error,
 }: {
   kind: WorkflowNodeKind
   result?: WorkflowFlowNode['data']['results'][number]
+  streamingText?: string
+  partialImage?: string
+  error?: string
 }) {
+  if (error) {
+    return (
+      <div className="flex h-[220px] items-center px-5 text-sm leading-6 text-destructive">
+        {error}
+      </div>
+    )
+  }
+  if (streamingText) {
+    return (
+      <div className="h-[220px] overflow-auto whitespace-pre-wrap px-5 py-4 text-sm leading-6">
+        {streamingText}
+      </div>
+    )
+  }
+  if (partialImage) {
+    return <img className="h-[220px] w-full object-cover" src={partialImage} alt="生成预览" />
+  }
   if (result?.type === 'text') {
     return (
       <div className="h-[220px] overflow-auto whitespace-pre-wrap px-5 py-4 text-sm leading-6">

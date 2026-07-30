@@ -5,7 +5,9 @@ import { WorkflowRepository } from './workflows/workflowRepository.js'
 import { WorkflowService } from './workflows/workflowService.js'
 import { RunRepository } from './runs/runRepository.js'
 import { RunService } from './runs/runService.js'
+import { NodeResultProjector } from './runs/nodeResultProjector.js'
 import { AssetService } from './assets/assetService.js'
+import { ResourceService } from './resources/resourceService.js'
 import { AgentPromptService } from './agents/prompt.js'
 import { UnavailableVisualService, type VisualServiceContract } from './visual/service.js'
 import { VisualTaskRepository } from './visual/taskRepository.js'
@@ -26,7 +28,10 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
   const workflowRepository = new WorkflowRepository(database)
   const workflows = new WorkflowService(workflowRepository)
   const runRepository = new RunRepository(database)
-  const assets = new AssetService(options.dataDir, database)
+  const runs = new RunService(runRepository, workflows)
+  const resources = new ResourceService(database)
+  const assets = new AssetService(options.dataDir, database, resources)
+  const nodeResults = new NodeResultProjector(workflows, runs, assets, resources)
   const visual = options.visual ?? new UnavailableVisualService()
   const visualTaskRepository = new VisualTaskRepository(database)
   const visualTasks = new VisualTaskService(
@@ -34,6 +39,8 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     workflows,
     visual,
     assets,
+    runs,
+    nodeResults,
     options.visualTaskOptions,
   )
 
@@ -42,8 +49,10 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     cwd: options.cwd ?? process.cwd(),
     database,
     workflows,
-    runs: new RunService(runRepository, workflows),
+    runs,
+    nodeResults,
     assets,
+    resources,
     prompts: new AgentPromptService(),
     visual,
     visualTasks,

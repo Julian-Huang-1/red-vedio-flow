@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm'
 import type { LocalDatabase } from '../db/client.js'
 import { visualTasks } from '../db/schema.js'
+import type { NodeRunInput } from '@red-video-flow/workflow-core'
 import type { VisualRunResult } from './service.js'
 
 type VisualTaskRow = typeof visualTasks.$inferSelect
@@ -15,10 +16,13 @@ export type VisualTaskRecordStatus =
 
 export type VisualTaskRecord = {
   id: string
+  runId?: string
   workflowId: string
   nodeId: string
   provider: string
   nodeKind: 'image' | 'video'
+  inputSnapshot?: NodeRunInput
+  modelId?: string
   submitId?: string
   status: VisualTaskRecordStatus
   attemptCount: number
@@ -50,6 +54,15 @@ export class VisualTaskRepository {
       .select()
       .from(visualTasks)
       .where(and(eq(visualTasks.provider, provider), eq(visualTasks.submitId, submitId)))
+      .get()
+    return row ? toVisualTask(row) : undefined
+  }
+
+  findByRunId(runId: string) {
+    const row = this.database.db
+      .select()
+      .from(visualTasks)
+      .where(eq(visualTasks.runId, runId))
       .get()
     return row ? toVisualTask(row) : undefined
   }
@@ -145,10 +158,13 @@ export class VisualTaskRepository {
 function toVisualTask(row: VisualTaskRow): VisualTaskRecord {
   return {
     id: row.id,
+    runId: row.runId ?? undefined,
     workflowId: row.workflowId,
     nodeId: row.nodeId,
     provider: row.provider,
     nodeKind: row.nodeKind as 'image' | 'video',
+    inputSnapshot: row.inputJson ? JSON.parse(row.inputJson) : undefined,
+    modelId: row.modelId ?? undefined,
     submitId: row.submitId ?? undefined,
     status: row.status as VisualTaskRecordStatus,
     attemptCount: row.attemptCount,
@@ -168,10 +184,13 @@ function toVisualTask(row: VisualTaskRow): VisualTaskRecord {
 function toRowValues(task: VisualTaskRecord): typeof visualTasks.$inferInsert {
   return {
     id: task.id,
+    runId: task.runId ?? null,
     workflowId: task.workflowId,
     nodeId: task.nodeId,
     provider: task.provider,
     nodeKind: task.nodeKind,
+    inputJson: task.inputSnapshot === undefined ? null : JSON.stringify(task.inputSnapshot),
+    modelId: task.modelId ?? null,
     submitId: task.submitId ?? null,
     status: task.status,
     attemptCount: task.attemptCount,

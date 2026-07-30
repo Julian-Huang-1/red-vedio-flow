@@ -2,6 +2,7 @@ import type { Node } from '@xyflow/react'
 import type {
   NodeComposerData,
   NodeResult,
+  NodeStatus,
 } from '@red-video-flow/workflow-core'
 
 export type WorkflowNodeKind = 'text' | 'image' | 'video'
@@ -9,6 +10,7 @@ export type WorkflowNodeKind = 'text' | 'image' | 'video'
 export type WorkflowNodeData = {
   [key: string]: unknown
   kind: WorkflowNodeKind
+  status: NodeStatus
   title: string
   description: string
   promptPlaceholder: string

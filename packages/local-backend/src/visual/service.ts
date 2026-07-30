@@ -3,6 +3,16 @@ export type VisualEvent =
   | { type: 'stdout'; text: string }
   | { type: 'stderr'; text: string }
   | { type: 'meta'; submitId: string }
+  | { type: 'progress'; progress?: number; text?: string }
+  | { type: 'partial-image'; index: number; base64: string; mimeType?: string }
+
+export type VisualRunAsset = {
+  url?: string
+  localPath?: string
+  fileName?: string
+  mimeType?: string
+  role?: 'output' | 'last_frame' | 'preview'
+}
 
 export type VisualRunResult = {
   submitId?: string
@@ -14,6 +24,8 @@ export type VisualRunResult = {
   fileName?: string
   mimeType?: string
   text?: string
+  assets?: VisualRunAsset[]
+  metadata?: Record<string, unknown>
 }
 
 export type VisualTaskStatus = 'querying' | 'success' | 'failed' | 'unknown'

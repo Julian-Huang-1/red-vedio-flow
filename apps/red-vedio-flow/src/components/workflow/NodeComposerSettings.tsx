@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { fetchVisualModels } from '@red-video-flow/workflow-client'
 import type {
   GenerationConfig,
   ModelParameterField,
@@ -37,16 +39,37 @@ export function NodeComposerSettings({
   onGenerationConfigChange,
 }: NodeComposerSettingsProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const models = getComposerModels(kind)
-  const definition = getComposerModel(model) ?? models[0]
+  const visualModelsQuery = useQuery({
+    queryKey: ['visual-models'],
+    queryFn: fetchVisualModels,
+    enabled: kind !== 'text',
+    staleTime: 30_000,
+  })
+  const visualModels = visualModelsQuery.data?.models ?? []
+  const models = getComposerModels(kind, visualModels)
+  const definition = getComposerModel(model, kind, visualModels) ?? models[0]
   if (!definition) return null
 
   const fields = definition.parameterSchema.fields.filter(
     (field) => showAdvanced || !field.advanced,
   )
-  const values = generationConfig as unknown as Record<string, unknown>
+  const configRecord = generationConfig as unknown as Record<string, unknown>
+  const providerOptions = isRecord(configRecord.providerOptions)
+    ? configRecord.providerOptions
+    : {}
+  const values = kind === 'text' ? configRecord : { ...configRecord, ...providerOptions }
 
   const updateField = (key: string, value: unknown) => {
+    if (kind !== 'text') {
+      onGenerationConfigChange({
+        ...generationConfig,
+        providerOptions: {
+          ...providerOptions,
+          [key]: value,
+        },
+      } as GenerationConfig)
+      return
+    }
     onGenerationConfigChange({
       ...generationConfig,
       [key]: value,
@@ -115,6 +138,10 @@ export function NodeComposerSettings({
   )
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 function ParameterField({
   field,
   value,
@@ -130,15 +157,15 @@ function ParameterField({
     return (
       <FieldShell label={field.label} htmlFor={id} description={field.description}>
         <Select
-          value={typeof value === 'string' ? value : undefined}
-          onValueChange={onChange}
+          value={value === undefined ? undefined : JSON.stringify(value)}
+          onValueChange={(next) => onChange(JSON.parse(next))}
         >
           <SelectTrigger id={id} className="h-8 text-xs">
             <SelectValue placeholder="默认" />
           </SelectTrigger>
           <SelectContent>
             {field.options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
+              <SelectItem key={String(option.value)} value={JSON.stringify(option.value)}>
                 {option.label}
               </SelectItem>
             ))}

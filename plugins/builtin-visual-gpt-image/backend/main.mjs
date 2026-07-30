@@ -28,6 +28,14 @@ function fail(id, error) {
   })
 }
 
+function emit(executionId, type, data) {
+  send({
+    jsonrpc: '2.0',
+    method: 'execution.event',
+    params: { executionId, type, data },
+  })
+}
+
 lines.on('line', (line) => {
   void handle(JSON.parse(line))
 })
@@ -80,43 +88,58 @@ async function handle(request) {
 
 async function submit({ executionId, capability, prompt, inputs = [], options = {} }) {
   const outputFormat = normalizeOutputFormat(options.outputFormat)
-  const requestOptions = {
-    n: positiveInteger(options.n, 1),
-    size: options.size ?? '1024x1024',
-    quality: options.quality ?? 'medium',
-    output_format: outputFormat,
-    output_compression: boundedInteger(options.outputCompression, 80, 0, 100),
+  if (!['text-to-image', 'image-to-image'].includes(capability)) {
+    throw clientError(`unsupported GPT Image capability: ${String(capability)}`, 'UNSUPPORTED_CAPABILITY')
+  }
+  if (capability === 'image-to-image' && !inputs.length) {
+    throw clientError('image-to-image requires at least one input image', 'MISSING_IMAGE')
   }
 
+  const content = [{ type: 'input_text', text: prompt }]
+  for (const asset of inputs) {
+    content.push({ type: 'input_image', image_url: await assetDataUrl(asset) })
+  }
+  const tool = compact({
+    type: 'image_generation',
+    action: options.action,
+    size: options.size,
+    quality: options.quality,
+    background: options.background,
+    output_format: outputFormat,
+    output_compression: boundedInteger(options.outputCompression, 80, 0, 100),
+    input_fidelity: options.inputFidelity,
+    moderation: options.moderation,
+    partial_images: boundedInteger(options.partialImages, 0, 0, 3),
+  })
+  const requestBody = compact({
+    model: resolveResponseModel(options.responseModel),
+    input: [{ role: 'user', content }],
+    tools: [tool],
+    previous_response_id: options.previousResponseId,
+    stream: Boolean(options.stream),
+  })
   let payload
+  let apiMode
   if (capability === 'text-to-image') {
-    payload = await requestJson(executionId, endpoint('/images/generations'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL,
-        prompt,
-        ...requestOptions,
-      }),
-    })
-  } else if (capability === 'image-to-image') {
-    if (!inputs.length) {
-      throw clientError('image-to-image requires at least one input image', 'MISSING_IMAGE')
-    }
-    const form = new FormData()
-    form.set('model', MODEL)
-    form.set('prompt', prompt)
-    for (const [key, value] of Object.entries(requestOptions)) form.set(key, String(value))
-    for (const [index, asset] of inputs.entries()) {
-      const image = await assetBlob(asset)
-      form.append('image[]', image.blob, image.fileName ?? `input-${index + 1}.png`)
-    }
-    payload = await requestJson(executionId, endpoint('/images/edits'), {
-      method: 'POST',
-      body: form,
+    apiMode = 'images'
+    payload = await requestImagesGeneration(executionId, {
+      model: MODEL,
+      prompt,
+      n: 1,
+      size: options.size,
+      quality: options.quality,
+      background: options.background,
+      output_format: outputFormat,
+      output_compression: boundedInteger(options.outputCompression, 80, 0, 100),
+      moderation: options.moderation,
     })
   } else {
-    throw clientError(`unsupported GPT Image capability: ${String(capability)}`, 'UNSUPPORTED_CAPABILITY')
+    apiMode = 'responses'
+    payload = await requestResponses(
+      executionId,
+      requestBody,
+      options.imageGenerationDeployment || MODEL,
+    )
   }
 
   const assets = await responseAssets(payload, {
@@ -133,7 +156,103 @@ async function submit({ executionId, capability, prompt, inputs = [], options = 
     status: 'completed',
     assets,
     text: responseText(payload),
+    metadata: {
+      apiMode,
+      responseId: payload?.id,
+      imageGenerationCallIds: imageGenerationCalls(payload).map((item) => item.id).filter(Boolean),
+    },
   }
+}
+
+function resolveResponseModel(value) {
+  if (!value || value === 'gpt-5.5') return 'gpt-5.6-sol'
+  return value
+}
+
+async function requestResponses(executionId, body, imageGenerationDeployment) {
+  const apiKey = process.env.GPT_IMAGE_API_KEY
+  if (!apiKey) throw clientError('GPT_IMAGE_API_KEY is not configured', 'MISSING_API_KEY')
+  const controller = new AbortController()
+  active.set(executionId, controller)
+  try {
+    const response = await fetch(endpoint('/responses'), {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        'Content-Type': 'application/json',
+        'x-ms-oai-image-generation-deployment': imageGenerationDeployment,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      const payload = parseJson(text)
+      const message = findValueDeep(payload, ['message', 'error_message', 'error']) ?? text
+      if (isModerationBlocked(text)) {
+        throw Object.assign(
+          new Error(`图片请求被 Azure 安全审核拦截，请调整提示词或输入图片后重试。${requestIdHint(text)}`),
+          { code: 'MODERATION_BLOCKED', retryable: false },
+        )
+      }
+      throw Object.assign(new Error(`GPT Image API ${response.status}: ${message}`), {
+        code: `HTTP_${response.status}`,
+        retryable: response.status === 429 || response.status >= 500,
+      })
+    }
+    if (!body.stream) return parseJson(await response.text())
+    if (!response.body) throw new Error('GPT Image streaming response has no body')
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let completed
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true })
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        const line = frame.split('\n').find((item) => item.startsWith('data:'))
+        if (!line) continue
+        const data = line.slice(5).trim()
+        if (!data || data === '[DONE]') continue
+        const event = JSON.parse(data)
+        if (
+          event.type === 'response.image_generation_call.partial_image'
+          && typeof event.partial_image_b64 === 'string'
+        ) {
+          emit(executionId, 'partial_image', {
+            index: Number(event.partial_image_index) || 0,
+            base64: event.partial_image_b64,
+            mimeType: `image/${normalizeOutputFormat(body.tools?.[0]?.output_format)}`,
+          })
+        }
+        if (event.type === 'response.completed') completed = event.response
+        if (event.type === 'response.failed') throw new Error('GPT Image response failed')
+      }
+    }
+    if (!completed) throw new Error('GPT Image stream ended before response.completed')
+    return completed
+  } finally {
+    active.delete(executionId)
+  }
+}
+
+async function requestImagesGeneration(executionId, body) {
+  return requestJson(executionId, endpoint('/images/generations'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(compact(body)),
+  })
+}
+
+async function assetDataUrl(asset) {
+  if (typeof asset?.base64 === 'string') {
+    return /^data:/i.test(asset.base64)
+      ? asset.base64
+      : `data:${asset.mimeType || 'image/png'};base64,${asset.base64}`
+  }
+  const image = await assetBlob(asset)
+  const bytes = Buffer.from(await image.blob.arrayBuffer())
+  return `data:${image.blob.type || 'image/png'};base64,${bytes.toString('base64')}`
 }
 
 async function requestJson(executionId, url, init) {
@@ -157,6 +276,12 @@ async function requestJson(executionId, url, init) {
       const message = findValueDeep(payload, ['message', 'error_message', 'error'])
         ?? text
         ?? `HTTP ${response.status}`
+      if (isModerationBlocked(text)) {
+        throw Object.assign(
+          new Error(`图片请求被 Azure 安全审核拦截，请调整提示词或输入图片后重试。${requestIdHint(text)}`),
+          { code: 'MODERATION_BLOCKED', retryable: false },
+        )
+      }
       throw Object.assign(new Error(`GPT Image API ${response.status}: ${message}`), {
         code: `HTTP_${response.status}`,
         retryable: response.status === 429 || response.status >= 500,
@@ -195,7 +320,10 @@ async function assetBlob(asset) {
 }
 
 async function responseAssets(payload, { executionId, downloadDir, outputFormat }) {
-  const results = Array.isArray(payload?.data)
+  const calls = imageGenerationCalls(payload)
+  const results = calls.length
+    ? calls.map((item) => ({ base64: item.result }))
+    : Array.isArray(payload?.data)
     ? payload.data
     : Array.isArray(payload?.output)
       ? payload.output
@@ -227,9 +355,19 @@ async function responseAssets(payload, { executionId, downloadDir, outputFormat 
   return assets
 }
 
+function imageGenerationCalls(payload) {
+  return Array.isArray(payload?.output)
+    ? payload.output.filter((item) => item?.type === 'image_generation_call' && typeof item.result === 'string')
+    : []
+}
+
 function endpoint(pathname) {
   const baseUrl = (process.env.GPT_IMAGE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '')
   return `${baseUrl}${pathname}?api-version=${encodeURIComponent(API_VERSION)}`
+}
+
+function compact(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined))
 }
 
 function normalizeOutputFormat(value) {
@@ -282,6 +420,15 @@ function findValueDeep(value, keys) {
     if (found !== undefined) return found
   }
   return undefined
+}
+
+function isModerationBlocked(value) {
+  return value.includes('moderation_blocked') || value.includes('safety_violations=')
+}
+
+function requestIdHint(value) {
+  const match = value.match(/request ID ([0-9a-f-]+)/i)
+  return match ? ` Request ID：${match[1]}` : ''
 }
 
 function responseText(payload) {

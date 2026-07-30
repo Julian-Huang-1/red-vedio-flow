@@ -19,6 +19,7 @@ export type VisualModel = {
   binPath?: string | null
   capabilities: string[]
   optionsSchema?: Record<string, unknown>
+  pluginId?: string
 }
 
 export type VisualModelListResponse = {

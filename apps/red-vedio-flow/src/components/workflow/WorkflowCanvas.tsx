@@ -44,7 +44,12 @@ export function WorkflowCanvas() {
         onEdgesChange={onEdgesChange}
         onConnect={connectNodes}
         onNodeClick={(_, node) => selectNode(node.id)}
+        onEdgeClick={() => selectNode(undefined)}
         onPaneClick={() => selectNode(undefined)}
+        edgesSelectable
+        elementsSelectable
+        elevateEdgesOnSelect
+        deleteKeyCode={['Backspace', 'Delete']}
         panOnDrag={false}
         panOnScroll
         zoomOnScroll={false}
@@ -52,6 +57,7 @@ export function WorkflowCanvas() {
         fitViewOptions={{ padding: 0.2 }}
         defaultEdgeOptions={{
           animated: true,
+          interactionWidth: 24,
           style: { strokeWidth: 1.5 },
         }}
       >

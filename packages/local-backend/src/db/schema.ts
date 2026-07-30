@@ -23,18 +23,82 @@ export const assets = sqliteTable('assets', {
   createdAt: integer('created_at').notNull(),
 })
 
+export const resources = sqliteTable('resources', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  kind: text('kind').notNull(),
+  name: text('name').notNull(),
+  mimeType: text('mime_type'),
+  textContent: text('text_content'),
+  url: text('url'),
+  localPath: text('local_path'),
+  fileName: text('file_name'),
+  metadataJson: text('metadata_json'),
+  source: text('source').notNull(),
+  sourceNodeId: text('source_node_id'),
+  sourceRunId: text('source_run_id'),
+  sourceResultId: text('source_result_id'),
+  providerId: text('provider_id'),
+  modelId: text('model_id'),
+  prompt: text('prompt'),
+  generationConfigJson: text('generation_config_json'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at'),
+}, (table) => [
+  index('idx_resources_workspace').on(table.workspaceId, table.updatedAt),
+  index('idx_resources_kind').on(table.workspaceId, table.kind),
+])
+
+export const resourceBindings = sqliteTable('resource_bindings', {
+  id: text('id').primaryKey(),
+  resourceId: text('resource_id').notNull().references(() => resources.id, { onDelete: 'cascade' }),
+  workflowId: text('workflow_id').notNull(),
+  nodeId: text('node_id'),
+  runId: text('run_id'),
+  resultId: text('result_id'),
+  relation: text('relation').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [
+  index('idx_resource_bindings_resource').on(table.resourceId),
+  index('idx_resource_bindings_node').on(table.workflowId, table.nodeId),
+])
+
 export const runs = sqliteTable('runs', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id').notNull(),
   nodeId: text('node_id').notNull(),
   status: text('status').notNull(),
   prompt: text('prompt').notNull(),
+  kind: text('kind').notNull().default('text'),
+  inputJson: text('input_json'),
+  providerId: text('provider_id'),
+  providerTaskId: text('provider_task_id'),
+  providerResponseId: text('provider_response_id'),
+  resultIdsJson: text('result_ids_json').notNull().default('[]'),
   resultJson: text('result_json'),
   error: text('error'),
+  errorCode: text('error_code'),
+  errorRetryable: integer('error_retryable'),
+  createdAt: integer('created_at').notNull().default(0),
+  updatedAt: integer('updated_at').notNull().default(0),
   startedAt: integer('started_at').notNull(),
   heartbeatAt: integer('heartbeat_at').notNull(),
   finishedAt: integer('finished_at'),
-})
+}, (table) => [
+  index('idx_runs_workflow_updated').on(table.workflowId, table.updatedAt),
+  index('idx_runs_status').on(table.status),
+])
+
+export const nodeRunEvents = sqliteTable('node_run_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: text('run_id').notNull().references(() => runs.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  dataJson: text('data_json').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [
+  index('idx_node_run_events_run').on(table.runId, table.id),
+])
 
 export const executions = sqliteTable('executions', {
   id: text('id').primaryKey(),
@@ -61,6 +125,9 @@ export const visualTasks = sqliteTable('visual_tasks', {
   nodeId: text('node_id').notNull(),
   provider: text('provider').notNull(),
   nodeKind: text('node_kind').notNull(),
+  runId: text('run_id'),
+  inputJson: text('input_json'),
+  modelId: text('model_id'),
   submitId: text('submit_id'),
   status: text('status').notNull(),
   attemptCount: integer('attempt_count').notNull(),

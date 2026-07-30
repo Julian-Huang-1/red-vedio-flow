@@ -12,10 +12,13 @@ import {
   createDefaultComposer,
   type AssetReference,
   type GenerationConfig,
+  type MaterialNode,
+  type NodeStatus,
   type NodeComposerData,
   type NodeResult,
   type NodeRunInput,
   type UpstreamResultReference,
+  type WorkflowDocument,
 } from '@red-video-flow/workflow-core'
 import type {
   WorkflowFlowNode,
@@ -25,6 +28,9 @@ import type {
 
 type WorkflowStore = {
   workflowId: string
+  workflowTitle: string
+  revision: number
+  changeVersion: number
   nodes: WorkflowFlowNode[]
   edges: Edge[]
   selectedNodeId?: string
@@ -38,7 +44,12 @@ type WorkflowStore = {
   appendResult: (nodeId: string, result: NodeResult, makeCurrent?: boolean) => void
   setCurrentResult: (nodeId: string, resultId: string) => void
   setLatestRun: (nodeId: string, runId?: string) => void
+  setNodeStatus: (nodeId: string, status: NodeStatus) => void
+  syncRevision: (revision?: number) => void
   buildRunInput: (nodeId: string) => NodeRunInput
+  loadWorkflow: (document: WorkflowDocument) => void
+  markSaved: (document: WorkflowDocument, savedVersion: number) => void
+  toWorkflowDocument: () => WorkflowDocument
 }
 
 const nodeDefinitions: Record<
@@ -68,13 +79,22 @@ const nodeDefinitions: Record<
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   workflowId: 'default',
+  workflowTitle: '未命名工作流',
+  revision: 0,
+  changeVersion: 0,
   nodes: [],
   edges: [],
   onNodesChange: (changes) => {
-    set({ nodes: applyNodeChanges(changes, get().nodes) })
+    set({
+      nodes: applyNodeChanges(changes, get().nodes),
+      changeVersion: get().changeVersion + 1,
+    })
   },
   onEdgesChange: (changes) => {
-    set({ edges: applyEdgeChanges(changes, get().edges) })
+    set({
+      edges: applyEdgeChanges(changes, get().edges),
+      changeVersion: get().changeVersion + 1,
+    })
   },
   connectNodes: (connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return
@@ -90,6 +110,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         },
         get().edges,
       ),
+      changeVersion: get().changeVersion + 1,
     })
   },
   addNode: (kind) => {
@@ -103,6 +124,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           { x: 160 + count * 48, y: 120 + count * 36 },
         ),
       ],
+      changeVersion: get().changeVersion + 1,
     })
   },
   selectNode: (nodeId) => {
@@ -128,6 +150,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           updatedAt: Date.now(),
         },
       })),
+      changeVersion: get().changeVersion + 1,
     })
   },
   addAttachment: (nodeId, attachment) => {
@@ -154,6 +177,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           ? resultId
           : data.currentResultId,
       })),
+      changeVersion: get().changeVersion + 1,
     })
   },
   setLatestRun: (nodeId, runId) => {
@@ -162,17 +186,85 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         ...data,
         latestRunId: runId,
       })),
+      changeVersion: get().changeVersion + 1,
     })
+  },
+  setNodeStatus: (nodeId, status) => {
+    set({
+      nodes: updateNodeData(get().nodes, nodeId, (data) => ({
+        ...data,
+        status,
+      })),
+    })
+  },
+  syncRevision: (revision) => {
+    if (revision === undefined || revision < get().revision) return
+    set({ revision })
   },
   buildRunInput: (nodeId) => {
     const node = get().nodes.find((item) => item.id === nodeId)
     if (!node) throw new Error(`Workflow node not found: ${nodeId}`)
+    const currentResult = node.data.results.find(
+      (result) => result.id === node.data.currentResultId,
+    )
+    const generationConfig = node.data.composer.generationConfig
+    const resolvedGenerationConfig = generationConfig.type === 'openai-image'
+      && currentResult?.type === 'image'
+      && currentResult.provider.responseId
+      ? {
+          ...generationConfig,
+          providerOptions: {
+            ...generationConfig.providerOptions,
+            previousResponseId:
+              generationConfig.providerOptions?.previousResponseId
+              ?? currentResult.provider.responseId,
+          },
+        }
+      : generationConfig
     return {
       prompt: node.data.composer.prompt,
       attachments: node.data.composer.attachments,
       upstreamResults: collectUpstreamResults(nodeId, get().nodes, get().edges),
       model: node.data.composer.model,
-      generationConfig: node.data.composer.generationConfig,
+      generationConfig: resolvedGenerationConfig,
+    }
+  },
+  loadWorkflow: (document) => {
+    set({
+      workflowId: document.id,
+      workflowTitle: document.title,
+      revision: document.revision,
+      nodes: document.graph.nodes.map(toFlowNode),
+      edges: document.graph.edges.map((edge, index) => ({
+        ...edge,
+        id: edge.id ?? `edge-${edge.source}-${edge.target}-${index}`,
+      })),
+      selectedNodeId: undefined,
+      changeVersion: 0,
+    })
+  },
+  markSaved: (document, savedVersion) => {
+    if (document.id !== get().workflowId) return
+    set({
+      workflowTitle: document.title,
+      revision: document.revision,
+      changeVersion: get().changeVersion === savedVersion ? 0 : get().changeVersion,
+    })
+  },
+  toWorkflowDocument: () => {
+    const state = get()
+    const now = Date.now()
+    return {
+      schemaVersion: 1,
+      id: state.workflowId,
+      title: state.workflowTitle,
+      revision: state.revision,
+      createdAt: now,
+      updatedAt: now,
+      graph: {
+        nodes: state.nodes.map(toMaterialNode),
+        edges: state.edges.map(({ id, source, target }) => ({ id, source, target })),
+      },
     }
   },
 }))
@@ -193,8 +285,49 @@ function createWorkflowNode(
     position,
     data: {
       ...nodeDefinitions[kind],
+      status: 'empty',
       composer: createDefaultComposer(kind),
       results: [],
+    },
+  }
+}
+
+function toFlowNode(node: MaterialNode): WorkflowFlowNode {
+  const definition = nodeDefinitions[node.data.materialType]
+  return {
+    id: node.id,
+    type: 'workflow',
+    position: node.position,
+    width: node.width,
+    height: node.height,
+    data: {
+      ...definition,
+      status: node.data.status,
+      title: node.data.title,
+      composer: node.data.composer ?? createDefaultComposer(node.data.materialType),
+      results: node.data.results ?? [],
+      currentResultId: node.data.currentResultId,
+      latestRunId: node.data.latestRunId,
+    },
+  }
+}
+
+function toMaterialNode(node: WorkflowFlowNode): MaterialNode {
+  return {
+    id: node.id,
+    position: node.position,
+    width: node.width,
+    height: node.height,
+    data: {
+      materialType: node.data.kind,
+      title: node.data.title,
+      status: node.data.status,
+      value: {},
+      messages: [],
+      composer: node.data.composer,
+      results: node.data.results,
+      currentResultId: node.data.currentResultId,
+      latestRunId: node.data.latestRunId,
     },
   }
 }

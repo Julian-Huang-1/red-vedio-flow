@@ -46,6 +46,12 @@
               "title": "生成音频",
               "default": true
             },
+            "camera_fixed": {
+              "type": "boolean",
+              "title": "固定镜头",
+              "default": false,
+              "advanced": true
+            },
             "watermark": {
               "type": "boolean",
               "title": "添加水印",
@@ -57,6 +63,16 @@
               "minimum": -1,
               "maximum": 4294967295,
               "default": -1
+            },
+            "return_last_frame": {
+              "type": "boolean",
+              "title": "返回尾帧",
+              "default": false
+            },
+            "callback_url": {
+              "type": "string",
+              "title": "回调地址",
+              "advanced": true
             }
           }
         }

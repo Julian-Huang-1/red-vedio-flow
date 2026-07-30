@@ -12,6 +12,7 @@ import { AgentRegistrationTokens } from './agentRegistrationTokens.js'
 import { AgentModelUpdateTokens } from './agentModelUpdateTokens.js'
 import { RuntimeInfoStore } from './runtimeInfo.js'
 import { PiAgentService } from './piAgentService.js'
+import { startDurableWorkflowNodeRun } from './nodeExecutionService.js'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
   const agentRegistry = new AgentRegistry(config.dataDir)
@@ -87,7 +88,32 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     runReaperTimer = undefined
   }
 
-  return {
+  function recoverNodeRuns() {
+    for (const run of backend.runs.listRecoverableNodeRuns()) {
+      const type = run.inputSnapshot.generationConfig.type
+      if (type === 'openai-image' || type === 'volc-video') {
+        if (!backend.visualTasks.findByRunId(run.id)) {
+          void startDurableWorkflowNodeRun(runtime, run.id).catch((error) => {
+            backend.runs.failNodeRun(run.id, {
+              code: 'recovery_failed',
+              message: error instanceof Error ? error.message : String(error),
+              retryable: true,
+              status: 'interrupted',
+            })
+          })
+        }
+      } else {
+        backend.runs.failNodeRun(run.id, {
+          code: 'server_restarted',
+          message: '服务重启中断了文本生成，请重新运行。',
+          retryable: true,
+          status: 'interrupted',
+        })
+      }
+    }
+  }
+
+  const runtime = {
     config,
     agentRegistry,
     agentRegistrationTokens,
@@ -104,6 +130,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
       await plugins.start()
       executions.bootstrap()
       visualTasks.start()
+      recoverNodeRuns()
       startRunReaper()
     },
     close() {
@@ -118,6 +145,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
       return closePromise
     },
   }
+  return runtime
 }
 
 export type LocalServerRuntime = ReturnType<typeof createLocalServerRuntime>

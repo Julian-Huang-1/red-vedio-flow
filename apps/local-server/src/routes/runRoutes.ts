@@ -1,9 +1,41 @@
 import { join } from 'node:path'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, sendJson, writeSse, type RequestContext } from '../http.js'
+import { startDurableWorkflowNodeRun } from '../nodeExecutionService.js'
 
 export async function handleRunRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   const { req, res, pathname } = ctx
+  if (req.method === 'POST' && pathname === '/api/workflow-node-runs') {
+    await runWorkflowNode(runtime, ctx)
+    return true
+  }
+  if (req.method === 'GET' && pathname === '/api/workflow-node-runs') {
+    const workflowId = ctx.url.searchParams.get('workflowId')
+    if (!workflowId) sendJson(res, 400, { error: 'workflowId is required' })
+    else sendJson(res, 200, { runs: runtime.backend.runs.listNodeRuns(workflowId) })
+    return true
+  }
+  const nodeRunMatch = pathname.match(/^\/api\/workflow-node-runs\/([^/]+)$/)
+  if (req.method === 'GET' && nodeRunMatch) {
+    const run = runtime.backend.runs.getNodeRun(decodeURIComponent(nodeRunMatch[1]))
+    sendJson(res, run ? 200 : 404, run ? { run } : { error: 'run not found' })
+    return true
+  }
+  const eventMatch = pathname.match(/^\/api\/workflow-node-runs\/([^/]+)\/events$/)
+  if (req.method === 'GET' && eventMatch) {
+    streamNodeRunEvents(runtime, ctx, decodeURIComponent(eventMatch[1]))
+    return true
+  }
+  const cancelMatch = pathname.match(/^\/api\/workflow-node-runs\/([^/]+)\/cancel$/)
+  if (req.method === 'POST' && cancelMatch) {
+    const runId = decodeURIComponent(cancelMatch[1])
+    if (!runtime.backend.runs.getNodeRun(runId)) sendJson(res, 404, { error: 'run not found' })
+    else {
+      runtime.backend.visualTasks.cancelNodeRun(runId)
+      sendJson(res, 200, { run: runtime.backend.runs.cancelNodeRun(runId) })
+    }
+    return true
+  }
   if (req.method === 'POST' && pathname === '/api/run-node') {
     await runAgent(runtime, ctx)
     return true
@@ -13,6 +45,89 @@ export async function handleRunRoutes(runtime: LocalServerRuntime, ctx: RequestC
     return true
   }
   return false
+}
+
+async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext) {
+  const { req, res } = ctx
+  const body = await readJson(req)
+  const runId = typeof body.runId === 'string' ? body.runId : undefined
+  const workflowId = typeof body.workflowId === 'string' ? body.workflowId : undefined
+  const nodeId = typeof body.nodeId === 'string' ? body.nodeId : undefined
+  if (!workflowId || !nodeId || !isRecord(body.input)) {
+    sendJson(res, 400, { error: 'workflowId, nodeId and input are required' })
+    return
+  }
+
+  const run = runtime.backend.runs.createNodeRun({
+    id: runId,
+    workflowId,
+    nodeId,
+    input: body.input,
+  })
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  })
+  const unsubscribe = runtime.backend.runs.subscribeNodeRun(run.id, (event) => {
+    writeSse(res, event.data)
+    if (event.type === 'done' || event.type === 'error') {
+      unsubscribe()
+      res.end()
+    }
+  })
+  const history = runtime.backend.runs.listNodeRunEvents(run.id)
+  for (const event of history) writeSse(res, event.data)
+  if (!['queued', 'running'].includes(run.status)) {
+    unsubscribe()
+    res.end()
+    return
+  }
+  res.on('close', unsubscribe)
+  void startDurableWorkflowNodeRun(runtime, run.id).catch((error) => {
+    runtime.backend.runs.failNodeRun(run.id, {
+      code: 'execution_failed',
+      message: error instanceof Error ? error.message : String(error),
+      retryable: true,
+    })
+  })
+}
+
+function streamNodeRunEvents(runtime: LocalServerRuntime, ctx: RequestContext, runId: string) {
+  const { req, res, url } = ctx
+  const run = runtime.backend.runs.getNodeRun(runId)
+  if (!run) {
+    sendJson(res, 404, { error: 'run not found' })
+    return
+  }
+  const after = Number(url.searchParams.get('after') ?? req.headers['last-event-id'] ?? 0)
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  })
+  const write = (event: { id: number; data: unknown }) => {
+    res.write(`id: ${event.id}\n`)
+    writeSse(res, event.data)
+  }
+  const unsubscribe = runtime.backend.runs.subscribeNodeRun(runId, (event) => {
+    write(event)
+    if (event.type === 'done' || event.type === 'error') {
+      unsubscribe()
+      res.end()
+    }
+  })
+  for (const event of runtime.backend.runs.listNodeRunEvents(runId, Number.isFinite(after) ? after : 0)) {
+    write(event)
+  }
+  if (!['queued', 'running'].includes(run.status)) {
+    unsubscribe()
+    res.end()
+  } else {
+    res.on('close', unsubscribe)
+  }
 }
 
 async function runAgent(runtime: LocalServerRuntime, ctx: RequestContext) {

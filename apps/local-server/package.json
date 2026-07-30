@@ -16,7 +16,8 @@
     "@earendil-works/pi-coding-agent": "^0.82.1",
     "@red-video-flow/local-backend": "workspace:*",
     "@red-video-flow/plugin-contract": "workspace:*",
-    "@red-video-flow/workflow-core": "workspace:*"
+    "@red-video-flow/workflow-core": "workspace:*",
+    "@red-video-flow/workflow-runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

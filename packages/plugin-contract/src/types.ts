@@ -96,6 +96,7 @@ export type PluginAsset = {
   base64?: string
   fileName?: string
   mimeType?: string
+  role?: 'output' | 'last_frame' | 'preview'
 }
 
 export type VisualSubmitInput = {
@@ -108,7 +109,7 @@ export type VisualSubmitInput = {
 }
 
 export type VisualSubmitResult =
-  | { status: 'completed'; assets: PluginAsset[]; text?: string }
+  | { status: 'completed'; assets: PluginAsset[]; text?: string; metadata?: Record<string, JsonValue> }
   | { status: 'pending'; externalTaskId: string; nextPollAfterMs?: number; text?: string }
 
 export type VisualQueryInput = {
@@ -118,7 +119,7 @@ export type VisualQueryInput = {
 
 export type VisualQueryResult =
   | { status: 'pending'; progress?: number; text?: string }
-  | { status: 'succeeded'; assets: PluginAsset[]; text?: string }
+  | { status: 'succeeded'; assets: PluginAsset[]; text?: string; metadata?: Record<string, JsonValue> }
   | { status: 'failed'; code: string; message: string; retryable?: boolean }
 
 export type AgentExecutionInput = {

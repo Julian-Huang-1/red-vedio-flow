@@ -1,5 +1,5 @@
 import readline from 'node:readline'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const MODEL = 'Doubao-seedance2.0'
@@ -138,24 +138,45 @@ function pickGenerationOptions(options) {
   if (Number.isInteger(options.duration)) result.duration = options.duration
   if (typeof options.resolution === 'string') result.resolution = options.resolution
   if (typeof options.generate_audio === 'boolean') result.generate_audio = options.generate_audio
+  if (typeof options.camera_fixed === 'boolean') result.camera_fixed = options.camera_fixed
   if (typeof options.watermark === 'boolean') result.watermark = options.watermark
   if (Number.isInteger(options.seed)) result.seed = options.seed
+  if (typeof options.return_last_frame === 'boolean') result.return_last_frame = options.return_last_frame
+  if (typeof options.callback_url === 'string' && options.callback_url) result.callback_url = options.callback_url
   return result
 }
 
-async function query({ executionId, externalTaskId }) {
+async function query({ executionId, externalTaskId, options = {} }) {
   const payload = await requestJson(
     executionId,
     `${tasksUrl()}/${encodeURIComponent(externalTaskId)}`,
     { method: 'GET' },
   )
   const status = normalizedStatus(findValueDeep(payload, ['status', 'state', 'task_status', 'taskStatus']))
-  const videoUrl = findMediaUrl(payload)
+  const videoUrl = findNamedMediaUrl(payload, ['video_url', 'videoUrl']) ?? findMediaUrl(payload)
+  const lastFrameUrl = findNamedMediaUrl(payload, [
+    'last_frame_url',
+    'lastFrameUrl',
+    'last_frame_image_url',
+    'lastFrameImageUrl',
+  ])
 
   if (videoUrl && status !== 'failed') {
+    const assets = [
+      await downloadAsset(videoUrl, options.downloadDir, 'seedance-video.mp4', 'video/mp4', 'output'),
+    ]
+    if (lastFrameUrl) {
+      assets.push(await downloadAsset(
+        lastFrameUrl,
+        options.downloadDir,
+        'seedance-last-frame.png',
+        'image/png',
+        'last_frame',
+      ))
+    }
     return {
       status: 'succeeded',
-      assets: [{ remoteUrl: videoUrl, mimeType: 'video/mp4' }],
+      assets,
       text: JSON.stringify(payload),
     }
   }
@@ -172,6 +193,16 @@ async function query({ executionId, externalTaskId }) {
     progress: numericProgress(findValueDeep(payload, ['progress', 'percent', 'percentage'])),
     text: JSON.stringify(payload),
   }
+}
+
+async function downloadAsset(remoteUrl, downloadDir, fileName, mimeType, role) {
+  if (!downloadDir) return { remoteUrl, fileName, mimeType, role }
+  const response = await fetch(remoteUrl)
+  if (!response.ok) throw new Error(`failed to download Seedance asset: HTTP ${response.status}`)
+  await mkdir(downloadDir, { recursive: true })
+  const localPath = path.join(downloadDir, fileName)
+  await writeFile(localPath, Buffer.from(await response.arrayBuffer()))
+  return { localPath, fileName, mimeType, role }
 }
 
 async function requestJson(executionId, url, init) {
@@ -292,6 +323,25 @@ function findMediaUrl(value) {
       return child
     }
     const found = findMediaUrl(child)
+    if (found) return found
+  }
+  return undefined
+}
+
+function findNamedMediaUrl(value, keys) {
+  if (!value || typeof value !== 'object') return undefined
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNamedMediaUrl(item, keys)
+      if (found) return found
+    }
+    return undefined
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (keys.includes(key) && typeof child === 'string' && /^https?:\/\//.test(child)) {
+      return child
+    }
+    const found = findNamedMediaUrl(child, keys)
     if (found) return found
   }
   return undefined

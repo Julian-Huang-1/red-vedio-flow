@@ -1,7 +1,15 @@
 import { isDeepStrictEqual } from 'node:util'
 import { basename, join } from 'node:path'
-import type { MaterialMessage, MaterialNode, MaterialValue, WorkflowPatchOperation } from '@red-video-flow/workflow-core'
+import type {
+  MaterialMessage,
+  MaterialNode,
+  MaterialValue,
+  NodeRunInput,
+  WorkflowPatchOperation,
+} from '@red-video-flow/workflow-core'
 import type { AssetService } from '../assets/assetService.js'
+import type { NodeResultProjector } from '../runs/nodeResultProjector.js'
+import type { RunService } from '../runs/runService.js'
 import type { WorkflowService } from '../workflows/workflowService.js'
 import type { VisualRunResult, VisualServiceContract } from './service.js'
 import {
@@ -18,10 +26,13 @@ export type VisualTaskServiceOptions = {
 }
 
 export type StartVisualTaskInput = {
+  runId?: string
   workflowId: string
   nodeId: string
   provider: string
   nodeKind: 'image' | 'video'
+  inputSnapshot?: NodeRunInput
+  modelId?: string
 }
 
 export type VisualTaskReconcileResult = {
@@ -44,6 +55,8 @@ export class VisualTaskService {
     private readonly workflows: WorkflowService,
     private readonly visual: VisualServiceContract,
     private readonly assets: AssetService,
+    private readonly runs: RunService,
+    private readonly nodeResults: NodeResultProjector,
     options: VisualTaskServiceOptions = {},
   ) {
     this.pollIntervalMs = options.pollIntervalMs ?? 5_000
@@ -58,6 +71,25 @@ export class VisualTaskService {
 
   findBySubmitId(provider: string, submitId: string) {
     return this.repository.findBySubmitId(provider, submitId)
+  }
+
+  findByRunId(runId: string) {
+    return this.repository.findByRunId(runId)
+  }
+
+  cancelNodeRun(runId: string) {
+    const task = this.repository.findByRunId(runId)
+    if (!task || terminalStatuses.has(task.status)) return task
+    const now = Date.now()
+    return this.repository.save({
+      ...task,
+      status: 'cancelled',
+      leaseOwner: undefined,
+      leaseExpiresAt: undefined,
+      updatedAt: now,
+      completedAt: now,
+      projectedAt: now,
+    })
   }
 
   start(input: StartVisualTaskInput) {
@@ -79,14 +111,18 @@ export class VisualTaskService {
         completedAt: now,
         projectedAt: now,
       })
+      if (active.runId) this.runs.cancelNodeRun(active.runId)
     }
 
     const task: VisualTaskRecord = {
       id: createVisualTaskId(),
+      runId: input.runId,
       workflowId: input.workflowId,
       nodeId: input.nodeId,
       provider: input.provider,
       nodeKind: input.nodeKind,
+      inputSnapshot: input.inputSnapshot,
+      modelId: input.modelId,
       status: 'submitting',
       attemptCount: 0,
       nextPollAt: now,
@@ -95,6 +131,63 @@ export class VisualTaskService {
       updatedAt: now,
     }
     return this.repository.save(task)
+  }
+
+  async startNodeRun(runId: string) {
+    const run = this.runs.getNodeRun(runId)
+    if (!run) throw new Error(`node run not found: ${runId}`)
+    if (run.inputSnapshot.generationConfig.type !== 'openai-image'
+      && run.inputSnapshot.generationConfig.type !== 'volc-video') {
+      throw new Error('node run is not a visual generation')
+    }
+    const existing = this.repository.findByRunId(runId)
+    if (existing) return existing
+
+    this.runs.markNodeRunRunning(runId)
+    const task = this.start({
+      runId,
+      workflowId: run.workflowId,
+      nodeId: run.nodeId,
+      provider: run.inputSnapshot.model.modelId,
+      modelId: run.inputSnapshot.model.modelId,
+      nodeKind: run.inputSnapshot.generationConfig.type === 'openai-image' ? 'image' : 'video',
+      inputSnapshot: run.inputSnapshot,
+    })
+
+    try {
+      const result = await this.visual.invoke({
+        executionId: task.id,
+        idempotencyKey: runId,
+        modelId: run.inputSnapshot.model.modelId,
+        nodeKind: task.nodeKind,
+        prompt: run.inputSnapshot.prompt,
+        upstream: await this.upstreamNodes(run.inputSnapshot),
+        providerOptions: generationConfigOptions(run.inputSnapshot),
+        downloadDir: join(this.assets.generatedDir, runId),
+        assetUrlForPath: (filePath) => this.assets.assetUrlForPath(filePath),
+        onEvent: (event) => {
+          if (event.type === 'meta') {
+            this.markSubmitted(task.id, event.submitId)
+            this.runs.attachNodeProviderTask(runId, {
+              providerId: run.inputSnapshot.model.providerId,
+              taskId: event.submitId,
+            })
+          }
+          if (event.type === 'partial-image') {
+            this.runs.appendNodeRunEvent(runId, 'image_partial', {
+              type: 'image_partial',
+              runId,
+              index: event.index,
+              base64: event.base64,
+              mimeType: event.mimeType,
+            })
+          }
+        },
+      })
+      return this.recordInitialResult(task.id, result)
+    } catch (error) {
+      return this.failSubmission(task.id, error)
+    }
   }
 
   markSubmitted(taskId: string, submitId: string) {
@@ -310,9 +403,10 @@ export class VisualTaskService {
     leaseOwner?: string,
   ) {
     if (terminalStatuses.has(task.status)) return task
-    const succeeded = Boolean(result.url) && result.taskStatus !== 'failed'
+    const succeeded = Boolean(result.url || result.assets?.some((asset) => asset.url))
+      && result.taskStatus !== 'failed'
     if (succeeded) {
-      if (result.localPath && result.url) {
+      if (!task.runId && result.localPath && result.url) {
         this.assets.register({
           workflowId: task.workflowId,
           kind: task.nodeKind,
@@ -384,6 +478,16 @@ export class VisualTaskService {
 
   private projectSubmitted(task: VisualTaskRecord) {
     if (!task.submitId || task.status !== 'polling') return
+    if (task.runId) {
+      const run = this.runs.getNodeRun(task.runId)
+      if (run && !run.providerTask?.taskId) {
+        this.runs.attachNodeProviderTask(task.runId, {
+          providerId: run.inputSnapshot.model.providerId,
+          taskId: task.submitId,
+        })
+      }
+      return
+    }
     const active = this.repository.findActiveForNode(task.workflowId, task.nodeId)
     if (active?.id !== task.id) return
     const workflow = this.workflows.get(task.workflowId)
@@ -405,6 +509,20 @@ export class VisualTaskService {
   }
 
   private projectTerminal(task: VisualTaskRecord, explicitMessage?: string) {
+    if (task.runId) {
+      if (task.status === 'succeeded' && task.result) {
+        this.nodeResults.projectVisual(task.runId, task.result)
+      } else {
+        this.nodeResults.fail(task.runId, {
+          code: task.status,
+          message: explicitMessage ?? task.lastError ?? '视觉任务未能完成。',
+          retryable: task.status !== 'cancelled',
+          status: task.status === 'timed_out' ? 'timed_out' : 'failed',
+        })
+      }
+      this.markProjected(task)
+      return
+    }
     const workflow = this.workflows.get(task.workflowId)
     const node = workflow?.graph.nodes.find((candidate) => candidate.id === task.nodeId)
     const newerTask = this.repository.findActiveForNode(task.workflowId, task.nodeId)
@@ -482,6 +600,47 @@ export class VisualTaskService {
     if (!task) throw new Error(`visual task not found: ${id}`)
     return task
   }
+
+  private async upstreamNodes(input: NodeRunInput) {
+    const inputs = [
+      ...input.attachments,
+      ...input.upstreamResults.flatMap((result) => result.assets),
+    ]
+    return inputs.map((asset, index) => {
+      const localPath = asset.url.startsWith('/api/assets/')
+        ? this.assets.resolveAssetPath(asset.url)
+        : undefined
+      return {
+        id: `input-${index}`,
+        position: { x: 0, y: 0 },
+        data: {
+          materialType: asset.kind,
+          title: asset.name ?? `Input ${index + 1}`,
+          status: 'done',
+          value: {
+            localPath,
+            url: /^https?:\/\//.test(asset.url) ? asset.url : undefined,
+            fileName: asset.name,
+            mimeType: asset.mimeType,
+          },
+          messages: [],
+        },
+      }
+    })
+  }
+}
+
+function generationConfigOptions(input: NodeRunInput) {
+  const {
+    type: _type,
+    version: _version,
+    providerOptions,
+    previousResponseId: _previousResponseId,
+    ...options
+  } = input.generationConfig as NodeRunInput['generationConfig'] & {
+    previousResponseId?: string
+  }
+  return { ...options, ...providerOptions }
 }
 
 function createVisualTaskId() {
