@@ -100,6 +100,19 @@ export const nodeRunEvents = sqliteTable('node_run_events', {
   index('idx_node_run_events_run').on(table.runId, table.id),
 ])
 
+export const workflowAppRuns = sqliteTable('workflow_app_runs', {
+  id: text('id').primaryKey(),
+  workflowId: text('workflow_id').notNull(),
+  revision: integer('revision').notNull(),
+  status: text('status').notNull(),
+  dataJson: text('data_json').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => [
+  index('idx_workflow_app_runs_workflow').on(table.workflowId, table.updatedAt),
+  index('idx_workflow_app_runs_status').on(table.status),
+])
+
 export const executions = sqliteTable('executions', {
   id: text('id').primaryKey(),
   pluginId: text('plugin_id').notNull(),

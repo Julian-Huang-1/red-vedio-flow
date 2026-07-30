@@ -1,13 +1,22 @@
 import {
+  createExecutionPlan,
   createWorkflowContract,
+  collectWorkflowInputSchema,
+  generateWorkflowModule,
+  type AssetReference,
   type MaterialNode,
   type MaterialValue,
+  type NodeResult,
+  type UpstreamResultReference,
   type WorkflowDocument,
   type WorkflowEdge,
+  type WorkflowInputValueType,
+  type WorkflowExecutionPlan,
 } from '@red-video-flow/workflow-core'
 import type { VisualCapability } from '@red-video-flow/plugin-contract'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, resourcePath, sendJson, type RequestContext } from '../http.js'
+import { startDurableWorkflowNodeRun } from '../nodeExecutionService.js'
 
 type AppRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
@@ -25,6 +34,15 @@ type AppRun = {
   revision: number
   status: AppRunStatus
   inputs: Record<string, unknown>
+  graphSnapshot: WorkflowDocument
+  executionPlan: WorkflowExecutionPlan
+  nodeStates: Record<string, {
+    status: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped'
+    resultIds: string[]
+    startedAt?: number
+    finishedAt?: number
+    error?: string
+  }>
   outputs?: Record<string, MaterialValue>
   error?: string
   events: AppRunEvent[]
@@ -32,8 +50,6 @@ type AppRun = {
   updatedAt: number
   cancelled: boolean
 }
-
-const runs = new Map<string, AppRun>()
 
 export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   const { req, res, pathname } = ctx
@@ -45,22 +61,45 @@ export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: 
     return true
   }
 
+  if (req.method === 'GET' && /^\/api\/workflows\/[^/]+\/code$/.test(pathname)) {
+    const workflowId = resourcePath(pathname, '/api/workflows/')?.[0]
+    const workflow = requireWorkflow(runtime, workflowId)
+    const language = ctx.url.searchParams.get('language') === 'js' ? 'js' : 'ts'
+    sendJson(res, 200, generateWorkflowModule(workflow, { language }))
+    return true
+  }
+
   if (req.method === 'POST' && /^\/api\/workflows\/[^/]+\/runs$/.test(pathname)) {
     const workflowId = resourcePath(pathname, '/api/workflows/')?.[0]
     const workflow = requireWorkflow(runtime, workflowId)
     const body = await readJson(req)
+    if (typeof body.revision === 'number' && body.revision !== workflow.revision) {
+      sendJson(res, 409, {
+        error: `workflow revision conflict: expected ${body.revision}, current ${workflow.revision}`,
+      })
+      return true
+    }
     const inputs = isRecord(body.inputs) ? body.inputs : {}
     const run = createRun(workflow, inputs)
-    runs.set(run.id, run)
+    runtime.backend.workflowAppRuns.save(run)
     void executeRun(runtime, workflow, run)
     sendJson(res, 202, { run: publicRun(run) })
+    return true
+  }
+
+  if (req.method === 'GET' && /^\/api\/workflows\/[^/]+\/runs$/.test(pathname)) {
+    const workflowId = resourcePath(pathname, '/api/workflows/')?.[0]
+    if (!workflowId) return false
+    sendJson(res, 200, {
+      runs: runtime.backend.workflowAppRuns.listByWorkflow<AppRun>(workflowId).map(publicRun),
+    })
     return true
   }
 
   if (req.method === 'GET' && pathname.startsWith('/api/workflow-runs/')) {
     const runId = resourcePath(pathname, '/api/workflow-runs/')?.[0]
     if (!runId) return false
-    const run = runs.get(runId)
+    const run = runtime.backend.workflowAppRuns.get<AppRun>(runId)
     if (!run) {
       sendJson(res, 404, { error: `workflow run not found: ${runId}` })
       return true
@@ -77,15 +116,15 @@ export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: 
       ? resourcePath(pathname, '/api/workflow-runs/')?.[0]
       : resourcePath(pathname, '/api/workflow-runs/')?.[0]
     if (!runId) return false
-    const run = runs.get(runId)
+    const run = runtime.backend.workflowAppRuns.get<AppRun>(runId)
     if (!run) {
       sendJson(res, 404, { error: `workflow run not found: ${runId}` })
       return true
     }
-    run.cancelled = true
     if (run.status === 'queued' || run.status === 'running') {
+      run.cancelled = true
       run.status = 'cancelled'
-      addEvent(run, 'cancelled', undefined, '运行已取消')
+      addEvent(runtime, run, 'cancelled', undefined, '运行已取消')
     }
     sendJson(res, 200, { run: publicRun(run) })
     return true
@@ -100,49 +139,88 @@ async function executeRun(
   run: AppRun,
 ) {
   try {
-    const contract = createWorkflowContract(workflow)
+    const inputSchema = collectWorkflowInputSchema(workflow)
     const values = new Map(workflow.graph.nodes.map((node) => [node.id, { ...node.data.value }]))
-    for (const field of Object.values(contract.inputs)) {
-      if (!(field.label in run.inputs)) throw new Error(`missing required input: ${field.label}`)
-      values.set(field.nodeId, inputValue(field.type, run.inputs[field.label]))
+    const nodeResults = new Map<string, NodeResult[]>()
+    for (const field of Object.values(inputSchema)) {
+      const provided = field.key in run.inputs
+      const rawInput = provided ? run.inputs[field.key] : field.defaultValue
+      if (rawInput === undefined && field.required) throw new Error(`missing required input: ${field.key}`)
+      if (rawInput !== undefined) {
+        validateWorkflowInput(field, rawInput)
+        values.set(field.nodeId, inputValue(field.valueType, rawInput))
+      }
     }
 
     run.status = 'running'
-    addEvent(run, 'started', undefined, 'Workflow 开始运行')
-    const orderedNodes = topologicalNodes(workflow.graph.nodes, workflow.graph.edges)
-    const reachable = relevantNodeIds(workflow, contract)
+    addEvent(runtime, run, 'started', undefined, 'Workflow 开始运行')
+    const plan = createExecutionPlan(workflow.graph)
 
-    for (const node of orderedNodes) {
+    for (const level of plan.levels) {
       if (run.cancelled) throw new CancelledError()
-      if (!reachable.has(node.id) || node.data.serviceRole === 'input') continue
-      const upstream = upstreamNodes(node, workflow.graph.nodes, workflow.graph.edges, values)
-      addEvent(run, 'node_started', node.id, `开始执行 ${node.data.title}`)
-      const value = node.data.materialType === 'text'
-        ? executeTextNode(node, upstream, values.get(node.id))
-        : await executeVisualNode(runtime, run, node, upstream)
-      values.set(node.id, value)
-      addEvent(run, 'node_completed', node.id, `完成 ${node.data.title}`)
+      const executable = level
+        .map((nodeId) => workflow.graph.nodes.find((node) => node.id === nodeId)!)
+        .filter((node) => !isInputNode(node))
+      await mapWithConcurrency(executable, 3, async (node) => {
+        if (run.cancelled) throw new CancelledError()
+        const upstream = upstreamNodes(node, workflow.graph.nodes, workflow.graph.edges, values)
+        run.nodeStates[node.id] = {
+          ...run.nodeStates[node.id],
+          status: 'running',
+          startedAt: Date.now(),
+        }
+        addEvent(runtime, run, 'node_started', node.id, `开始执行 ${node.data.title}`)
+        try {
+          const result = node.data.composer
+            ? await executeComposerNode(runtime, workflow, run, node, upstream, nodeResults)
+            : {
+                value: node.data.materialType === 'text'
+                  ? executeTextNode(node, upstream, values.get(node.id))
+                  : await executeVisualNode(runtime, run, node, upstream),
+                results: [] as NodeResult[],
+              }
+          values.set(node.id, result.value)
+          nodeResults.set(node.id, result.results)
+          run.nodeStates[node.id] = {
+            ...run.nodeStates[node.id],
+            status: 'succeeded',
+            resultIds: result.results.map((item) => item.id),
+            finishedAt: Date.now(),
+          }
+          addEvent(runtime, run, 'node_completed', node.id, `完成 ${node.data.title}`)
+        } catch (error) {
+          run.nodeStates[node.id] = {
+            ...run.nodeStates[node.id],
+            status: 'failed',
+            resultIds: [],
+            finishedAt: Date.now(),
+            error: error instanceof Error ? error.message : String(error),
+          }
+          throw error
+        }
+      })
     }
 
-    run.outputs = Object.fromEntries(
-      Object.values(contract.outputs).map((field) => {
-        const value = values.get(field.nodeId)
-        if (!value || !hasValue(value)) throw new Error(`output has no value: ${field.label}`)
-        return [field.label, value]
-      }),
-    )
+    run.outputs = Object.fromEntries(outputNodes(workflow).map((node) => {
+      const label = node.data.serviceLabel?.trim() || node.id
+      const value = values.get(node.id)
+      if (!value || !hasValue(value)) throw new Error(`output has no value: ${label}`)
+      return [label, value]
+    }))
     run.status = 'succeeded'
-    addEvent(run, 'completed', undefined, 'Workflow 运行完成')
+    addEvent(runtime, run, 'completed', undefined, 'Workflow 运行完成')
   } catch (error) {
     if (error instanceof CancelledError || run.cancelled) {
       run.status = 'cancelled'
+      markRemainingNodes(run, 'cancelled')
       if (!run.events.some((event) => event.type === 'cancelled')) {
-        addEvent(run, 'cancelled', undefined, '运行已取消')
+        addEvent(runtime, run, 'cancelled', undefined, '运行已取消')
       }
     } else {
       run.status = 'failed'
       run.error = error instanceof Error ? error.message : String(error)
-      addEvent(run, 'failed', undefined, run.error)
+      markRemainingNodes(run, 'skipped')
+      addEvent(runtime, run, 'failed', undefined, run.error)
     }
   }
 }
@@ -253,12 +331,33 @@ function upstreamNodes(
     }))
 }
 
-function inputValue(type: MaterialNode['data']['materialType'], input: unknown): MaterialValue {
+function inputValue(
+  type: MaterialNode['data']['materialType'] | WorkflowInputValueType,
+  input: unknown,
+): MaterialValue {
   if (type === 'text') {
     if (typeof input !== 'string') throw new Error('text input must be a string')
     return { text: input }
   }
+  if (type === 'number') {
+    if (typeof input !== 'number' || !Number.isFinite(input)) throw new Error('number input must be finite')
+    return { text: String(input) }
+  }
+  if (type === 'boolean') {
+    if (typeof input !== 'boolean') throw new Error('boolean input must be a boolean')
+    return { text: String(input) }
+  }
+  if (type === 'image[]') {
+    if (!Array.isArray(input) || !input.length) throw new Error('image[] input must contain assets')
+    const first = input[0]
+    if (!isRecord(first)) throw new Error('image[] input must contain uploaded assets')
+    return assetValue(first, 'image')
+  }
   if (!isRecord(input)) throw new Error(`${type} input must be an uploaded asset`)
+  return assetValue(input, type)
+}
+
+function assetValue(input: Record<string, unknown>, type: string): MaterialValue {
   const value = {
     url: typeof input.url === 'string' ? input.url : undefined,
     localPath: typeof input.localPath === 'string' ? input.localPath : undefined,
@@ -269,65 +368,55 @@ function inputValue(type: MaterialNode['data']['materialType'], input: unknown):
   return value
 }
 
-function relevantNodeIds(
-  workflow: WorkflowDocument,
-  contract: ReturnType<typeof createWorkflowContract>,
+function validateWorkflowInput(
+  field: ReturnType<typeof collectWorkflowInputSchema>[string],
+  input: unknown,
 ) {
-  const fromInputs = new Set(Object.values(contract.inputs).map((field) => field.nodeId))
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const edge of workflow.graph.edges) {
-      if (fromInputs.has(edge.source) && !fromInputs.has(edge.target)) {
-        fromInputs.add(edge.target)
-        changed = true
-      }
+  const constraints = field.constraints
+  if (!constraints) return
+  if (typeof input === 'string' && constraints.maxLength !== undefined) {
+    if (input.length > constraints.maxLength) {
+      throw new Error(`${field.key} exceeds maxLength ${constraints.maxLength}`)
     }
   }
-  const toOutputs = new Set(Object.values(contract.outputs).map((field) => field.nodeId))
-  changed = true
-  while (changed) {
-    changed = false
-    for (const edge of workflow.graph.edges) {
-      if (toOutputs.has(edge.target) && !toOutputs.has(edge.source)) {
-        toOutputs.add(edge.source)
-        changed = true
-      }
+  if (typeof input === 'number') {
+    if (constraints.min !== undefined && input < constraints.min) {
+      throw new Error(`${field.key} must be at least ${constraints.min}`)
+    }
+    if (constraints.max !== undefined && input > constraints.max) {
+      throw new Error(`${field.key} must be at most ${constraints.max}`)
     }
   }
-  return new Set([...fromInputs].filter((id) => toOutputs.has(id)))
-}
-
-function topologicalNodes(nodes: MaterialNode[], edges: WorkflowEdge[]) {
-  const indegree = new Map(nodes.map((node) => [node.id, 0]))
-  const downstream = new Map(nodes.map((node) => [node.id, [] as string[]]))
-  for (const edge of edges) {
-    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1)
-    downstream.get(edge.source)?.push(edge.target)
-  }
-  const queue = nodes.filter((node) => indegree.get(node.id) === 0)
-  const result: MaterialNode[] = []
-  while (queue.length) {
-    const node = queue.shift()!
-    result.push(node)
-    for (const target of downstream.get(node.id) ?? []) {
-      const next = (indegree.get(target) ?? 0) - 1
-      indegree.set(target, next)
-      if (next === 0) queue.push(nodes.find((item) => item.id === target)!)
+  if (Array.isArray(input)) {
+    if (constraints.minItems !== undefined && input.length < constraints.minItems) {
+      throw new Error(`${field.key} requires at least ${constraints.minItems} items`)
+    }
+    if (constraints.maxItems !== undefined && input.length > constraints.maxItems) {
+      throw new Error(`${field.key} allows at most ${constraints.maxItems} items`)
     }
   }
-  if (result.length !== nodes.length) throw new Error('workflow contains a cycle')
-  return result
 }
 
 function createRun(workflow: WorkflowDocument, inputs: Record<string, unknown>): AppRun {
   const now = Date.now()
+  const graphSnapshot = structuredClone(workflow)
+  const executionPlan = createExecutionPlan(graphSnapshot.graph)
   return {
     id: `app-run-${now}-${Math.round(Math.random() * 1_000_000)}`,
     workflowId: workflow.id,
     revision: workflow.revision,
     status: 'queued',
     inputs,
+    graphSnapshot,
+    executionPlan,
+    nodeStates: Object.fromEntries(workflow.graph.nodes.map((node) => [
+      node.id,
+      {
+        status: isInputNode(node) ? 'succeeded' : 'pending',
+        resultIds: [],
+        ...(isInputNode(node) ? { startedAt: now, finishedAt: now } : {}),
+      },
+    ])),
     events: [],
     createdAt: now,
     updatedAt: now,
@@ -336,6 +425,7 @@ function createRun(workflow: WorkflowDocument, inputs: Record<string, unknown>):
 }
 
 function addEvent(
+  runtime: LocalServerRuntime,
   run: AppRun,
   type: AppRunEvent['type'],
   nodeId?: string,
@@ -344,6 +434,7 @@ function addEvent(
   const now = Date.now()
   run.events.push({ id: run.events.length + 1, type, nodeId, message, createdAt: now })
   run.updatedAt = now
+  runtime.backend.workflowAppRuns.save(run)
 }
 
 function publicRun(run: AppRun) {
@@ -371,3 +462,184 @@ function delay(ms: number) {
 }
 
 class CancelledError extends Error {}
+
+async function mapWithConcurrency<T>(
+  values: T[],
+  limit: number,
+  execute: (value: T) => Promise<void>,
+) {
+  let nextIndex = 0
+  let failed: unknown
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, limit), values.length) },
+    async () => {
+      while (nextIndex < values.length && !failed) {
+        const value = values[nextIndex++]
+        try {
+          await execute(value)
+        } catch (error) {
+          failed = error
+        }
+      }
+    },
+  )
+  await Promise.all(workers)
+  if (failed) throw failed
+}
+
+function markRemainingNodes(run: AppRun, status: 'cancelled' | 'skipped') {
+  const now = Date.now()
+  for (const state of Object.values(run.nodeStates)) {
+    if (state.status === 'pending') {
+      state.status = status
+      state.finishedAt = now
+    }
+  }
+}
+
+function outputNodes(workflow: WorkflowDocument) {
+  const explicit = workflow.graph.nodes.filter((node) => node.data.serviceRole === 'output')
+  if (explicit.length) return explicit
+  const hasDownstream = new Set(workflow.graph.edges.map((edge) => edge.source))
+  return workflow.graph.nodes.filter((node) => !hasDownstream.has(node.id))
+}
+
+function isInputNode(node: MaterialNode) {
+  return node.data.executionMode === 'input'
+    || node.data.serviceRole === 'input'
+    || Boolean(node.data.workflowInput)
+}
+
+async function executeComposerNode(
+  runtime: LocalServerRuntime,
+  workflow: WorkflowDocument,
+  workflowRun: AppRun,
+  node: MaterialNode,
+  upstream: MaterialNode[],
+  resultsByNodeId: Map<string, NodeResult[]>,
+) {
+  const composer = node.data.composer!
+  const run = runtime.backend.runs.createNodeRun({
+    workflowId: workflow.id,
+    nodeId: node.id,
+    input: {
+      prompt: composer.prompt,
+      attachments: composer.attachments,
+      upstreamResults: collectUpstreamResultReferences(
+        workflowRun.id,
+        node,
+        upstream,
+        workflow.graph.edges,
+        resultsByNodeId,
+      ),
+      model: composer.model,
+      generationConfig: composer.generationConfig,
+    },
+  })
+  await startDurableWorkflowNodeRun(runtime, run.id)
+  const completed = await waitForNodeRun(runtime, run.id, workflowRun)
+  if (completed.status !== 'succeeded') {
+    throw new Error(completed.error?.message || `${node.data.title} 执行失败`)
+  }
+  const currentWorkflow = runtime.backend.workflows.get(workflow.id)
+  const currentNode = currentWorkflow?.graph.nodes.find((item) => item.id === node.id)
+  const results = (currentNode?.data.results ?? []).filter(
+    (result) => completed.resultIds.includes(result.id),
+  )
+  return {
+    value: resultValue(results.at(-1)) ?? currentNode?.data.value ?? {},
+    results,
+  }
+}
+
+async function waitForNodeRun(
+  runtime: LocalServerRuntime,
+  runId: string,
+  workflowRun: AppRun,
+) {
+  while (true) {
+    if (workflowRun.cancelled) {
+      runtime.backend.visualTasks.cancelNodeRun(runId)
+      return runtime.backend.runs.cancelNodeRun(runId)
+    }
+    const run = runtime.backend.runs.getNodeRun(runId)
+    if (!run) throw new Error(`node run not found: ${runId}`)
+    if (!['queued', 'running'].includes(run.status)) return run
+    await delay(50)
+  }
+}
+
+function collectUpstreamResultReferences(
+  workflowRunId: string,
+  node: MaterialNode,
+  upstream: MaterialNode[],
+  edges: WorkflowEdge[],
+  resultsByNodeId: Map<string, NodeResult[]>,
+): UpstreamResultReference[] {
+  const references: UpstreamResultReference[] = []
+  for (const upstreamNode of upstream) {
+    const edge = edges.find((item) => item.source === upstreamNode.id && item.target === node.id)!
+    const results = resultsByNodeId.get(upstreamNode.id) ?? []
+    if (results.length) {
+      for (const result of results) {
+        references.push({
+          edgeId: edge.id ?? `${edge.source}-${edge.target}`,
+          nodeId: upstreamNode.id,
+          resultId: result.id,
+          resultType: result.type,
+          assets: resultAssets(result),
+          text: result.type === 'text' ? result.text : undefined,
+        })
+      }
+      continue
+    }
+    const value = upstreamNode.data.value
+    references.push({
+      edgeId: edge.id ?? `${edge.source}-${edge.target}`,
+      nodeId: upstreamNode.id,
+      resultId: `${workflowRunId}:${upstreamNode.id}`,
+      resultType: upstreamNode.data.materialType,
+      assets: materialValueAssets(workflowRunId, upstreamNode),
+      text: value.text,
+    })
+  }
+  return references
+}
+
+function resultAssets(result: NodeResult): AssetReference[] {
+  if (result.type === 'image') return result.images
+  if (result.type === 'video') return [result.video, ...(result.lastFrame ? [result.lastFrame] : [])]
+  return []
+}
+
+function materialValueAssets(workflowRunId: string, node: MaterialNode): AssetReference[] {
+  const value = node.data.value
+  if (node.data.materialType === 'text' || (!value.url && !value.localPath)) return []
+  return [{
+    id: `${workflowRunId}:${node.id}:asset`,
+    kind: node.data.materialType,
+    url: value.url ?? value.localPath!,
+    name: value.fileName,
+    mimeType: value.mimeType,
+    duration: value.duration,
+  }]
+}
+
+function resultValue(result: NodeResult | undefined): MaterialValue | undefined {
+  if (!result) return undefined
+  if (result.type === 'text') return { text: result.text }
+  if (result.type === 'image') {
+    const image = result.images[0]
+    return image ? {
+      url: image.url,
+      fileName: image.name,
+      mimeType: image.mimeType,
+    } : undefined
+  }
+  return {
+    url: result.video.url,
+    fileName: result.video.name,
+    mimeType: result.video.mimeType,
+    duration: result.video.duration,
+  }
+}

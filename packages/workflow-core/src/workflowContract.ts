@@ -1,10 +1,20 @@
-import type { MaterialNode, MaterialType, WorkflowDocument } from './types'
+import type {
+  MaterialNode,
+  MaterialType,
+  WorkflowDocument,
+  WorkflowInputFieldDefinition,
+  WorkflowInputValueType,
+} from './types'
 
 export type WorkflowContractField = {
   nodeId: string
   label: string
-  type: MaterialType
+  type: MaterialType | WorkflowInputValueType
   required: boolean
+  title?: string
+  description?: string
+  defaultValue?: unknown
+  constraints?: WorkflowInputFieldDefinition['constraints']
 }
 
 export type WorkflowContract = {
@@ -40,8 +50,9 @@ export function createWorkflowContract(workflow: WorkflowDocument): WorkflowCont
 function contractFields(nodes: MaterialNode[], role: 'input' | 'output') {
   const result: Record<string, WorkflowContractField> = {}
   for (const node of nodes) {
-    if (node.data.serviceRole !== role) continue
-    const label = node.data.serviceLabel?.trim()
+    if (node.data.serviceRole !== role && !(role === 'input' && node.data.workflowInput)) continue
+    const workflowInput = role === 'input' ? node.data.workflowInput : undefined
+    const label = workflowInput?.key.trim() || node.data.serviceLabel?.trim()
     if (!label) throw new WorkflowContractError(`${role} node ${node.id} has no service label`)
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) {
       throw new WorkflowContractError(`invalid service label: ${label}`)
@@ -50,8 +61,12 @@ function contractFields(nodes: MaterialNode[], role: 'input' | 'output') {
     result[label] = {
       nodeId: node.id,
       label,
-      type: node.data.materialType,
-      required: role === 'input',
+      type: workflowInput?.valueType ?? node.data.materialType,
+      required: workflowInput?.required ?? role === 'input',
+      title: workflowInput?.title,
+      description: workflowInput?.description,
+      defaultValue: workflowInput?.defaultValue,
+      constraints: workflowInput?.constraints,
     }
   }
   return result

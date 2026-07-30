@@ -71,6 +71,14 @@ describe('workflow app routes', () => {
     expect(Object.keys(contract.contract.inputs)).toEqual(['prompt'])
     expect(Object.keys(contract.contract.outputs)).toEqual(['result'])
 
+    const codeResponse = await fetch(
+      `${handle.url}/api/workflows/${workflow.id}/code?language=ts`,
+    )
+    expect(codeResponse.status).toBe(200)
+    const generated = await codeResponse.json() as { code: string }
+    expect(generated.code).toContain('export type WorkflowInput = {')
+    expect(generated.code).toContain('prompt: string')
+
     const startResponse = await fetch(
       `${handle.url}/api/workflows/${workflow.id}/runs`,
       {
@@ -81,7 +89,7 @@ describe('workflow app routes', () => {
     )
     expect(startResponse.status).toBe(202)
     let run = (await startResponse.json() as {
-      run: { id: string; status: string; outputs?: { result?: { text?: string } } }
+      run: { id: string; status: string; outputs?: { result?: { text?: string } }; error?: string }
     }).run
     for (let attempt = 0; attempt < 20 && !['succeeded', 'failed'].includes(run.status); attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -89,7 +97,27 @@ describe('workflow app routes', () => {
         run: typeof run
       }).run
     }
-    expect(run.status).toBe('succeeded')
+    expect(run.status, run.error).toBe('succeeded')
     expect(run.outputs?.result?.text).toBe('hello app')
+
+    const history = await (
+      await fetch(`${handle.url}/api/workflows/${workflow.id}/runs`)
+    ).json() as { runs: Array<{ id: string; status: string }> }
+    expect(history.runs).toEqual([
+      expect.objectContaining({ id: run.id, status: 'succeeded' }),
+    ])
+
+    await handle.close()
+    handle = await startLocalServer({
+      preferredPort: 0,
+      dataDir: join(root, 'data'),
+      pluginDirs: [],
+    })
+    const restored = await (
+      await fetch(`${handle.url}/api/workflow-runs/${run.id}`)
+    ).json() as { run: { id: string; status: string } }
+    expect(restored.run).toEqual(
+      expect.objectContaining({ id: run.id, status: 'succeeded' }),
+    )
   })
 })

@@ -23,6 +23,8 @@ export type MaterialMessage = {
 export type MaterialNodeData = {
   materialType: MaterialType
   title: string
+  executionMode?: 'input' | 'generate'
+  workflowInput?: WorkflowInputFieldDefinition
   serviceRole?: 'input' | 'output'
   serviceLabel?: string
   visualProviderId?: string
@@ -34,6 +36,32 @@ export type MaterialNodeData = {
   results?: NodeResult[]
   currentResultId?: string
   latestRunId?: string
+}
+
+export type WorkflowInputValueType =
+  | 'text'
+  | 'number'
+  | 'boolean'
+  | 'image'
+  | 'image[]'
+  | 'video'
+  | 'file'
+
+export type WorkflowInputFieldDefinition = {
+  key: string
+  title: string
+  description?: string
+  valueType: WorkflowInputValueType
+  required: boolean
+  defaultValue?: unknown
+  constraints?: {
+    min?: number
+    max?: number
+    maxLength?: number
+    minItems?: number
+    maxItems?: number
+    mimeTypes?: string[]
+  }
 }
 
 export type XYPosition = {

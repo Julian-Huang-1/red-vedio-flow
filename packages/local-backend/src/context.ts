@@ -5,6 +5,7 @@ import { WorkflowRepository } from './workflows/workflowRepository.js'
 import { WorkflowService } from './workflows/workflowService.js'
 import { RunRepository } from './runs/runRepository.js'
 import { RunService } from './runs/runService.js'
+import { WorkflowAppRunRepository } from './runs/workflowAppRunRepository.js'
 import { NodeResultProjector } from './runs/nodeResultProjector.js'
 import { AssetService } from './assets/assetService.js'
 import { ResourceService } from './resources/resourceService.js'
@@ -29,6 +30,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
   const workflows = new WorkflowService(workflowRepository)
   const runRepository = new RunRepository(database)
   const runs = new RunService(runRepository, workflows)
+  const workflowAppRuns = new WorkflowAppRunRepository(database)
   const resources = new ResourceService(database)
   const assets = new AssetService(options.dataDir, database, resources)
   const nodeResults = new NodeResultProjector(workflows, runs, assets, resources)
@@ -50,6 +52,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     database,
     workflows,
     runs,
+    workflowAppRuns,
     nodeResults,
     assets,
     resources,

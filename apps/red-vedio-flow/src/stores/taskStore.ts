@@ -1,10 +1,16 @@
 import { create } from 'zustand'
 import type { NodeRun, NodeRunInput } from '@red-video-flow/workflow-core'
 import {
+  cancelWorkflowAppRun,
   cancelWorkflowNodeRun,
+  createWorkflowAppRun,
   executeWorkflowNodeRun,
+  fetchWorkflow,
+  fetchWorkflowAppRun,
+  fetchWorkflowAppRuns,
   fetchWorkflowNodeRuns,
   subscribeWorkflowNodeRun,
+  type WorkflowAppRun,
   type WorkflowNodeRunEvent,
 } from '@red-video-flow/workflow-client'
 import { useWorkflowStore } from './workflowStore'
@@ -18,7 +24,10 @@ type RunProgress = {
 type TaskStore = {
   runs: Record<string, NodeRun>
   progress: Record<string, RunProgress>
+  workflowRun?: WorkflowAppRun
   submitNode: (nodeId: string) => Promise<NodeRun | undefined>
+  runWorkflow: (inputs?: Record<string, unknown>) => Promise<void>
+  cancelWorkflow: () => Promise<void>
   restoreWorkflowRuns: (workflowId: string) => Promise<void>
   createRun: (workflowId: string, nodeId: string, input: NodeRunInput) => NodeRun
   markRunning: (runId: string, providerTask?: NodeRun['providerTask']) => void
@@ -32,6 +41,23 @@ const runAbortControllers = new Map<string, AbortController>()
 export const useTaskStore = create<TaskStore>((set, get) => ({
   runs: {},
   progress: {},
+  workflowRun: undefined,
+  runWorkflow: async (inputs = {}) => {
+    const workflow = useWorkflowStore.getState()
+    const { run } = await createWorkflowAppRun(
+      workflow.workflowId,
+      inputs,
+      workflow.revision,
+    )
+    set({ workflowRun: run })
+    await pollWorkflowAppRun(run.id, workflow.workflowId, set)
+  },
+  cancelWorkflow: async () => {
+    const runId = get().workflowRun?.id
+    if (!runId) return
+    const { run } = await cancelWorkflowAppRun(runId)
+    set({ workflowRun: run })
+  },
   submitNode: async (nodeId) => {
     const workflow = useWorkflowStore.getState()
     const input = workflow.buildRunInput(nodeId)
@@ -73,13 +99,20 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     return get().runs[run.id]
   },
   restoreWorkflowRuns: async (workflowId) => {
-    const { runs } = await fetchWorkflowNodeRuns(workflowId)
+    const [{ runs }, { runs: workflowRuns }] = await Promise.all([
+      fetchWorkflowNodeRuns(workflowId),
+      fetchWorkflowAppRuns(workflowId),
+    ])
     const progress = { ...get().progress }
     for (const run of runs) progress[run.id] ??= { text: '', partialImages: {} }
     set({
       runs: Object.fromEntries(runs.map((run) => [run.id, run])),
       progress,
+      workflowRun: workflowRuns[0],
     })
+    if (workflowRuns[0] && ['queued', 'running'].includes(workflowRuns[0].status)) {
+      void pollWorkflowAppRun(workflowRuns[0].id, workflowId, set)
+    }
     for (const run of runs.filter((item) => item.status === 'queued' || item.status === 'running')) {
       if (runAbortControllers.has(run.id)) continue
       const abortController = new AbortController()
@@ -147,6 +180,25 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     })
   },
 }))
+
+async function pollWorkflowAppRun(
+  runId: string,
+  workflowId: string,
+  set: (patch: Partial<TaskStore>) => void,
+) {
+  while (true) {
+    const latest = (await fetchWorkflowAppRun(runId)).run
+    set({ workflowRun: latest })
+    if (!['queued', 'running'].includes(latest.status)) {
+      if (latest.status === 'succeeded') {
+        const document = await fetchWorkflow(workflowId)
+        useWorkflowStore.getState().loadWorkflow(document)
+      }
+      return
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 250))
+  }
+}
 
 function projectRunEvent(
   set: (state: Partial<TaskStore>) => void,
