@@ -29,7 +29,6 @@ export const activate: FrontendFeatureActivator = (app) => {
       component: MaterialNode,
       defaultSize: { width: 560, height: 280 },
       uploadable: true,
-      executeCommandId: 'dreamina.generate',
     }),
     app.canvas.registerNodeType({
       id: 'material.video',
@@ -43,7 +42,6 @@ export const activate: FrontendFeatureActivator = (app) => {
       component: MaterialNode,
       defaultSize: { width: 560, height: 280 },
       uploadable: true,
-      executeCommandId: 'dreamina.generate',
     }),
   ]
 

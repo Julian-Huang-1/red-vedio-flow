@@ -78,6 +78,14 @@ export async function fetchWorkflowNodeRuns(workflowId: string) {
   return (await response.json()) as { runs: NodeRun[] }
 }
 
+export async function fetchWorkflowNodeRun(runId: string) {
+  const response = await getWorkflowClientTransport().request(
+    `/api/workflow-node-runs/${encodeURIComponent(runId)}`,
+  )
+  if (!response.ok) throw new Error('节点任务加载失败')
+  return (await response.json()) as { run: NodeRun }
+}
+
 export async function subscribeWorkflowNodeRun(
   runId: string,
   options: {

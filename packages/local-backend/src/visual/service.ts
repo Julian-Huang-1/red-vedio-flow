@@ -5,6 +5,19 @@ export type VisualEvent =
   | { type: 'meta'; submitId: string }
   | { type: 'progress'; progress?: number; text?: string }
   | { type: 'partial-image'; index: number; base64: string; mimeType?: string }
+  | {
+      type: 'network-request'
+      request: {
+        transport: 'http' | 'process'
+        method?: string
+        url?: string
+        headers?: Record<string, string>
+        body?: unknown
+        command?: string
+        argv?: string[]
+        recordedAt: number
+      }
+    }
 
 export type VisualRunAsset = {
   url?: string

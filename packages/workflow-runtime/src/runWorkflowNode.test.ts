@@ -39,7 +39,13 @@ describe('runWorkflowNode', () => {
   it('returns visual model asset metadata for image and video nodes', async () => {
     const result = await runWorkflowNode(
       {
-        node: node('image', 'image'),
+        node: {
+          ...node('image', 'image'),
+          data: {
+            ...node('image', 'image').data,
+            visualProviderId: 'test-visual',
+          },
+        },
         upstream: [],
         edges: [],
         prompt: '生成图片',
@@ -57,7 +63,7 @@ describe('runWorkflowNode', () => {
 
     expect(result.status).toBe('done')
     expect(result.value).toMatchObject({
-      provider: 'dreamina',
+      provider: 'test-visual',
       submitId: 'submit-1',
       url: '/api/assets/generated/image.png',
     })

@@ -143,7 +143,7 @@ test.describe('Agent and visual generation happy paths', () => {
           message: `${materialType} 生成完成`,
         })
         await fulfillSse(route, [
-          { type: 'start', modelId: 'dreamina' },
+          { type: 'start', modelId: 'test-visual' },
           { type: 'done', result: { ...resultValue, taskStatus: 'success' } },
         ])
       })
@@ -152,7 +152,7 @@ test.describe('Agent and visual generation happy paths', () => {
       await flowNode(page, node.id)
         .getByText(materialType === 'image' ? '点击上传图片' : '点击上传视频')
         .click()
-      await expect(page.getByText('E2E Dreamina')).toBeVisible()
+      await expect(page.getByText('E2E Visual Provider')).toBeVisible()
       const prompt = page.getByPlaceholder(materialType === 'image' ? /描述要生成或修改的画面/ : /描述视频动作和镜头/)
       await prompt.fill(`生成 E2E ${materialType}`)
       await page.getByRole('button', { name: '提交内容' }).click()

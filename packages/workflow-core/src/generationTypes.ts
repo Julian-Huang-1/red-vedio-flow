@@ -139,6 +139,32 @@ export type NodeRunStatus =
   | 'timed_out'
   | 'interrupted'
 
+export type NodeRunTrace = {
+  runId: string
+  nodeId: string
+  providerId: string
+  modelId: string
+  composer: NodeRunInput
+  providerInput?: unknown
+  networkRequests?: Array<{
+    transport: 'http' | 'process'
+    method?: string
+    url?: string
+    headers?: Record<string, string>
+    body?: unknown
+    command?: string
+    argv?: string[]
+    recordedAt: number
+  }>
+  /** @deprecated Traces created before network-boundary capture used this field. */
+  resolvedRequest?: unknown
+  response?: unknown
+  startedAt: number
+  finishedAt?: number
+  durationMs?: number
+  error?: string
+}
+
 export type NodeRun = {
   id: string
   workflowId: string
@@ -160,6 +186,7 @@ export type NodeRun = {
   updatedAt?: number
   startedAt?: number
   finishedAt?: number
+  trace?: NodeRunTrace
 }
 
 export type ModelCapabilities = {

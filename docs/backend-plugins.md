@@ -165,6 +165,7 @@ rvf execution cancel <executionId>
 ## 当前内置插件
 
 - `builtin.agent-cli`：Agent CLI 发现、协议适配、进程执行和流式输出。
-- `builtin.visual-dreamina`：Dreamina 提交、查询、下载、取消与结果归一化。
+- `builtin.visual-gpt-image`：GPT Image 生成、编辑、下载、取消与结果归一化。
+- `builtin.visual-seedance`：Seedance 提交、查询、下载、取消与结果归一化。
 
 Web UI 插件包不在本次后端契约内。后续 UI 扩展应消费后端贡献点和 JSON Schema，不允许前端直接加载后端插件代码或读取 `secrets`。

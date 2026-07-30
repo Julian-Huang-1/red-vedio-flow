@@ -79,7 +79,8 @@ export class PluginVisualService implements VisualServiceContract {
   async query(input: QueryVisualTaskInput): Promise<VisualRunResult> {
     const providerId = 'providerId' in input && typeof input.providerId === 'string'
       ? input.providerId
-      : 'dreamina'
+      : undefined
+    if (!providerId) throw new Error('visual providerId is required')
     const registered = this.plugins.contributions.getVisualProvider(providerId)
     if (!registered) throw new Error(`unknown visual provider: ${providerId}`)
     const executionId = input.executionId ?? createVisualExecutionId('query')
@@ -145,6 +146,30 @@ export class PluginVisualService implements VisualServiceContract {
           index: typeof data.index === 'number' ? data.index : 0,
           base64: data.base64,
           mimeType: typeof data.mimeType === 'string' ? data.mimeType : undefined,
+        })
+      } else if (event.params.type === 'debug_http_request') {
+        onEvent?.({
+          type: 'network-request',
+          request: {
+            transport: 'http',
+            method: typeof data.method === 'string' ? data.method : undefined,
+            url: typeof data.url === 'string' ? data.url : undefined,
+            headers: isRecord(data.headers)
+              ? Object.fromEntries(Object.entries(data.headers).map(([key, value]) => [key, String(value)]))
+              : undefined,
+            body: data.body,
+            recordedAt: typeof data.recordedAt === 'number' ? data.recordedAt : Date.now(),
+          },
+        })
+      } else if (event.params.type === 'debug_process_request') {
+        onEvent?.({
+          type: 'network-request',
+          request: {
+            transport: 'process',
+            command: typeof data.command === 'string' ? data.command : undefined,
+            argv: Array.isArray(data.argv) ? data.argv.map(String) : undefined,
+            recordedAt: typeof data.recordedAt === 'number' ? data.recordedAt : Date.now(),
+          },
         })
       }
     })

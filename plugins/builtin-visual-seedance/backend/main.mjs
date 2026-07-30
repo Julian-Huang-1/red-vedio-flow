@@ -217,13 +217,21 @@ async function requestJson(executionId, url, init) {
   const controller = new AbortController()
   active.set(executionId, controller)
   try {
+    const headers = {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+      ...init.headers,
+    }
+    emit(executionId, 'debug_http_request', {
+      method: init.method ?? 'GET',
+      url,
+      headers,
+      body: typeof init.body === 'string' ? parseJson(init.body) : init.body,
+      recordedAt: Date.now(),
+    })
     const response = await fetch(url, {
       ...init,
-      headers: {
-        'api-key': apiKey,
-        'Content-Type': 'application/json',
-        ...init.headers,
-      },
+      headers,
       signal: controller.signal,
     })
     const text = await response.text()

@@ -110,9 +110,9 @@ export CLAUDE_BIN=/path/to/claude
 export GEMINI_BIN=/path/to/gemini
 ```
 
-视觉节点当前接入即梦 Dreamina CLI，覆盖文生图、图生图、文生视频、图生视频、多帧生视频和图片放大等能力。
+视觉节点当前接入 GPT Image 与豆包 Seedance，覆盖文生图、图生图、文生视频和图生视频能力。
 
-Agent CLI 与 Dreamina 已从核心服务迁移为内置进程插件。第三方视觉 API 可以通过独立插件接入，Token 可配置在本机 `plugin.json` 的 `secrets` 中。完整契约见[后端插件开发](docs/backend-plugins.md)。
+视觉 Provider 通过内置进程插件接入。第三方视觉 API 可以通过独立插件扩展，Token 可配置在本机 `plugin.json` 的 `secrets` 中。完整契约见[后端插件开发](docs/backend-plugins.md)。
 
 ## Workflow CLI
 
@@ -144,7 +144,7 @@ rvf workflow node run <workflowId> <nodeId> \
 # 使用视觉模型执行图片或视频节点
 rvf workflow node run <workflowId> <nodeId> \
   --prompt "电影感火星基地，纵向构图" \
-  --model-id dreamina
+  --model-id doubao-seedance-2
 
 # 查看并调用插件命令
 rvf plugin list

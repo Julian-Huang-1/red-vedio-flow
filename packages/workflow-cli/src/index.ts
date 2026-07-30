@@ -458,9 +458,11 @@ async function runEdgeCommand(args: string[], flags: ParsedArgs['flags'], option
 async function runVisualCommand(command: string | undefined, args: string[], flags: ParsedArgs['flags']) {
   if (command !== 'query') throw new Error(`unknown visual command: ${command ?? ''}`)
   const submitId = required(args[0] ?? readStringFlag(flags['submit-id']), 'submitId')
+  const provider = required(readStringFlag(flags.provider), 'provider')
   const wait = readBooleanFlag(flags.wait, false)
   const outcome = await waitForVisualTask({
     submitId,
+    provider,
     wait,
     pollIntervalMs: readPollInterval(flags),
     timeoutMs: readTimeout(flags),
@@ -483,6 +485,7 @@ type VisualTaskWaitOutcome = {
 
 async function waitForVisualTask(input: {
   submitId: string
+  provider: string
   wait: boolean
   pollIntervalMs: number
   timeoutMs: number
@@ -492,7 +495,7 @@ async function waitForVisualTask(input: {
 
   while (true) {
     attempts += 1
-    const { task } = await fetchVisualTaskBySubmitId(input.submitId)
+    const { task } = await fetchVisualTaskBySubmitId(input.submitId, input.provider)
     if (isTerminalVisualTask(task) || !input.wait) {
       return { task, attempts, timedOut: false }
     }
@@ -620,12 +623,14 @@ async function executeNode(input: {
   const { workflow, node, upstream, prompt, flags } = input
 
   if (node.data.materialType === 'image' || node.data.materialType === 'video') {
+    const modelId = readStringFlag(flags['model-id'])
+    if (!modelId) throw new Error('--model-id is required for image/video nodes')
     const result = await runVisualNode({
       node,
       upstream,
       edges: workflow.graph.edges,
       prompt,
-      modelId: readStringFlag(flags['model-id']),
+      modelId,
       workflowId: workflow.id,
     })
     if (result.taskStatus === 'failed') {
@@ -648,7 +653,7 @@ async function executeNode(input: {
         fileName: result.fileName,
         mimeType: result.mimeType,
         submitId: result.submitId,
-        provider: 'dreamina',
+        provider: modelId,
       },
       message,
     }
@@ -895,7 +900,7 @@ function printHelp() {
         purpose: 'Run a text node end-to-end. The CLI handles start, heartbeat, agent call, complete, and fail.',
       },
       {
-        command: 'rvf workflow node run <workflowId> <nodeId> --prompt "..." --model-id dreamina',
+        command: 'rvf workflow node run <workflowId> <nodeId> --prompt "..." --model-id <visualProviderId>',
         purpose: 'Submit an image/video node. The local server owns durable polling and writes the terminal result back.',
       },
       {

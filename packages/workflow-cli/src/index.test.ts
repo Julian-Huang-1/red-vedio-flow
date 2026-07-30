@@ -66,7 +66,7 @@ beforeEach(async () => {
     id: 'visual-task-test',
     workflowId: workflow.id,
     nodeId: 'video-running',
-    provider: 'dreamina',
+    provider: 'test-visual',
     nodeKind: 'video',
     submitId: 'submit-video',
     status: 'succeeded',
@@ -121,7 +121,7 @@ beforeEach(async () => {
                 nodeId: node.id,
                 value: {
                   submitId: 'submit-video',
-                  provider: 'dreamina',
+                  provider: 'test-visual',
                   url: '/api/assets/generated/result.mp4',
                   localPath: '/tmp/result.mp4',
                   fileName: 'result.mp4',
@@ -260,10 +260,16 @@ describe('workflow CLI visual recovery', () => {
       title: 'Running video',
     })
     video.data.status = 'running'
-    video.data.value = { submitId: 'submit-video', provider: 'dreamina' }
+    video.data.value = { submitId: 'submit-video', provider: 'test-visual' }
     workflow = createWorkflow([video])
 
-    const query = await runCli(['visual', 'query', 'submit-video', '--node-kind=video'])
+    const query = await runCli([
+      'visual',
+      'query',
+      'submit-video',
+      '--provider=test-visual',
+      '--node-kind=video',
+    ])
     expect(query.task).toMatchObject({
       status: 'succeeded',
       result: { taskStatus: 'success', url: '/api/assets/generated/result.mp4' },
@@ -280,7 +286,7 @@ describe('workflow CLI visual recovery', () => {
       status: 'done',
       value: {
         submitId: 'submit-video',
-        provider: 'dreamina',
+        provider: 'test-visual',
         url: '/api/assets/generated/result.mp4',
         fileName: 'result.mp4',
       },

@@ -6,6 +6,7 @@ import type {
   ImageNodeResult,
   NodeResult,
   NodeRunInput,
+  NodeRunTrace,
   TextNodeResult,
   VideoNodeResult,
 } from '@red-video-flow/workflow-core'
@@ -43,6 +44,14 @@ export async function executeWorkflowNodeRun(
     runId: execution.runId,
     workflowRevision: runningRevision,
   })
+  updateTrace(runtime, execution, {
+    runId: execution.runId,
+    nodeId: execution.nodeId,
+    providerId: execution.input.model.providerId,
+    modelId: execution.input.model.modelId,
+    composer: sanitizeTraceValue(execution.input) as NodeRunInput,
+    startedAt: Date.now(),
+  })
 
   try {
     const configType = execution.input.generationConfig.type
@@ -65,8 +74,10 @@ export async function executeWorkflowNodeRun(
       resultIds: results.map((result) => result.id),
       workflowRevision,
     })
+    finishTrace(runtime, execution, {})
   } catch (error) {
     const normalized = normalizeError(error)
+    finishTrace(runtime, execution, { error: normalized.message })
     const workflowRevision = persistNodeStatus(runtime, execution, 'error')
     execution.emit({
       type: 'error',
@@ -180,6 +191,7 @@ async function executeText(
     runtime.config.maasApiKey,
     request,
     execution.signal,
+    (networkRequest) => appendNetworkRequest(runtime, execution, networkRequest),
   )
 
   let payload: unknown
@@ -194,6 +206,7 @@ async function executeText(
   } else {
     payload = await readProviderJson(response)
   }
+  updateTrace(runtime, execution, { response: payload })
 
   const record = asRecord(payload)
   const text = streamedText || extractOutputText(record)
@@ -209,7 +222,7 @@ async function executeText(
     sourceResultId: resultId,
     providerId: execution.input.model.providerId,
     modelId: execution.input.model.modelId,
-    prompt: execution.input.prompt,
+    prompt: resolveProviderPrompt(execution.input),
     generationConfig: execution.input.generationConfig as unknown as Record<string, unknown>,
   })
   runtime.backend.resources.bind({
@@ -322,7 +335,7 @@ async function executePluginVisual(
   const downloadDir = join(runtime.backend.assets.generatedDir, execution.runId)
   const upstream = await pluginUpstreamNodes(runtime, execution.input)
   const providerOptions = generationConfigOptions(execution.input)
-  let result = await runtime.backend.visual.invoke({
+  const request = {
     executionId: execution.runId,
     idempotencyKey: execution.runId,
     modelId: execution.input.model.modelId,
@@ -331,6 +344,10 @@ async function executePluginVisual(
     upstream,
     providerOptions,
     downloadDir,
+  }
+  updateTrace(runtime, execution, { providerInput: request })
+  let result = await runtime.backend.visual.invoke({
+    ...request,
     assetUrlForPath: (filePath) => runtime.backend.assets.assetUrlForPath(filePath),
     onEvent: (event) => {
       if (event.type === 'meta') {
@@ -351,6 +368,9 @@ async function executePluginVisual(
           index: event.index,
           base64: event.base64,
         })
+      }
+      if (event.type === 'network-request') {
+        appendNetworkRequest(runtime, execution, event.request)
       }
     },
   })
@@ -374,7 +394,75 @@ async function executePluginVisual(
       )
     }
   }
+  updateTrace(runtime, execution, { response: result })
   return { ...result, submitId: result.submitId ?? submitId }
+}
+
+function updateTrace(
+  runtime: LocalServerRuntime,
+  execution: ExecuteInput,
+  patch: Record<string, unknown>,
+) {
+  const runs = runtime.backend.runs
+  if (!runs) return
+  const existing = runs.getNodeRun(execution.runId)?.trace
+  if (!existing && !('runId' in patch)) return
+  const sanitizedPatch = sanitizeTraceValue(patch) as Record<string, unknown>
+  runs.updateNodeRunTrace(execution.runId, {
+    ...(existing ?? patch),
+    ...sanitizedPatch,
+  } as NodeRunTrace)
+}
+
+function finishTrace(
+  runtime: LocalServerRuntime,
+  execution: ExecuteInput,
+  patch: Record<string, unknown>,
+) {
+  const runs = runtime.backend.runs
+  if (!runs) return
+  const trace = runs.getNodeRun(execution.runId)?.trace
+  if (!trace) return
+  const finishedAt = Date.now()
+  updateTrace(runtime, execution, {
+    ...patch,
+    finishedAt,
+    durationMs: finishedAt - trace.startedAt,
+  })
+}
+
+function appendNetworkRequest(
+  runtime: LocalServerRuntime,
+  execution: ExecuteInput,
+  request: NonNullable<NodeRunTrace['networkRequests']>[number],
+) {
+  const trace = runtime.backend.runs?.getNodeRun(execution.runId)?.trace
+  updateTrace(runtime, execution, {
+    networkRequests: [...(trace?.networkRequests ?? []), request],
+  })
+}
+
+const secretKeyPattern = /(authorization|api[-_]?key|token|secret|password|cookie)/i
+
+function sanitizeTraceValue(value: unknown, key = ''): unknown {
+  if (secretKeyPattern.test(key)) return '[REDACTED]'
+  if (typeof value === 'string') {
+    if (/^data:[^;]+;base64,/i.test(value)) {
+      const mimeType = value.slice(5, value.indexOf(';'))
+      return `[${mimeType} base64 omitted]`
+    }
+    return value
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeTraceValue(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        sanitizeTraceValue(entryValue, entryKey),
+      ]),
+    )
+  }
+  return value
 }
 
 async function pluginUpstreamNodes(
@@ -419,6 +507,13 @@ function generationConfigOptions(input: NodeRunInput) {
     previousResponseId?: string
   }
   return { ...options, ...providerOptions }
+}
+
+function resolveProviderPrompt(input: NodeRunInput) {
+  const upstreamText = input.upstreamResults
+    .map((result) => result.text?.trim())
+    .filter((text): text is string => Boolean(text))
+  return [...upstreamText, input.prompt.trim()].filter(Boolean).join('\n\n')
 }
 
 function registerPluginAssets(
@@ -504,14 +599,24 @@ async function providerFetch(
   apiKey: string,
   body: unknown,
   signal: AbortSignal,
+  onRequest?: (request: NonNullable<NodeRunTrace['networkRequests']>[number]) => void,
 ) {
   requireKey(apiKey, 'provider API key')
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  }
+  onRequest?.({
+    transport: 'http',
+    method: 'POST',
+    url,
+    headers,
+    body,
+    recordedAt: Date.now(),
+  })
   return fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
     signal,
   })

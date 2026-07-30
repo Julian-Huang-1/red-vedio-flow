@@ -57,7 +57,7 @@ type VisualRunResult = {
 
 ```ts
 const result: VisualRunResult = {
-  submitId: 'dreamina-123',
+  submitId: 'visual-123',
   url: '/api/assets/generated/cover.png',
   localPath: '/Users/.../generated/cover.png',
   fileName: 'cover.png',
@@ -293,7 +293,7 @@ const result = await runWorkflowNode(
   {
     runTextAgent: async () => '',
     runVisualModel: async () => ({
-      submitId: 'dreamina-123',
+      submitId: 'visual-123',
       url: '/api/assets/generated/image.png',
       localPath: '/Users/.../generated/image.png',
       fileName: 'image.png',
@@ -314,10 +314,10 @@ const result = await runWorkflowNode(
     localPath: '/Users/.../generated/image.png',
     fileName: 'image.png',
     mimeType: 'image/generated',
-    submitId: 'dreamina-123',
-    provider: 'dreamina',
+    submitId: 'visual-123',
+    provider: 'test-visual',
   },
-  assistantMessage: '已通过即梦生成视觉素材。',
+  assistantMessage: '已生成视觉素材。',
 }
 ```
 
@@ -329,8 +329,8 @@ const result = await runWorkflowNode(
 const result = await runWorkflowNode(input, {
   runTextAgent: async () => '',
   runVisualModel: async () => ({
-    submitId: 'dreamina-123',
-    text: '已提交即梦生成任务：dreamina-123',
+    submitId: 'visual-123',
+    text: '已提交视觉生成任务：visual-123',
   }),
 })
 ```
@@ -341,11 +341,11 @@ const result = await runWorkflowNode(input, {
 {
   status: 'running',
   value: {
-    text: '已提交即梦生成任务：dreamina-123',
-    submitId: 'dreamina-123',
-    provider: 'dreamina',
+    text: '已提交视觉生成任务：visual-123',
+    submitId: 'visual-123',
+    provider: 'test-visual',
   },
-  assistantMessage: '已提交即梦生成任务：dreamina-123',
+  assistantMessage: '已提交视觉生成任务：visual-123',
 }
 ```
 
@@ -447,4 +447,3 @@ runWorkflowNode(input, {
 ```
 
 这样 runtime 保持可测试，client 保持可替换。
-

@@ -32,7 +32,7 @@ function addVideoNode(localBackend: LocalBackend, input: { status?: 'empty' | 'r
   })
   node.data.status = input.status ?? 'empty'
   if (input.submitId) {
-    node.data.value = { submitId: input.submitId, provider: 'dreamina', text: '生成中' }
+    node.data.value = { submitId: input.submitId, provider: 'test-visual', text: '生成中' }
   }
   const patched = localBackend.workflows.patch({
     id: workflow.id,
@@ -49,7 +49,7 @@ describe('VisualTaskService', () => {
     const task = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     const submitted = localBackend.visualTasks.markSubmitted(task.id, 'submit-success')
@@ -71,7 +71,7 @@ describe('VisualTaskService', () => {
     expect(completedWorkflow?.graph.nodes[0].data.status).toBe('done')
     expect(completedWorkflow?.graph.nodes[0].data.value).toMatchObject({
       submitId: 'submit-success',
-      provider: 'dreamina',
+      provider: 'test-visual',
       fileName: 'result.mp4',
       mimeType: 'video/mp4',
     })
@@ -86,7 +86,7 @@ describe('VisualTaskService', () => {
 
     expect(localBackend.visualTasks.bootstrap()).toEqual({ imported: 1 })
     expect(localBackend.visualTasks.bootstrap()).toEqual({ imported: 0 })
-    expect(localBackend.visualTasks.findBySubmitId('dreamina', 'legacy-submit')).toMatchObject({
+    expect(localBackend.visualTasks.findBySubmitId('test-visual', 'legacy-submit')).toMatchObject({
       workflowId: workflow.id,
       nodeId: 'video-1',
       status: 'polling',
@@ -99,7 +99,7 @@ describe('VisualTaskService', () => {
     const task = firstBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     const submitted = firstBackend.visualTasks.markSubmitted(task.id, 'submit-success')
@@ -127,14 +127,14 @@ describe('VisualTaskService', () => {
     const first = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     localBackend.visualTasks.markSubmitted(first.id, 'submit-old')
     const second = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     localBackend.visualTasks.markSubmitted(second.id, 'submit-new')
@@ -158,7 +158,7 @@ describe('VisualTaskService', () => {
     const first = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     const submitted = localBackend.visualTasks.markSubmitted(first.id, 'submit-old')
@@ -187,7 +187,7 @@ describe('VisualTaskService', () => {
     const second = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     localBackend.visualTasks.markSubmitted(second.id, 'submit-new')
@@ -211,7 +211,7 @@ describe('VisualTaskService', () => {
     const task = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: node.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
     localBackend.visualTasks.markSubmitted(task.id, 'submit-retry')

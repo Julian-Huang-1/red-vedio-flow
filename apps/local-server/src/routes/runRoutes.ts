@@ -267,11 +267,16 @@ async function runVisual(runtime: LocalServerRuntime, ctx: RequestContext) {
   const workflowId = typeof body.workflowId === 'string' ? body.workflowId : undefined
   const nodeId = typeof body.currentNode?.id === 'string' ? body.currentNode.id : undefined
   const nodeKind = body.nodeKind === 'image' || body.nodeKind === 'video' ? body.nodeKind : undefined
+  const modelId = typeof body.modelId === 'string' ? body.modelId : undefined
+  if (!modelId) {
+    sendJson(res, 400, { error: 'modelId is required' })
+    return
+  }
   const visualTask = workflowId && nodeId && nodeKind
     ? backend.visualTasks.start({
         workflowId,
         nodeId,
-        provider: body.modelId ?? 'dreamina',
+        provider: modelId,
         nodeKind,
       })
     : undefined
@@ -287,7 +292,7 @@ async function runVisual(runtime: LocalServerRuntime, ctx: RequestContext) {
   backend.visual.invoke({
     executionId: visualTask?.id,
     idempotencyKey: visualTask?.id,
-    modelId: body.modelId ?? 'dreamina',
+    modelId,
     nodeKind: body.nodeKind,
     prompt: body.prompt,
     upstream: body.upstream,

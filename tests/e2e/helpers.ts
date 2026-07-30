@@ -160,8 +160,8 @@ export async function mockVisualModels(page: Page) {
       body: JSON.stringify({
         models: [
           {
-            id: 'dreamina',
-            label: 'E2E Dreamina',
+            id: 'test-visual',
+            label: 'E2E Visual Provider',
             vendor: 'Test',
             available: true,
             invokable: true,

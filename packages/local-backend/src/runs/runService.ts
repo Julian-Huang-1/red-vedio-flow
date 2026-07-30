@@ -4,6 +4,7 @@ import type {
   NodeResult,
   NodeRun,
   NodeRunInput,
+  NodeRunTrace,
   NodeStatus,
 } from '@red-video-flow/workflow-core'
 import { isDeepStrictEqual } from 'node:util'
@@ -158,6 +159,18 @@ export class RunService {
       providerTask: input,
     })
     return toNodeRun(next)
+  }
+
+  updateNodeRunTrace(runId: string, trace: NodeRunTrace) {
+    const run = this.requireNodeRun(runId)
+    const now = Date.now()
+    this.repository.save({
+      ...run,
+      trace,
+      updatedAt: now,
+      heartbeatAt: now,
+    })
+    return trace
   }
 
   completeNodeRun(runId: string, results: NodeResult[], workflowRevision?: number) {
@@ -500,6 +513,7 @@ function toNodeRun(run: WorkflowRun): NodeRun {
     updatedAt: run.updatedAt ?? run.heartbeatAt,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
+    trace: run.trace,
   }
 }
 

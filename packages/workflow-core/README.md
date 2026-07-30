@@ -98,8 +98,8 @@ const value: MaterialValue = {
   localPath: '/Users/name/project/apps/local-server/.data/generated/cover.png',
   fileName: 'cover.png',
   mimeType: 'image/generated',
-  submitId: 'dreamina-123',
-  provider: 'dreamina',
+  submitId: 'visual-123',
+  provider: 'test-visual',
 }
 ```
 
@@ -612,8 +612,7 @@ const doneImageNode = applyMaterialNodeRunResult(imageNode, {
     url: '/api/assets/generated/image-1.png',
     fileName: 'image-1.png',
     mimeType: 'image/generated',
-    provider: 'dreamina',
+    provider: 'test-visual',
   },
 })
 ```
-

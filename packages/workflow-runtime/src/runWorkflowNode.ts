@@ -69,7 +69,7 @@ export async function runWorkflowNode(
   try {
     if (node.data.materialType === 'image' || node.data.materialType === 'video') {
       const result = await adapters.runVisualModel({ node, upstream, edges, prompt })
-      const resultText = result.text || `已提交即梦生成任务${result.submitId ? `：${result.submitId}` : ''}`
+      const resultText = result.text || `已提交视觉生成任务${result.submitId ? `：${result.submitId}` : ''}`
 
       return {
         status: result.url ? 'done' : 'running',
@@ -81,9 +81,9 @@ export async function runWorkflowNode(
           fileName: result.fileName,
           mimeType: result.mimeType,
           submitId: result.submitId,
-          provider: 'dreamina',
+          provider: node.data.visualProviderId,
         },
-        assistantMessage: result.url ? '已通过即梦生成视觉素材。' : resultText,
+        assistantMessage: result.url ? '已生成视觉素材。' : resultText,
       }
     }
 

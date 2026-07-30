@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, inArray } from 'drizzle-orm'
-import type { NodeRunInput, NodeRunStatus } from '@red-video-flow/workflow-core'
+import type { NodeRunInput, NodeRunStatus, NodeRunTrace } from '@red-video-flow/workflow-core'
 import type { LocalDatabase } from '../db/client.js'
 import { nodeRunEvents, runs } from '../db/schema.js'
 
@@ -30,6 +30,7 @@ export type WorkflowRun = {
   providerResponseId?: string
   resultIds?: string[]
   result?: unknown
+  trace?: NodeRunTrace
   error?: string
   errorCode?: string
   errorRetryable?: boolean
@@ -129,6 +130,7 @@ function toRun(row: RunRow): WorkflowRun {
     providerResponseId: row.providerResponseId ?? undefined,
     resultIds: row.resultIdsJson ? JSON.parse(row.resultIdsJson) : [],
     result: row.resultJson ? JSON.parse(row.resultJson) : undefined,
+    trace: row.traceJson ? JSON.parse(row.traceJson) : undefined,
     error: row.error ?? undefined,
     errorCode: row.errorCode ?? undefined,
     errorRetryable: row.errorRetryable === null ? undefined : Boolean(row.errorRetryable),
@@ -154,6 +156,7 @@ function toRowValues(run: WorkflowRun): typeof runs.$inferInsert {
     providerResponseId: run.providerResponseId ?? null,
     resultIdsJson: JSON.stringify(run.resultIds ?? []),
     resultJson: run.result === undefined ? null : JSON.stringify(run.result),
+    traceJson: run.trace === undefined ? null : JSON.stringify(run.trace),
     error: run.error ?? null,
     errorCode: run.errorCode ?? null,
     errorRetryable: run.errorRetryable === undefined ? null : Number(run.errorRetryable),

@@ -5,6 +5,7 @@ import type {
   MaterialNode,
   MaterialValue,
   NodeRunInput,
+  NodeRunTrace,
   WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
 import type { AssetService } from '../assets/assetService.js'
@@ -153,17 +154,31 @@ export class VisualTaskService {
       nodeKind: run.inputSnapshot.generationConfig.type === 'openai-image' ? 'image' : 'video',
       inputSnapshot: run.inputSnapshot,
     })
+    const upstream = await this.upstreamNodes(run.inputSnapshot)
+    const request = {
+      executionId: task.id,
+      idempotencyKey: runId,
+      modelId: run.inputSnapshot.model.modelId,
+      nodeKind: task.nodeKind,
+      prompt: resolveProviderPrompt(run.inputSnapshot),
+      upstream,
+      providerOptions: generationConfigOptions(run.inputSnapshot),
+      downloadDir: join(this.assets.generatedDir, runId),
+    }
+    this.runs.updateNodeRunTrace(runId, sanitizeTrace({
+      runId,
+      nodeId: run.nodeId,
+      providerId: run.inputSnapshot.model.providerId,
+      modelId: run.inputSnapshot.model.modelId,
+      composer: run.inputSnapshot,
+      providerInput: request,
+      networkRequests: [],
+      startedAt: Date.now(),
+    }) as NodeRunTrace)
 
     try {
       const result = await this.visual.invoke({
-        executionId: task.id,
-        idempotencyKey: runId,
-        modelId: run.inputSnapshot.model.modelId,
-        nodeKind: task.nodeKind,
-        prompt: run.inputSnapshot.prompt,
-        upstream: await this.upstreamNodes(run.inputSnapshot),
-        providerOptions: generationConfigOptions(run.inputSnapshot),
-        downloadDir: join(this.assets.generatedDir, runId),
+        ...request,
         assetUrlForPath: (filePath) => this.assets.assetUrlForPath(filePath),
         onEvent: (event) => {
           if (event.type === 'meta') {
@@ -182,10 +197,15 @@ export class VisualTaskService {
               mimeType: event.mimeType,
             })
           }
+          if (event.type === 'network-request') {
+            this.appendNetworkRequest(task, event.request)
+          }
         },
       })
+      this.updateRunTrace(task, { response: result })
       return this.recordInitialResult(task.id, result)
     } catch (error) {
+      this.updateRunTrace(task, { error: error instanceof Error ? error.message : String(error) })
       return this.failSubmission(task.id, error)
     }
   }
@@ -273,7 +293,8 @@ export class VisualTaskService {
         ) {
           continue
         }
-        const provider = node.data.value.provider ?? 'dreamina'
+        const provider = node.data.value.provider
+        if (!provider) continue
         if (this.repository.findBySubmitId(provider, submitId)) continue
         const active = this.repository.findActiveForNode(workflow.id, node.id)
         if (active) {
@@ -371,6 +392,9 @@ export class VisualTaskService {
         nodeKind: task.nodeKind,
         downloadDir: join(this.assets.generatedDir, `task-${task.submitId}`),
         assetUrlForPath: (filePath) => this.assets.assetUrlForPath(filePath),
+        onEvent: (event) => {
+          if (event.type === 'network-request') this.appendNetworkRequest(task, event.request)
+        },
       })
       const nextTask = this.requireTask(task.id)
       if (nextTask.status !== 'polling' || nextTask.leaseOwner !== owner) return 'pending'
@@ -472,8 +496,37 @@ export class VisualTaskService {
       ? this.repository.saveClaimed(nextTask, leaseOwner)
       : this.repository.save(nextTask)
     if (!finished) return this.requireTask(task.id)
+    this.updateRunTrace(finished, {
+      response: result,
+      error: lastError,
+      finishedAt: now,
+    })
     this.projectTerminal(finished, message)
     return this.requireTask(task.id)
+  }
+
+  private updateRunTrace(task: VisualTaskRecord, patch: Record<string, unknown>) {
+    if (!task.runId) return
+    const trace = this.runs.getNodeRun(task.runId)?.trace
+    if (!trace) return
+    const finishedAt = typeof patch.finishedAt === 'number' ? patch.finishedAt : undefined
+    this.runs.updateNodeRunTrace(task.runId, sanitizeTrace({
+      ...trace,
+      ...patch,
+      durationMs: finishedAt ? finishedAt - trace.startedAt : trace.durationMs,
+    }) as NodeRunTrace)
+  }
+
+  private appendNetworkRequest(
+    task: VisualTaskRecord,
+    request: NonNullable<NodeRunTrace['networkRequests']>[number],
+  ) {
+    if (!task.runId) return
+    const trace = this.runs.getNodeRun(task.runId)?.trace
+    if (!trace) return
+    this.updateRunTrace(task, {
+      networkRequests: [...(trace.networkRequests ?? []), request],
+    })
   }
 
   private projectSubmitted(task: VisualTaskRecord) {
@@ -641,6 +694,36 @@ function generationConfigOptions(input: NodeRunInput) {
     previousResponseId?: string
   }
   return { ...options, ...providerOptions }
+}
+
+function resolveProviderPrompt(input: NodeRunInput) {
+  const upstreamText = input.upstreamResults
+    .map((result) => result.text?.trim())
+    .filter((text): text is string => Boolean(text))
+  return [...upstreamText, input.prompt.trim()].filter(Boolean).join('\n\n')
+}
+
+const traceSecretKeyPattern = /(authorization|api[-_]?key|token|secret|password|cookie)/i
+
+function sanitizeTrace(value: unknown, key = ''): unknown {
+  if (traceSecretKeyPattern.test(key)) return '[REDACTED]'
+  if (typeof value === 'string') {
+    if (/^data:[^;]+;base64,/i.test(value)) {
+      const mimeType = value.slice(5, value.indexOf(';'))
+      return `[${mimeType} base64 omitted]`
+    }
+    return value
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeTrace(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        sanitizeTrace(entryValue, entryKey),
+      ]),
+    )
+  }
+  return value
 }
 
 function createVisualTaskId() {

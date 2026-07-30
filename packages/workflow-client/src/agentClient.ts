@@ -260,7 +260,7 @@ export async function runVisualNode(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      modelId: payload.modelId ?? 'dreamina',
+      modelId: payload.modelId,
       providerOptions: payload.providerOptions,
       workflowId: payload.workflowId,
       nodeKind: payload.node.data.materialType,
@@ -312,7 +312,7 @@ export async function runVisualNode(
   return result
 }
 
-export async function fetchVisualTaskBySubmitId(submitId: string, provider = 'dreamina') {
+export async function fetchVisualTaskBySubmitId(submitId: string, provider: string) {
   const response = await getWorkflowClientTransport().request(
     `/api/visual-tasks?provider=${encodeURIComponent(provider)}&submitId=${encodeURIComponent(submitId)}`,
   )

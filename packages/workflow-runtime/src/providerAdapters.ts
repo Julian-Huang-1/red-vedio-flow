@@ -148,7 +148,7 @@ function buildOpenAIContent(input: NodeRunInput): OpenAIInputContent[] {
   const upstreamText = input.upstreamResults
     .map((result) => result.text?.trim())
     .filter((text): text is string => Boolean(text))
-  const text = [input.prompt.trim(), ...upstreamText].filter(Boolean).join('\n\n')
+  const text = [...upstreamText, input.prompt.trim()].filter(Boolean).join('\n\n')
   const content: OpenAIInputContent[] = []
   if (text) content.push({ type: 'input_text', text })
   for (const asset of allAssets(input)) {
@@ -178,7 +178,7 @@ function buildVideoPrompt(
     config.watermark === undefined ? '' : `--watermark ${config.watermark}`,
     config.seed === undefined ? '' : `--seed ${config.seed}`,
   ].filter(Boolean)
-  return [[prompt.trim(), ...upstreamText].filter(Boolean).join('\n\n'), ...flags]
+  return [[...upstreamText, prompt.trim()].filter(Boolean).join('\n\n'), ...flags]
     .filter(Boolean)
     .join('  ')
 }

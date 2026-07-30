@@ -77,6 +77,7 @@ export const runs = sqliteTable('runs', {
   providerResponseId: text('provider_response_id'),
   resultIdsJson: text('result_ids_json').notNull().default('[]'),
   resultJson: text('result_json'),
+  traceJson: text('trace_json'),
   error: text('error'),
   errorCode: text('error_code'),
   errorRetryable: integer('error_retryable'),

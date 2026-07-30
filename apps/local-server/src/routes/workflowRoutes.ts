@@ -11,10 +11,10 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
   }
 
   if (req.method === 'GET' && pathname === '/api/visual-tasks') {
-    const provider = url.searchParams.get('provider') ?? 'dreamina'
+    const provider = url.searchParams.get('provider')?.trim()
     const submitId = url.searchParams.get('submitId')?.trim()
-    if (!submitId) {
-      sendJson(res, 400, { error: 'submitId is required' })
+    if (!provider || !submitId) {
+      sendJson(res, 400, { error: 'provider and submitId are required' })
       return true
     }
     const task = backend.visualTasks.findBySubmitId(provider, submitId)

@@ -83,12 +83,12 @@ type VisualModel = {
 
 ```ts
 const model: VisualModel = {
-  id: 'dreamina',
-  label: '即梦 Dreamina',
+  id: 'doubao-seedance-2',
+  label: '豆包 Seedance 2.0',
   vendor: 'ByteDance',
   available: true,
   invokable: true,
-  binPath: '/usr/local/bin/dreamina',
+  binPath: null,
   capabilities: ['text2image', 'image2video'],
 }
 ```
@@ -208,7 +208,7 @@ type VisualRunResult = {
 
 ```ts
 const result: VisualRunResult = {
-  submitId: 'dreamina-123',
+  submitId: 'visual-123',
   url: '/api/assets/generated/output.png',
   localPath: '/Users/.../generated/output.png',
   fileName: 'output.png',
@@ -256,7 +256,7 @@ GET /api/visual-models
 
 ```ts
 const response = await fetchVisualModels()
-const dreamina = response.models.find((model) => model.id === 'dreamina')
+const seedance = response.models.find((model) => model.id === 'doubao-seedance-2')
 ```
 
 失败时会抛出：
@@ -367,7 +367,7 @@ POST /api/run-visual-node
 
 ```ts
 {
-  modelId: payload.modelId ?? 'dreamina',
+  modelId: payload.modelId,
   workflowId: payload.workflowId,
   nodeKind: payload.node.data.materialType,
   prompt: payload.prompt,
@@ -393,7 +393,7 @@ const result = await runVisualNode({
 
 ```ts
 const result = await runVisualNode({
-  modelId: 'dreamina',
+  modelId: 'doubao-seedance-2',
   workflowId,
   node: videoNode,
   upstream,

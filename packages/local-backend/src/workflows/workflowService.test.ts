@@ -101,7 +101,7 @@ describe('WorkflowService', () => {
     const task = localBackend.visualTasks.start({
       workflowId: workflow.id,
       nodeId: videoNode.id,
-      provider: 'dreamina',
+      provider: 'test-visual',
       nodeKind: 'video',
     })
 

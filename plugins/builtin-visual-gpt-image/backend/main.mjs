@@ -180,13 +180,22 @@ async function requestResponses(executionId, body, imageGenerationDeployment) {
   const controller = new AbortController()
   active.set(executionId, controller)
   try {
-    const response = await fetch(endpoint('/responses'), {
+    const url = endpoint('/responses')
+    const headers = {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+      'x-ms-oai-image-generation-deployment': imageGenerationDeployment,
+    }
+    emit(executionId, 'debug_http_request', {
       method: 'POST',
-      headers: {
-        'api-key': apiKey,
-        'Content-Type': 'application/json',
-        'x-ms-oai-image-generation-deployment': imageGenerationDeployment,
-      },
+      url,
+      headers,
+      body,
+      recordedAt: Date.now(),
+    })
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     })
@@ -267,12 +276,20 @@ async function requestJson(executionId, url, init) {
   const controller = new AbortController()
   active.set(executionId, controller)
   try {
+    const headers = {
+      'api-key': apiKey,
+      ...init.headers,
+    }
+    emit(executionId, 'debug_http_request', {
+      method: init.method ?? 'GET',
+      url,
+      headers,
+      body: describeRequestBody(init.body),
+      recordedAt: Date.now(),
+    })
     const response = await fetch(url, {
       ...init,
-      headers: {
-        'api-key': apiKey,
-        ...init.headers,
-      },
+      headers,
       signal: controller.signal,
     })
     const text = await response.text()
@@ -296,6 +313,21 @@ async function requestJson(executionId, url, init) {
   } finally {
     active.delete(executionId)
   }
+}
+
+function describeRequestBody(body) {
+  if (typeof body === 'string') return parseJson(body)
+  if (body instanceof FormData) {
+    return {
+      type: 'multipart/form-data',
+      fields: Array.from(body.entries()).map(([name, value]) => (
+        typeof value === 'string'
+          ? { name, value }
+          : { name, fileName: value.name, mimeType: value.type, size: value.size }
+      )),
+    }
+  }
+  return body
 }
 
 async function assetBlob(asset) {

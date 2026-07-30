@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Check, Copy, FileText, Image, LoaderCircle, Pencil, Upload, Video } from 'lucide-react'
+import { Bug, Check, Copy, FileText, Image, LoaderCircle, Pencil, Upload, Video } from 'lucide-react'
 import { useTaskStore } from '@/stores/taskStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { createResourceBinding, uploadAsset } from '@red-video-flow/workflow-client'
@@ -8,6 +8,7 @@ import { queryClient } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { NodeComposer } from './NodeComposer'
+import { NodeDebugDrawer } from './NodeDebugDrawer'
 import type { WorkflowFlowNode, WorkflowNodeKind } from './workflowTypes'
 
 const nodePresentation = {
@@ -34,6 +35,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const [uploadError, setUploadError] = useState<string>()
   const [editingText, setEditingText] = useState(false)
   const [textDraft, setTextDraft] = useState('')
+  const [debugOpen, setDebugOpen] = useState(false)
   const contentFileInputRef = useRef<HTMLInputElement>(null)
   const presentation = nodePresentation[data.kind]
   const Icon = presentation.icon
@@ -244,6 +246,23 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
               type="button"
               variant="ghost"
               size="icon"
+              className="nodrag nopan size-7 text-muted-foreground hover:text-foreground"
+              aria-label="查看节点 Debug"
+              title={data.latestRunId ? '查看节点 Debug' : '运行节点后可查看 Debug'}
+              disabled={!data.latestRunId}
+              data-workflow-node-debug=""
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                setDebugOpen(true)
+              }}
+            >
+              <Bug className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               className="nodrag nopan -mr-1 size-7 text-muted-foreground hover:text-foreground"
               aria-label="复制节点内容"
               title={copyableContent ? '复制节点内容' : '暂无可复制内容'}
@@ -345,6 +364,12 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           {data.workflowInput.required ? ' · 必填' : ' · 可选'}
         </div>
       ) : null}
+      <NodeDebugDrawer
+        open={debugOpen}
+        runId={data.latestRunId}
+        nodeTitle={data.title}
+        onOpenChange={setDebugOpen}
+      />
     </article>
   )
 }

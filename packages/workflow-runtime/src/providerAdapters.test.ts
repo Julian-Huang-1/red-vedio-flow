@@ -16,6 +16,7 @@ describe('provider request adapters', () => {
         resultId: 'result-1',
         resultType: 'image',
         assets: [{ id: 'upstream', kind: 'image', url: 'https://assets/upstream.png' }],
+        text: '保持上一节点的暖色调',
       }],
       model: { providerId: 'openai', modelId: 'gpt-5' },
       generationConfig: {
@@ -37,7 +38,7 @@ describe('provider request adapters', () => {
       input: [{
         role: 'user',
         content: [
-          { type: 'input_text', text: 'cinematic portrait' },
+          { type: 'input_text', text: '保持上一节点的暖色调\n\ncinematic portrait' },
           { type: 'input_image', image_url: 'https://assets/upload.png' },
           { type: 'input_image', image_url: 'https://assets/upstream.png' },
         ],
@@ -60,7 +61,14 @@ describe('provider request adapters', () => {
     const input: NodeRunInput = {
       prompt: 'slow camera movement',
       attachments: [{ id: 'first-frame', kind: 'image', url: 'https://assets/frame.png' }],
-      upstreamResults: [],
+      upstreamResults: [{
+        edgeId: 'edge-text',
+        nodeId: 'text-1',
+        resultId: 'result-text',
+        resultType: 'text',
+        assets: [],
+        text: '夜晚的城市街道',
+      }],
       model: { providerId: 'volcengine-ark', modelId: 'seedance' },
       generationConfig: {
         type: 'volc-video',
@@ -76,7 +84,7 @@ describe('provider request adapters', () => {
     expect(buildVolcVideoCreateTaskRequest(input)).toEqual({
       model: 'seedance',
       content: [
-        { type: 'text', text: 'slow camera movement  --ratio 16:9  --dur 5' },
+        { type: 'text', text: '夜晚的城市街道\n\nslow camera movement  --ratio 16:9  --dur 5' },
         { type: 'image_url', image_url: { url: 'https://assets/frame.png' } },
       ],
       callback_url: 'https://example.test/callback',
