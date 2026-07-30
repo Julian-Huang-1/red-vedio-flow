@@ -83,7 +83,31 @@ export type PiAgentEvent =
       isError: boolean
     }
   | { type: 'run-end'; status: 'completed' | 'stopped' }
+  | {
+      type: 'artifact'
+      artifact: {
+        kind: 'html'
+        title?: string
+        html: string
+      }
+    }
   | { type: 'error'; message: string }
+
+export type PiAgentPromptInput = {
+  message: string
+  modelId?: string
+  agentId?: string
+  contexts: Array<{ kind: string; title: string }>
+  attachments?: AgentAttachment[]
+  workspace?: {
+    type: 'app-builder'
+    currentArtifact?: {
+      id: string
+      version: number
+      html: string
+    }
+  }
+}
 
 export async function listPiAgentModels() {
   const response = await fetch('/api/pi-agent/models')
@@ -135,12 +159,7 @@ export async function deletePiAgentSession(id: string) {
 
 export async function streamPiAgentPrompt(
   sessionId: string,
-  input: {
-    message: string
-    modelId?: string
-    contexts: Array<{ kind: string; title: string }>
-    attachments?: AgentAttachment[]
-  },
+  input: PiAgentPromptInput,
   signal: AbortSignal,
   onEvent: (event: PiAgentEvent) => void,
 ) {

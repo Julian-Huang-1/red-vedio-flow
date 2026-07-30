@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppBuilderRouteImport } from './routes/app-builder'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as WorkflowRouteImport } from './routes/workflow'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppBuilderRoute = AppBuilderRouteImport.update({
+  id: '/app-builder',
+  path: '/app-builder',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HomeRoute = HomeRouteImport.update({
@@ -31,30 +37,34 @@ const WorkflowRoute = WorkflowRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app-builder': typeof AppBuilderRoute
   '/home': typeof HomeRoute
   '/workflow': typeof WorkflowRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app-builder': typeof AppBuilderRoute
   '/home': typeof HomeRoute
   '/workflow': typeof WorkflowRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app-builder': typeof AppBuilderRoute
   '/home': typeof HomeRoute
   '/workflow': typeof WorkflowRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/home' | '/workflow'
+  fullPaths: '/' | '/app-builder' | '/home' | '/workflow'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/home' | '/workflow'
-  id: '__root__' | '/' | '/home' | '/workflow'
+  to: '/' | '/app-builder' | '/home' | '/workflow'
+  id: '__root__' | '/' | '/app-builder' | '/home' | '/workflow'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppBuilderRoute: typeof AppBuilderRoute
   HomeRoute: typeof HomeRoute
   WorkflowRoute: typeof WorkflowRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app-builder': {
+      id: '/app-builder'
+      path: '/app-builder'
+      fullPath: '/app-builder'
+      preLoaderRoute: typeof AppBuilderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/home': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppBuilderRoute: AppBuilderRoute,
   HomeRoute: HomeRoute,
   WorkflowRoute: WorkflowRoute,
 }

@@ -15,10 +15,12 @@ import {
   type PiAgentSessionDetailDto,
   type PiAgentSessionSummaryDto,
 } from './piAgentClient'
+import { useAppBuilderStore } from '../../pages/app-builder/appBuilderStore'
 
 const agents: AgentOption[] = [
   { id: 'workflow-agent', label: '工作流助手', description: '规划和修改视频工作流' },
   { id: 'script-agent', label: '脚本助手', description: '编写脚本与分镜' },
+  { id: 'app-builder-agent', label: 'App Builder', description: '生成和迭代单文件 HTML 应用' },
 ]
 
 const models: AgentModelOption[] = [
@@ -204,8 +206,13 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     const assistantMessageId = createId('message-assistant')
     const runId = createId('run')
     const controller = new AbortController()
+    const appBuilder = get().selectedAgentId === 'app-builder-agent'
+    let appBuilderTerminalHandled = false
     activeRunController?.abort()
     activeRunController = controller
+    if (appBuilder) {
+      useAppBuilderStore.getState().beginGeneration(sessionId)
+    }
 
     set((state) => ({
       activeAssistantMessageId: assistantMessageId,
@@ -230,17 +237,64 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
 
     try {
       const state = get()
+      const currentArtifact = useAppBuilderStore.getState().artifactsBySessionId[sessionId]
       const contexts = state.contextIds
         .map((id) => state.contextsById[id])
         .filter(Boolean)
         .map(({ kind, title }) => ({ kind, title }))
       await runner(
         sessionId,
-        { message: prompt, modelId: state.selectedModelId, contexts, attachments },
+        {
+          message: prompt,
+          modelId: state.selectedModelId,
+          agentId: state.selectedAgentId,
+          contexts,
+          attachments,
+          workspace: appBuilder
+            ? {
+                type: 'app-builder',
+                currentArtifact: currentArtifact
+                  ? {
+                      id: currentArtifact.id,
+                      version: currentArtifact.version,
+                      html: currentArtifact.html,
+                    }
+                  : undefined,
+              }
+            : undefined,
+        },
         controller.signal,
         (event: PiAgentEvent) => {
           if (event.type === 'run-start') {
             set({ runStatus: 'streaming', activeRunId: event.runId })
+            return
+          }
+          if (event.type === 'artifact') {
+            if (appBuilder && event.artifact.kind === 'html') {
+              useAppBuilderStore.getState().stageArtifact({
+                sessionId,
+                title: event.artifact.title,
+                html: event.artifact.html,
+              })
+            }
+            return
+          }
+          if (event.type === 'run-end') {
+            if (appBuilder) {
+              appBuilderTerminalHandled = true
+              if (event.status === 'completed') {
+                useAppBuilderStore.getState().completeGeneration(sessionId)
+              } else {
+                useAppBuilderStore.getState().cancelGeneration(sessionId)
+              }
+            }
+            return
+          }
+          if (event.type === 'error') {
+            if (appBuilder) {
+              appBuilderTerminalHandled = true
+              useAppBuilderStore.getState().failGeneration(sessionId, event.message)
+            }
             return
           }
           if (
@@ -332,6 +386,12 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
           })
         },
       )
+      if (appBuilder && !appBuilderTerminalHandled) {
+        useAppBuilderStore.getState().failGeneration(
+          sessionId,
+          'Agent 连接已结束，但没有收到生成完成事件。',
+        )
+      }
 
       set((state) => ({
         runStatus: 'idle',
@@ -348,6 +408,12 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       }))
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
+      if (appBuilder && !appBuilderTerminalHandled) {
+        useAppBuilderStore.getState().failGeneration(
+          sessionId,
+          error instanceof Error ? error.message : String(error),
+        )
+      }
       set((state) => ({
         runStatus: 'error',
         runError: error instanceof Error ? error.message : String(error),
@@ -449,6 +515,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
         messagesById: remainingMessages,
         activeSessionId: state.activeSessionId === id ? nextIds[0] : state.activeSessionId,
       })
+      useAppBuilderStore.getState().removeArtifact(id)
       if (!nextIds.length) get().createSession()
     },
     toggleHistory: () => set((state) => ({ historyOpen: !state.historyOpen })),
@@ -543,6 +610,9 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       activeRunController.abort()
       void aborter(state.activeSessionId ?? '')
       const messageId = state.activeAssistantMessageId
+      if (state.activeSessionId) {
+        useAppBuilderStore.getState().cancelGeneration(state.activeSessionId)
+      }
       set((current) => ({
         runStatus: 'idle',
         activeRunId: undefined,
@@ -599,6 +669,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     reset: () => {
       activeRunController?.abort()
       activeRunController = undefined
+      useAppBuilderStore.getState().reset()
       set({ ...initialState })
     },
   }

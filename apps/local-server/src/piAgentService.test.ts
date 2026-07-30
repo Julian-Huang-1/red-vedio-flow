@@ -7,6 +7,7 @@ import {
   PiAgentSessionNotFoundError,
   formatPrompt,
   prepareAttachments,
+  projectHtmlArtifact,
   projectSessionBranch,
   projectSessionEntry,
 } from './piAgentService.js'
@@ -224,5 +225,45 @@ describe('PiAgentService attachments', () => {
       size: 3,
       data: Buffer.from('zip').toString('base64'),
     }])).toThrow('暂不支持该附件类型')
+  })
+})
+
+describe('PiAgentService App Builder artifacts', () => {
+  it('adds App Builder instructions and the current artifact to the prompt', () => {
+    const prompt = formatPrompt(
+      '把按钮改成红色',
+      undefined,
+      [],
+      {
+        type: 'app-builder',
+        currentArtifact: {
+          id: 'artifact-1',
+          version: 2,
+          html: '<!doctype html><button>提交</button>',
+        },
+      },
+    )
+
+    expect(prompt).toContain('You are operating in App Builder mode.')
+    expect(prompt).toContain('artifact-1')
+    expect(prompt).toContain('<button>提交</button>')
+    expect(prompt).toContain('call publish_html exactly once')
+  })
+
+  it('projects publish_html tool details into an artifact event payload', () => {
+    expect(projectHtmlArtifact('publish_html', {
+      details: {
+        artifact: {
+          kind: 'html',
+          title: '作品集',
+          html: '<!doctype html><title>作品集</title>',
+        },
+      },
+    })).toEqual({
+      kind: 'html',
+      title: '作品集',
+      html: '<!doctype html><title>作品集</title>',
+    })
+    expect(projectHtmlArtifact('read', {})).toBeUndefined()
   })
 })

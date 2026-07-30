@@ -2,12 +2,14 @@ import { join } from 'node:path'
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import {
   AgentSession,
+  defineTool,
   ModelRuntime,
   SessionManager,
   createAgentSession,
   type AgentSessionEvent,
   type SessionEntry,
   type SessionInfo,
+  type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 
 export type PiAgentModel = {
@@ -74,11 +76,20 @@ export type PiAgentStreamEvent =
   | { type: 'tool-update'; toolCallId: string; toolName: string; result: unknown }
   | { type: 'tool-end'; toolCallId: string; toolName: string; result: unknown; isError: boolean }
   | { type: 'run-end'; status: 'completed' | 'stopped' }
+  | {
+      type: 'artifact'
+      artifact: {
+        kind: 'html'
+        title?: string
+        html: string
+      }
+    }
   | { type: 'error'; message: string }
 
 type ActiveSession = {
   session: AgentSession
   modelId?: string
+  agentId?: string
 }
 
 export type PiAgentAttachmentInput = {
@@ -216,12 +227,21 @@ export class PiAgentService {
     input: {
       message: string
       modelId?: string
+      agentId?: string
       contexts?: Array<{ kind?: string; title?: string }>
       attachments?: PiAgentAttachmentInput[]
+      workspace?: {
+        type: 'app-builder'
+        currentArtifact?: {
+          id: string
+          version: number
+          html: string
+        }
+      }
     },
     emit: (event: PiAgentStreamEvent) => void,
   ) {
-    const active = await this.getOrCreateSession(sessionId, input.modelId)
+    const active = await this.getOrCreateSession(sessionId, input.modelId, input.agentId)
     if (active.session.isStreaming) throw new Error('session is already running')
     if (input.modelId && input.modelId !== active.modelId) {
       await this.applyModel(active, input.modelId)
@@ -232,7 +252,12 @@ export class PiAgentService {
     const unsubscribe = active.session.subscribe((event) => this.projectEvent(event, emit))
     try {
       const { images, textAttachments } = prepareAttachments(input.attachments)
-      const prompt = formatPrompt(input.message, input.contexts, textAttachments)
+      const prompt = formatPrompt(
+        input.message,
+        input.contexts,
+        textAttachments,
+        input.workspace,
+      )
       if (!active.session.sessionName || active.session.sessionName === '新对话') {
         const title = input.message.slice(0, 24)
         active.session.sessionManager.appendSessionInfo(title)
@@ -358,9 +383,13 @@ export class PiAgentService {
     return runtime
   }
 
-  private async getOrCreateSession(sessionId: string, modelId?: string) {
+  private async getOrCreateSession(sessionId: string, modelId?: string, agentId?: string) {
     const existing = this.sessions.get(sessionId)
-    if (existing) return existing
+    if (existing && existing.agentId === agentId) return existing
+    if (existing) {
+      existing.session.dispose()
+      this.sessions.delete(sessionId)
+    }
 
     const modelRuntime = await this.getModelRuntime()
     const info = await this.findSessionInfo(sessionId)
@@ -368,14 +397,25 @@ export class PiAgentService {
       ? SessionManager.open(info.path, this.sessionDir, this.cwd)
       : SessionManager.create(this.cwd, this.sessionDir, { id: sessionId })
     const model = modelId ? resolveModel(modelRuntime, modelId) : undefined
+    debugger
+    const appBuilder = agentId === 'app-builder-agent'
+    const publishHtmlTool = createPublishHtmlTool()
     const { session } = await createAgentSession({
       cwd: this.cwd,
       modelRuntime,
       model,
       sessionManager,
-      tools: ['read', 'grep', 'find', 'ls'],
+      tools: appBuilder
+        ? ['publish_html']
+        : [],
+        // : ['read', 'grep', 'find', 'ls'],
+      customTools: appBuilder ? [publishHtmlTool] : undefined,
     })
-    const active = { session, modelId: model ? `${model.provider}:${model.id}` : undefined }
+    const active = {
+      session,
+      modelId: model ? `${model.provider}:${model.id}` : undefined,
+      agentId,
+    }
     this.sessions.set(sessionId, active)
     return active
   }
@@ -422,6 +462,8 @@ export class PiAgentService {
         result: event.partialResult,
       })
     } else if (event.type === 'tool_execution_end') {
+      const artifact = projectHtmlArtifact(event.toolName, event.result)
+      if (artifact && !event.isError) emit({ type: 'artifact', artifact })
       emit({
         type: 'tool-end',
         toolCallId: event.toolCallId,
@@ -683,9 +725,25 @@ export function formatPrompt(
   message: string,
   contexts: Array<{ kind?: string; title?: string }> | undefined,
   textAttachments: Array<{ name: string; text: string }> = [],
+  workspace?: {
+    type: 'app-builder'
+    currentArtifact?: {
+      id: string
+      version: number
+      html: string
+    }
+  },
 ) {
   const validContexts = contexts?.filter((item) => item.title?.trim()) ?? []
   const sections = [message]
+  if (workspace?.type === 'app-builder') {
+    sections.push(APP_BUILDER_INSTRUCTIONS)
+    if (workspace.currentArtifact) {
+      sections.push(
+        `Current HTML artifact (id: ${workspace.currentArtifact.id}, version: ${workspace.currentArtifact.version}):\n\n${workspace.currentArtifact.html}`,
+      )
+    }
+  }
   if (validContexts.length) {
     sections.push(
       `Attached workflow context:\n${validContexts
@@ -697,6 +755,78 @@ export function formatPrompt(
     sections.push(`Attached file: ${attachment.name}\n\n${attachment.text}`)
   }
   return sections.join('\n\n')
+}
+
+const MAX_HTML_ARTIFACT_BYTES = 300 * 1024
+
+const APP_BUILDER_INSTRUCTIONS = `You are operating in App Builder mode.
+- Build a single complete HTML document with inline CSS and JavaScript.
+- Make the result responsive and usable on desktop and mobile.
+- When modifying an existing artifact, preserve working features unless the user asks to remove them.
+- When the page is ready, call publish_html exactly once with the complete document.
+- Do not paste the complete HTML into the conversational response.
+- If requirements are unclear, ask a concise clarification question and do not call publish_html.
+- Do not attempt to access the parent window, cookies, local storage, camera, microphone, popups, downloads, or top-level navigation.`
+
+function createPublishHtmlTool() {
+  const tool: ToolDefinition = {
+    name: 'publish_html',
+    label: 'Publish HTML',
+    description: 'Publishes the complete single-file HTML document for App Builder preview.',
+    promptSnippet: 'Publish a complete App Builder HTML document.',
+    promptGuidelines: [
+      'Call publish_html once after the requested page is complete.',
+      'Always submit a complete HTML document with inline CSS and JavaScript.',
+    ],
+    parameters: {
+      type: 'object',
+      required: ['html'],
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Short title for the generated app',
+        },
+        html: {
+          type: 'string',
+          description: 'Complete single-file HTML document',
+        },
+      },
+    } as ToolDefinition['parameters'],
+    execute: async (_toolCallId, rawParams) => {
+      const params = rawParams as { title?: string; html: string }
+      const html = params.html.trim()
+      if (!html) throw new Error('HTML artifact cannot be empty')
+      if (Buffer.byteLength(html, 'utf8') > MAX_HTML_ARTIFACT_BYTES) {
+        throw new Error('HTML artifact exceeds the 300KB limit')
+      }
+      return {
+        content: [{ type: 'text' as const, text: 'HTML artifact is ready for preview.' }],
+        details: {
+          artifact: {
+            kind: 'html' as const,
+            title: params.title?.trim() || undefined,
+            html,
+          },
+        },
+      }
+    },
+  }
+  return defineTool(tool)
+}
+
+export function projectHtmlArtifact(toolName: string, result: unknown) {
+  if (toolName !== 'publish_html' || !result || typeof result !== 'object') return undefined
+  const details = (result as { details?: unknown }).details
+  if (!details || typeof details !== 'object') return undefined
+  const artifact = (details as { artifact?: unknown }).artifact
+  if (!artifact || typeof artifact !== 'object') return undefined
+  const candidate = artifact as Record<string, unknown>
+  if (candidate.kind !== 'html' || typeof candidate.html !== 'string') return undefined
+  return {
+    kind: 'html' as const,
+    title: typeof candidate.title === 'string' ? candidate.title : undefined,
+    html: candidate.html,
+  }
 }
 
 export function prepareAttachments(attachments: PiAgentAttachmentInput[] | undefined) {

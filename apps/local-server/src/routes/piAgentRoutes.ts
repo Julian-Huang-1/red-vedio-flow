@@ -100,8 +100,10 @@ export async function handlePiAgentRoutes(runtime: LocalServerRuntime, ctx: Requ
     {
       message,
       modelId: typeof body.modelId === 'string' ? body.modelId : undefined,
+      agentId: typeof body.agentId === 'string' ? body.agentId : undefined,
       contexts,
       attachments,
+      workspace: parseWorkspace(body.workspace),
     },
     (event) => {
       if (!disconnected && !res.writableEnded) writeSse(res, event)
@@ -109,6 +111,32 @@ export async function handlePiAgentRoutes(runtime: LocalServerRuntime, ctx: Requ
   )
   if (!res.writableEnded) res.end()
   return true
+}
+
+function parseWorkspace(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Record<string, unknown>
+  if (candidate.type !== 'app-builder') return undefined
+  const currentArtifact = candidate.currentArtifact
+  if (!currentArtifact || typeof currentArtifact !== 'object') {
+    return { type: 'app-builder' as const }
+  }
+  const artifact = currentArtifact as Record<string, unknown>
+  if (
+    typeof artifact.id !== 'string'
+    || typeof artifact.version !== 'number'
+    || typeof artifact.html !== 'string'
+  ) {
+    throw new HttpError(400, 'workspace.currentArtifact is invalid')
+  }
+  return {
+    type: 'app-builder' as const,
+    currentArtifact: {
+      id: artifact.id,
+      version: artifact.version,
+      html: artifact.html,
+    },
+  }
 }
 
 function parseAttachments(value: unknown): PiAgentAttachmentInput[] | undefined {

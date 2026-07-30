@@ -9,6 +9,7 @@ import {
   renamePiAgentSession,
   streamPiAgentPrompt,
   type PiAgentEvent,
+  type PiAgentPromptInput,
 } from './piAgentClient'
 import type { AgentAttachment } from './agentBoxTypes'
 
@@ -87,12 +88,7 @@ export function usePiAgentPromptMutation() {
       onEvent,
     }: {
       sessionId: string
-      input: {
-        message: string
-        modelId?: string
-        contexts: Array<{ kind: string; title: string }>
-        attachments?: AgentAttachment[]
-      }
+      input: PiAgentPromptInput
       signal: AbortSignal
       onEvent: (event: PiAgentEvent) => void
     }) => streamPiAgentPrompt(sessionId, input, signal, onEvent),

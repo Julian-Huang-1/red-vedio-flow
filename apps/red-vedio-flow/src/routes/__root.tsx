@@ -1,4 +1,9 @@
-import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
+import {
+  createRootRoute,
+  Link,
+  Outlet,
+  useRouterState,
+} from '@tanstack/react-router'
 import { Sparkles } from 'lucide-react'
 import {
   AgentBoxDrawer,
@@ -7,6 +12,38 @@ import {
 } from '@/components/agent-box'
 import { WorkspaceManager } from '@/components/workflow'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
+const WORKSPACE_TABS = [
+  { label: '画布', to: '/workflow' },
+  { label: 'App Builder', to: '/app-builder' },
+] as const
+
+function WorkspaceTabs() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+
+  return (
+    <nav className="inline-flex items-center gap-1 rounded-xl border bg-muted/40 p-1">
+      {WORKSPACE_TABS.map((tab) => {
+        const active = pathname === tab.to
+        return (
+          <Link
+            key={tab.to}
+            to={tab.to}
+            className={cn(
+              'rounded-lg px-4 py-1.5 text-sm font-medium transition-colors',
+              active
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {tab.label}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
 
 function RootLayout() {
   const open = useAgentBoxStore((state) => state.open)
@@ -16,13 +53,18 @@ function RootLayout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b bg-card">
+      <header className="relative border-b bg-card">
         <div className="flex h-16 w-full items-center justify-between px-6">
           <div className="flex items-center gap-4">
             <Link to="/home" className="font-semibold tracking-tight">
               Y
             </Link>
             <WorkspaceManager />
+          </div>
+          <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="pointer-events-auto">
+              <WorkspaceTabs />
+            </div>
           </div>
           <Button className="relative" onClick={openDrawer}>
             <Sparkles size={16} />

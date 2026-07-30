@@ -131,4 +131,33 @@ describe('agentBoxStore', () => {
     expect(state.runStatus).toBe('idle')
     expect(lastMessage.status).toBe('stopped')
   })
+
+  it('commits an App Builder artifact when the run completes', async () => {
+    useAgentBoxStore.getState().selectAgent('app-builder-agent')
+    useAgentBoxStore.getState().setDraft('生成一个计数器')
+    await useAgentBoxStore.getState().submit(async (
+      _sessionId,
+      _input,
+      _signal,
+      onEvent,
+    ) => {
+      onEvent({ type: 'run-start', runId: 'run-app-builder' })
+      onEvent({
+        type: 'artifact',
+        artifact: {
+          kind: 'html',
+          title: '计数器',
+          html: '<!doctype html><button>0</button>',
+        },
+      })
+      onEvent({ type: 'run-end', status: 'completed' })
+    })
+
+    const sessionId = useAgentBoxStore.getState().activeSessionId!
+    const { useAppBuilderStore } = await import('../../pages/app-builder/appBuilderStore')
+    expect(useAppBuilderStore.getState().artifactsBySessionId[sessionId]).toMatchObject({
+      title: '计数器',
+      version: 1,
+    })
+  })
 })
