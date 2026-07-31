@@ -37,7 +37,7 @@ const Messages = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('flex min-h-0 flex-col gap-5 overflow-y-auto px-5 py-6', className)}
+      className={cn('flex min-h-0 min-w-0 flex-col gap-5 overflow-x-hidden overflow-y-auto px-5 py-6', className)}
       data-agent-box-messages=""
       {...props}
     />
@@ -53,7 +53,7 @@ function Message({ role, className, ...props }: MessageProps) {
   return (
     <article
       className={cn(
-        'max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6',
+        'min-w-0 max-w-[88%] overflow-hidden rounded-2xl px-4 py-3 text-sm leading-6 [overflow-wrap:anywhere]',
         role === 'user'
           ? 'ml-auto rounded-br-md bg-primary text-primary-foreground'
           : 'mr-auto rounded-bl-md border bg-card text-card-foreground shadow-sm',

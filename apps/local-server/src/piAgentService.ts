@@ -764,6 +764,7 @@ const APP_BUILDER_INSTRUCTIONS = `You are operating in App Builder mode.
 - Make the result responsive and usable on desktop and mobile.
 - When modifying an existing artifact, preserve working features unless the user asks to remove them.
 - When the page is ready, call publish_html exactly once with the complete document.
+- Published apps may call their server-side workflow through the prebound "default" capability. Read window.RUNTIME_CONFIG, then POST inputs to /api/runtime/apps/{appId}/capabilities/default/runs with Authorization: Bearer {token}; poll /api/runtime/apps/{appId}/runs/{runId} for results. Never request or embed a workflow id.
 - Do not paste the complete HTML into the conversational response.
 - If requirements are unclear, ask a concise clarification question and do not call publish_html.
 - Do not attempt to access the parent window, cookies, local storage, camera, microphone, popups, downloads, or top-level navigation.`

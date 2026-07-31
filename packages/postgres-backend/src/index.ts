@@ -9,6 +9,7 @@ export * from './runRepository.js'
 export * from './resourceRepository.js'
 export * from './chatRepository.js'
 export * from './workflowService.js'
+export * from './publishedAppRepository.js'
 
 import type { PostgresDatabase } from './database.js'
 import { PostgresCredentialStore } from './credentialStore.js'
@@ -21,6 +22,7 @@ import { PostgresRunRepository } from './runRepository.js'
 import { PostgresResourceRepository } from './resourceRepository.js'
 import { PostgresChatRepository } from './chatRepository.js'
 import { PostgresWorkflowService } from './workflowService.js'
+import { PostgresPublishedAppRepository } from './publishedAppRepository.js'
 
 export function createPostgresInfrastructure(
   sql: PostgresDatabase,
@@ -37,5 +39,6 @@ export function createPostgresInfrastructure(
     postgresWorkflowAppRuns: new PostgresWorkflowAppRunRepository(sql),
     postgresResources: new PostgresResourceRepository(sql),
     postgresChats: new PostgresChatRepository(sql),
+    publishedApps: new PostgresPublishedAppRepository(sql),
   }
 }

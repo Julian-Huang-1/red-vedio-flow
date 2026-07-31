@@ -12,7 +12,7 @@ export function AgentMessageAttachments({
 
   return (
     <div
-      className="mt-2 flex flex-wrap gap-1.5"
+      className="mt-2 flex min-w-0 max-w-full flex-wrap gap-1.5 overflow-hidden"
       data-agent-box-message-attachments=""
     >
       {attachments.map((attachment) => {
@@ -20,11 +20,11 @@ export function AgentMessageAttachments({
         return (
           <span
             key={attachment.id}
-            className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background/60 px-2 py-1 text-[11px]"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border bg-background/60 px-2 py-1 text-[11px]"
             data-agent-box-message-attachment=""
           >
             <Icon size={12} className="shrink-0" />
-            <span className="max-w-40 truncate">{attachment.name}</span>
+            <span className="min-w-0 max-w-40 truncate">{attachment.name}</span>
             <span className="shrink-0 text-muted-foreground">
               {formatFileSize(attachment.size)}
             </span>
@@ -40,11 +40,11 @@ export function AgentMessageAttachments({
         return (
           <span
             key={resource.id}
-            className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background/60 px-2 py-1 text-[11px]"
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border bg-background/60 px-2 py-1 text-[11px]"
             data-agent-box-message-resource=""
           >
             <Icon size={12} className="shrink-0" />
-            <span className="max-w-40 truncate">{resource.name}</span>
+            <span className="min-w-0 max-w-40 truncate">{resource.name}</span>
             <span className="shrink-0 text-muted-foreground">画布资源</span>
           </span>
         )

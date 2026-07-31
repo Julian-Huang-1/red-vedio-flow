@@ -30,7 +30,7 @@ type AppRunEvent = {
   createdAt: number
 }
 
-type AppRun = {
+export type AppRun = {
   id: string
   userId?: string
   workflowId: string
@@ -99,25 +99,14 @@ export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: 
       })
       return true
     }
+    const user = await resolveRequestUser(runtime, req)
     const inputs = isRecord(body.inputs) ? body.inputs : {}
-    const validation = validateWorkflowForRun(workflow, inputs)
-    if (!validation.valid) {
-      sendJson(res, 422, {
-        error: 'workflow_validation_failed',
-        message: '工作流运行前校验未通过',
-        issues: validation.issues,
-      })
+    const result = await createWorkflowAppRunFromInputs(runtime, workflow.id, inputs, user?.id)
+    if (!result.ok) {
+      sendJson(res, 422, result.error)
       return true
     }
-    const user = await resolveRequestUser(runtime, req)
-    const run = createRun(workflow, inputs, user?.id)
-    runtime.backend.workflowAppRuns.save(run)
-    await runtime.backend.jobs.enqueue({
-      id: `schedule-workflow:${run.id}`,
-      type: 'schedule-workflow',
-      payload: { runId: run.id },
-      maxAttempts: 1,
-    })
+    const run = result.run
     sendJson(res, 202, { run: publicRun(run) })
     return true
   }
@@ -166,6 +155,52 @@ export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: 
   }
 
   return false
+}
+
+export async function createWorkflowAppRunFromInputs(
+  runtime: LocalServerRuntime,
+  workflowId: string,
+  inputs: Record<string, unknown>,
+  userId?: string,
+  revision?: number,
+) {
+  const workflow = requireWorkflow(runtime, workflowId)
+  if (revision !== undefined && workflow.revision !== revision) {
+    return {
+      ok: false as const,
+      error: {
+        error: 'workflow_revision_conflict',
+        message: '绑定的工作流版本已发生变化，请重新发布应用能力',
+        expectedRevision: revision,
+        currentRevision: workflow.revision,
+      },
+    }
+  }
+  const validation = validateWorkflowForRun(workflow, inputs)
+  if (!validation.valid) {
+    return {
+      ok: false as const,
+      error: {
+        error: 'workflow_validation_failed',
+        message: '工作流运行前校验未通过',
+        issues: validation.issues,
+      },
+    }
+  }
+  const run = createRun(workflow, inputs, userId)
+  runtime.backend.workflowAppRuns.save(run)
+  if (runtime.postgresInfrastructure) await runtime.flushPersistence()
+  await runtime.backend.jobs.enqueue({
+    id: `schedule-workflow:${run.id}`,
+    type: 'schedule-workflow',
+    payload: { runId: run.id },
+    maxAttempts: 1,
+  })
+  return { ok: true as const, run }
+}
+
+export function publicWorkflowAppRun(run: AppRun) {
+  return publicRun(run)
 }
 
 async function executeRun(

@@ -30,6 +30,7 @@ import {
 } from './dataServices.js'
 import { PersistenceFlushQueue } from './persistenceFlushQueue.js'
 import { DurableWorker } from '@red-video-flow/api-server'
+import { MemoryPublishedAppRepository } from './publishedAppRepository.js'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
   const postgres = config.database
@@ -64,6 +65,8 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
   const postgresInfrastructure = postgres
     ? createPostgresInfrastructure(postgres, config.credentialEncryptionKey)
     : undefined
+  const publishedApps = postgresInfrastructure?.publishedApps
+    ?? new MemoryPublishedAppRepository()
   if (postgresInfrastructure) Object.assign(backend, postgresInfrastructure)
   const blobStorage = postgresInfrastructure?.blobs
     ?? new FileBlobStorage(join(config.dataDir, 'blobs'))
@@ -237,6 +240,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     blobStorage,
     postgresInfrastructure,
     postgresDatabase: postgres,
+    publishedApps,
     flushPersistence: () => persistence.flush(),
     async start() {
       if (started) return

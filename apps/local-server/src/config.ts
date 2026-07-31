@@ -58,6 +58,9 @@ export type LocalServerConfig = {
   requireSso: boolean
   database?: PostgresConnectionConfig
   deploymentMode: 'local' | 'cowork'
+  runtimePublicOrigin?: string
+  runtimeHost?: string
+  mainAppOrigin?: string
 }
 
 const sourceDir = dirname(fileURLToPath(import.meta.url))
@@ -147,6 +150,9 @@ export function resolveLocalServerConfig(
       : options.requireSso ?? env.RED_VIDEO_FLOW_REQUIRE_SSO === 'true',
     database,
     deploymentMode,
+    runtimePublicOrigin: trimOptionalOrigin(env.APP_RUNTIME_PUBLIC_ORIGIN),
+    runtimeHost: env.APP_RUNTIME_HOST?.trim().toLowerCase() || undefined,
+    mainAppOrigin: trimOptionalOrigin(env.APP_MAIN_ORIGIN),
     runTimeoutMs: readNumber(env.RED_VIDEO_FLOW_RUN_TIMEOUT_MS, 120_000, 'run timeout'),
     runReaperIntervalMs: readNumber(env.RED_VIDEO_FLOW_RUN_REAPER_INTERVAL_MS, 30_000, 'run reaper interval'),
     visualTaskIntervalMs: readNumber(env.RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS, 5_000, 'visual task interval'),
@@ -163,6 +169,11 @@ export function resolveLocalServerConfig(
     ),
     pluginDirs: pluginDirs.map((item) => resolve(item)),
   }
+}
+
+function trimOptionalOrigin(value: string | undefined) {
+  const normalized = value?.trim().replace(/\/$/, '')
+  return normalized || undefined
 }
 
 export function readDatabaseProperties(

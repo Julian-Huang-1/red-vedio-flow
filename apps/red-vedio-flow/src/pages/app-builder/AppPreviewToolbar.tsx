@@ -4,6 +4,7 @@ import {
   RefreshCw,
   Smartphone,
   Tablet,
+  Upload,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,8 @@ type AppPreviewToolbarProps = {
   onModeChange: (mode: PreviewMode) => void
   onReload: () => void
   onSourceOpen: () => void
+  onPublish: () => void
+  publishing?: boolean
 }
 
 export function AppPreviewToolbar({
@@ -33,6 +36,8 @@ export function AppPreviewToolbar({
   onModeChange,
   onReload,
   onSourceOpen,
+  onPublish,
+  publishing,
 }: AppPreviewToolbarProps) {
   return (
     <div
@@ -47,6 +52,16 @@ export function AppPreviewToolbar({
       </div>
 
       <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          size="sm"
+          className="mr-1 h-9 gap-1.5"
+          disabled={!hasArtifact || publishing}
+          onClick={onPublish}
+        >
+          <Upload size={15} />
+          {publishing ? '发布中…' : '发布'}
+        </Button>
         <div className="flex items-center rounded-lg border bg-muted/40 p-1">
           {MODES.map(({ value, label, icon: Icon }) => (
             <Button

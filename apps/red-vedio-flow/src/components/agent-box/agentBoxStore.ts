@@ -136,7 +136,7 @@ type AgentBoxActions = {
 export type AgentBoxStore = AgentBoxState & AgentBoxActions
 
 const initialState: AgentBoxState = {
-  open: true,
+  open: false,
   sessionIds: [initialSessionId],
   sessionsById: initialSessions,
   activeSessionId: initialSessionId,

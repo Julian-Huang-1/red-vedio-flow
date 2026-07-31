@@ -108,7 +108,7 @@ export function WorkspaceManager() {
 
   return (
     <div
-      className="flex items-center gap-2 rounded-xl border bg-background/95 p-1.5 shadow-sm backdrop-blur"
+      className="flex items-center gap-0.5 rounded-lg border bg-background/95 p-0.5 shadow-sm backdrop-blur"
       data-workspace-manager=""
       data-loading={loading ? '' : undefined}
     >
@@ -117,7 +117,7 @@ export function WorkspaceManager() {
           <Input
             autoFocus
             value={title}
-            className="h-8 w-48"
+            className="h-7 w-40 px-2 text-xs"
             placeholder="输入画布名称"
             onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => {
@@ -127,23 +127,23 @@ export function WorkspaceManager() {
           />
           <Button
             size="icon"
-            className="size-8"
+            className="size-7"
             disabled={createMutation.isPending}
             aria-label="创建画布"
             onClick={submitCreate}
           >
             {createMutation.isPending
-              ? <LoaderCircle className="size-4 animate-spin" />
-              : <Check className="size-4" />}
+              ? <LoaderCircle className="size-3.5 animate-spin" />
+              : <Check className="size-3.5" />}
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-7"
             aria-label="取消创建"
             onClick={() => setCreating(false)}
           >
-            <X className="size-4" />
+            <X className="size-3.5" />
           </Button>
         </>
       ) : (
@@ -153,7 +153,7 @@ export function WorkspaceManager() {
             disabled={loading || workflows.length === 0}
             onValueChange={(value) => void switchWorkspace(value)}
           >
-            <SelectTrigger className="h-8 w-52 border-0 bg-transparent shadow-none">
+            <SelectTrigger className="h-7 w-40 border-0 bg-transparent px-2 text-xs shadow-none">
               <SelectValue placeholder={workflowsQuery.isPending ? '正在加载画布…' : '选择画布'} />
             </SelectTrigger>
             <SelectContent>
@@ -166,8 +166,8 @@ export function WorkspaceManager() {
           </Select>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5"
+            size="icon"
+            className="size-7"
             title="重命名画布"
             aria-label="重命名画布"
             disabled={loading || !currentWorkspaceId}
@@ -177,25 +177,25 @@ export function WorkspaceManager() {
           </Button>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5"
+            size="icon"
+            className="size-7"
             title="新建画布"
             aria-label="新建画布"
             onClick={() => setCreating(true)}
           >
-            <Plus className="size-4" />
+            <Plus className="size-3.5" />
           </Button>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5"
+            size="icon"
+            className="size-7"
             title="资源库"
             aria-label="资源库"
             onClick={openLibrary}
           >
-            <Library className="size-4" />
+            <Library className="size-3.5" />
           </Button>
-          {loading ? <LoaderCircle className="mr-1 size-4 animate-spin text-muted-foreground" /> : null}
+          {loading ? <LoaderCircle className="mx-1 size-3.5 animate-spin text-muted-foreground" /> : null}
         </>
       )}
     </div>

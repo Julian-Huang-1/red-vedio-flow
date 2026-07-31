@@ -170,6 +170,25 @@ rvf command run <commandId> --input '{"prompt":"..."}' --follow
 | `pnpm dist:mac` | 构建 macOS 桌面安装包 |
 | `pnpm dist:win` | 构建 Windows 桌面安装包 |
 
+## App Builder Runtime
+
+App Builder 可以把 Agent 生成的单文件 HTML 发布为版本，并在独立 Runtime 子域中通过
+iframe 运行。发布页使用短期随机 Token，只能调用应用绑定的服务端工作流能力。
+
+生产部署建议配置：
+
+```bash
+APP_RUNTIME_PUBLIC_ORIGIN=https://runtime.example.com
+APP_RUNTIME_HOST=runtime.example.com
+APP_MAIN_ORIGIN=https://app.example.com
+```
+
+- `APP_RUNTIME_PUBLIC_ORIGIN`：主应用签发的 Runtime URL 前缀。
+- `APP_RUNTIME_HOST`：该 Host 只开放 Runtime 页面和 Runtime API，管理 API 返回 404。
+- `APP_MAIN_ORIGIN`：允许嵌入 Runtime 页面的主应用 Origin。
+
+开发环境未配置这些变量时，Runtime 页面使用同一服务的 `/runtime/apps/:appId` 路径。
+
 ## 项目结构
 
 ```text

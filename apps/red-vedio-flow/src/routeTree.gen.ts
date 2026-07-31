@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppBuilderRouteImport } from './routes/app-builder'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as WorkflowRouteImport } from './routes/workflow'
+import { Route as PublishedAppAppIdRouteImport } from './routes/published-app.$appId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const WorkflowRoute = WorkflowRouteImport.update({
   path: '/workflow',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PublishedAppAppIdRoute = PublishedAppAppIdRouteImport.update({
+  id: '/published-app/$appId',
+  path: '/published-app/$appId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app-builder': typeof AppBuilderRoute
   '/home': typeof HomeRoute
   '/workflow': typeof WorkflowRoute
+  '/published-app/$appId': typeof PublishedAppAppIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app-builder': typeof AppBuilderRoute
   '/home': typeof HomeRoute
   '/workflow': typeof WorkflowRoute
+  '/published-app/$appId': typeof PublishedAppAppIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,21 @@ export interface FileRoutesById {
   '/app-builder': typeof AppBuilderRoute
   '/home': typeof HomeRoute
   '/workflow': typeof WorkflowRoute
+  '/published-app/$appId': typeof PublishedAppAppIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app-builder' | '/home' | '/workflow'
+  fullPaths:
+    '/' | '/app-builder' | '/home' | '/workflow' | '/published-app/$appId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app-builder' | '/home' | '/workflow'
-  id: '__root__' | '/' | '/app-builder' | '/home' | '/workflow'
+  to: '/' | '/app-builder' | '/home' | '/workflow' | '/published-app/$appId'
+  id:
+    | '__root__'
+    | '/'
+    | '/app-builder'
+    | '/home'
+    | '/workflow'
+    | '/published-app/$appId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +83,7 @@ export interface RootRouteChildren {
   AppBuilderRoute: typeof AppBuilderRoute
   HomeRoute: typeof HomeRoute
   WorkflowRoute: typeof WorkflowRoute
+  PublishedAppAppIdRoute: typeof PublishedAppAppIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +116,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkflowRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/published-app/$appId': {
+      id: '/published-app/$appId'
+      path: '/published-app/$appId'
+      fullPath: '/published-app/$appId'
+      preLoaderRoute: typeof PublishedAppAppIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +131,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppBuilderRoute: AppBuilderRoute,
   HomeRoute: HomeRoute,
   WorkflowRoute: WorkflowRoute,
+  PublishedAppAppIdRoute: PublishedAppAppIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

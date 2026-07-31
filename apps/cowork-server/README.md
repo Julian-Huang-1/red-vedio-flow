@@ -12,7 +12,18 @@
 
 文本、图片和视频 Provider 地址沿用项目内置地址，无需在 Cowork 部署时提供。`APP_TEXT_PROVIDER_URL`、`APP_IMAGE_PROVIDER_URL`、`APP_VIDEO_PROVIDER_URL` 仅作为诊断或迁移时的可选覆盖项。
 
-所有业务 API 都要求 Cowork 注入 `Decrypted-Userinfo`。上传和生成文件写入 PostgreSQL Large Object；工作流、运行、Trace、资源、聊天、用户凭据和队列均写入 PostgreSQL。
+所有管理业务 API 都要求 Cowork 注入 `Decrypted-Userinfo`。上传和生成文件写入 PostgreSQL Large Object；工作流、运行、Trace、资源、聊天、用户凭据和队列均写入 PostgreSQL。
+
+App Builder Runtime 使用单独的短期随机 Token，并支持独立子域：
+
+```bash
+APP_RUNTIME_PUBLIC_ORIGIN=https://runtime.example.com
+APP_RUNTIME_HOST=runtime.example.com
+APP_MAIN_ORIGIN=https://app.example.com
+```
+
+Runtime Host 只开放发布 HTML 和 `/api/runtime/*`，不会开放工作流管理、凭据或 Agent API。
+未配置时使用主服务的 `/runtime/apps/:appId` 路径，便于联调；正式部署应配置独立 Runtime 子域。
 
 Provider 请求统一使用用户在前端保存的 Token：
 

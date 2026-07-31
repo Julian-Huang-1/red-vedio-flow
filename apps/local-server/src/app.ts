@@ -18,6 +18,7 @@ import { handlePiAgentRoutes } from './routes/piAgentRoutes.js'
 import { handleResourceRoutes } from './routes/resourceRoutes.js'
 import { handleCredentialRoutes } from './routes/credentialRoutes.js'
 import { handleHealthRoutes } from './routes/healthRoutes.js'
+import { handlePublishedAppRoutes } from './routes/publishedAppRoutes.js'
 
 type RequestHandlerOptions = {
   webFallback?: (req: IncomingMessage, res: ServerResponse) => void
@@ -48,8 +49,14 @@ export function createRequestHandler(
 
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`)
       const context = { req, res, url, pathname: url.pathname }
+      if (runtime.config.runtimeHost && isRuntimeHostRequest(runtime.config.runtimeHost, req.headers.host)) {
+        if (await handlePublishedAppRoutes(runtime, context)) return
+        sendJson(res, 404, { error: 'not found' })
+        return
+      }
       const handlers = [
         handleHealthRoutes,
+        handlePublishedAppRoutes,
         handlePiAgentRoutes,
         handleDefaultModelRoutes,
         handleCredentialRoutes,
@@ -103,6 +110,10 @@ export function createRequestHandler(
       res.end()
     }
   }
+}
+
+function isRuntimeHostRequest(runtimeHost: string, requestHost: string | undefined) {
+  return (requestHost?.split(':')[0] ?? '').toLowerCase() === runtimeHost
 }
 
 export function isAllowedOrigin(origin: string | undefined) {

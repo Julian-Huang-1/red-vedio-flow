@@ -243,5 +243,72 @@ export async function migratePostgres(sql: PostgresDatabase) {
       CREATE INDEX IF NOT EXISTS idx_chat_messages_session
       ON chat_messages(session_id, created_at)
     `
+    await tx`
+      CREATE TABLE IF NOT EXISTS published_apps (
+        id text PRIMARY KEY,
+        owner_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        title text NOT NULL,
+        current_release_id text,
+        created_at bigint NOT NULL,
+        updated_at bigint NOT NULL
+      )
+    `
+    await tx`
+      CREATE TABLE IF NOT EXISTS app_releases (
+        id text PRIMARY KEY,
+        app_id text NOT NULL REFERENCES published_apps(id) ON DELETE CASCADE,
+        version integer NOT NULL,
+        html_content text NOT NULL,
+        content_hash text NOT NULL,
+        created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+        created_at bigint NOT NULL,
+        UNIQUE (app_id, version)
+      )
+    `
+    await tx`
+      ALTER TABLE published_apps
+      DROP CONSTRAINT IF EXISTS published_apps_current_release_id_fkey
+    `
+    await tx`
+      ALTER TABLE published_apps
+      ADD CONSTRAINT published_apps_current_release_id_fkey
+      FOREIGN KEY (current_release_id) REFERENCES app_releases(id) ON DELETE SET NULL
+    `
+    await tx`
+      CREATE TABLE IF NOT EXISTS app_capabilities (
+        id text PRIMARY KEY,
+        app_id text NOT NULL REFERENCES published_apps(id) ON DELETE CASCADE,
+        capability_key text NOT NULL,
+        workflow_id text NOT NULL REFERENCES workflows(id) ON DELETE RESTRICT,
+        workflow_revision bigint NOT NULL,
+        created_at bigint NOT NULL,
+        updated_at bigint NOT NULL,
+        UNIQUE (app_id, capability_key)
+      )
+    `
+    await tx`
+      CREATE TABLE IF NOT EXISTS runtime_sessions (
+        id text PRIMARY KEY,
+        token_hash text NOT NULL UNIQUE,
+        user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        app_id text NOT NULL REFERENCES published_apps(id) ON DELETE CASCADE,
+        release_id text NOT NULL REFERENCES app_releases(id) ON DELETE CASCADE,
+        expires_at bigint NOT NULL,
+        created_at bigint NOT NULL,
+        revoked_at bigint
+      )
+    `
+    await tx`
+      CREATE INDEX IF NOT EXISTS idx_runtime_sessions_expiry
+      ON runtime_sessions(expires_at)
+    `
+    await tx`
+      CREATE TABLE IF NOT EXISTS runtime_app_runs (
+        run_id text PRIMARY KEY,
+        session_id text NOT NULL REFERENCES runtime_sessions(id) ON DELETE CASCADE,
+        app_id text NOT NULL REFERENCES published_apps(id) ON DELETE CASCADE,
+        created_at bigint NOT NULL
+      )
+    `
   })
 }

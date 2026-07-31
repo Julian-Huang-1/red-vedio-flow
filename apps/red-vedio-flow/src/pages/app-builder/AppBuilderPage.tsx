@@ -1,5 +1,14 @@
-import { useEffect } from 'react'
-import { Blocks, LoaderCircle, Sparkles, TriangleAlert } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  Blocks,
+  Check,
+  CircleCheck,
+  Copy,
+  ExternalLink,
+  LoaderCircle,
+  Sparkles,
+  TriangleAlert,
+} from 'lucide-react'
 import {
   selectActiveSession,
   useAgentBoxStore,
@@ -9,6 +18,13 @@ import { AppPreview } from './AppPreview'
 import { AppPreviewToolbar } from './AppPreviewToolbar'
 import { AppSourceDialog } from './AppSourceDialog'
 import { useAppBuilderStore } from './appBuilderStore'
+import { useWorkflowStore } from '@/stores/workflowStore'
+import {
+  bindDefaultCapability,
+  createPublishedApp,
+  publishedAppUrl,
+  publishAppRelease,
+} from './publishedAppClient'
 
 export function AppBuilderPage() {
   const activeSession = useAgentBoxStore(selectActiveSession)
@@ -27,6 +43,57 @@ export function AppBuilderPage() {
   const setPreviewMode = useAppBuilderStore((state) => state.setPreviewMode)
   const setSourceOpen = useAppBuilderStore((state) => state.setSourceOpen)
   const reloadPreview = useAppBuilderStore((state) => state.reloadPreview)
+  const workflowId = useWorkflowStore((state) => state.workflowId)
+  const workflowRevision = useWorkflowStore((state) => state.revision)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState<string>()
+  const [published, setPublished] = useState<{ appId: string; version: number }>()
+  const [copied, setCopied] = useState(false)
+
+  async function publishArtifact() {
+    if (!artifact || publishing) return
+    setPublishing(true)
+    setPublishError(undefined)
+    setPublished(undefined)
+    setCopied(false)
+    try {
+      if (workflowId === 'default' || workflowRevision <= 0) {
+        throw new Error('请先在画布中选择并保存一个工作流，用作应用的 default 服务端能力。')
+      }
+      const storageKey = `published-app:${artifact.id}`
+      let appId = window.localStorage.getItem(storageKey)
+      if (!appId) {
+        const created = await createPublishedApp(artifact.title)
+        appId = created.app.id
+        window.localStorage.setItem(storageKey, appId)
+      }
+      const result = await publishAppRelease(appId, {
+        title: artifact.title,
+        html: artifact.html,
+      })
+      await bindDefaultCapability(appId, workflowId, workflowRevision)
+      setPublished({ appId, version: result.release.version })
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  function publishedPath(appId: string) {
+    return publishedAppUrl(appId)
+  }
+
+  async function copyPublishedLink(appId: string) {
+    try {
+      await navigator.clipboard.writeText(
+        publishedPath(appId),
+      )
+      setCopied(true)
+    } catch {
+      setPublishError('复制链接失败，请点击“打开应用”后复制浏览器地址。')
+    }
+  }
 
   useEffect(() => {
     selectAgent('app-builder-agent')
@@ -47,6 +114,8 @@ export function AppBuilderPage() {
           onModeChange={setPreviewMode}
           onReload={reloadPreview}
           onSourceOpen={() => setSourceOpen(true)}
+          onPublish={() => void publishArtifact()}
+          publishing={publishing}
         />
 
         <div className="relative min-h-0 flex-1">
@@ -95,6 +164,45 @@ export function AppBuilderPage() {
             >
               <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
               <span>{generationError}</span>
+            </div>
+          ) : null}
+          {publishError ? (
+            <div className="absolute inset-x-4 bottom-4 mx-auto max-w-xl rounded-xl border border-destructive/30 bg-background/95 px-4 py-3 text-sm shadow-lg">
+              发布失败：{publishError}
+            </div>
+          ) : null}
+          {published && !publishError ? (
+            <div
+              className="absolute inset-x-4 bottom-4 mx-auto flex max-w-xl flex-wrap items-center gap-3 rounded-xl border border-emerald-500/30 bg-background/95 px-4 py-3 text-sm shadow-lg backdrop-blur"
+              role="status"
+              data-app-published=""
+            >
+              <CircleCheck className="size-5 shrink-0 text-emerald-600" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">发布成功</p>
+                <p className="text-xs text-muted-foreground">当前发布版本 v{published.version}</p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void copyPublishedLink(published.appId)}
+              >
+                {copied ? <Check size={15} /> : <Copy size={15} />}
+                {copied ? '已复制' : '复制链接'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => window.open(
+                  publishedPath(published.appId),
+                  '_blank',
+                  'noopener,noreferrer',
+                )}
+              >
+                <ExternalLink size={15} />
+                打开应用
+              </Button>
             </div>
           ) : null}
         </div>

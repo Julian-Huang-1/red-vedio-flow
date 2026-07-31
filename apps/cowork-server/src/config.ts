@@ -24,6 +24,9 @@ export type CoworkConfig = {
   imageProviderUrl: string
   videoProviderUrl: string
   workerConcurrency: number
+  runtimePublicOrigin?: string
+  runtimeHost?: string
+  mainAppOrigin?: string
 }
 
 const dbKeys = [
@@ -51,7 +54,14 @@ export function resolveCoworkConfig(
     imageProviderUrl: optional(env.APP_IMAGE_PROVIDER_URL, DEFAULT_IMAGE_PROVIDER_URL),
     videoProviderUrl: optional(env.APP_VIDEO_PROVIDER_URL, DEFAULT_VIDEO_PROVIDER_URL),
     workerConcurrency: positiveInteger(env.APP_WORKER_CONCURRENCY, 3, 'APP_WORKER_CONCURRENCY'),
+    runtimePublicOrigin: optionalOrigin(env.APP_RUNTIME_PUBLIC_ORIGIN),
+    runtimeHost: env.APP_RUNTIME_HOST?.trim().toLowerCase() || undefined,
+    mainAppOrigin: optionalOrigin(env.APP_MAIN_ORIGIN),
   }
+}
+
+function optionalOrigin(value: string | undefined) {
+  return value?.trim().replace(/\/$/, '') || undefined
 }
 
 function deriveCredentialEncryptionKey(databasePassword: string) {

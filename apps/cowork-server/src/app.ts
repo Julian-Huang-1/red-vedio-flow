@@ -24,6 +24,11 @@ import { coworkVisualModels } from './visualModels.js'
 import { CoworkMediaUploader } from './mediaUploader.js'
 import { handlePiAgentRoutes } from './piAgentRoutes.js'
 import type { Resource } from '@red-video-flow/workflow-core'
+import {
+  handlePublishedAppManagementRoutes,
+  handlePublishedAppRuntimeRoutes,
+  isRuntimeHost,
+} from './publishedAppRoutes.js'
 
 const mediaUploader = new CoworkMediaUploader()
 
@@ -45,6 +50,12 @@ export function createRequestHandler(runtime: CoworkRuntime) {
         res.end()
         return
       }
+      if (isRuntimeHost(runtime, ctx)) {
+        if (await handlePublishedAppRuntimeRoutes(runtime, ctx)) return
+        sendJson(res, 404, { error: 'not found' })
+        return
+      }
+      if (await handlePublishedAppRuntimeRoutes(runtime, ctx)) return
       if (ctx.pathname.startsWith('/api/')) {
         const user = await requireUser(runtime, req)
         if (
@@ -56,6 +67,7 @@ export function createRequestHandler(runtime: CoworkRuntime) {
           || await handleResources(runtime, ctx)
           || await handleChats(runtime, ctx, user.id)
           || await handleAppRuns(runtime, ctx, user.id)
+          || await handlePublishedAppManagementRoutes(runtime, ctx, user.id)
           || handleDiscovery(runtime, ctx)
         ) return
         sendJson(res, 404, { error: 'not found' })

@@ -4,7 +4,7 @@ import {
   Outlet,
   useRouterState,
 } from '@tanstack/react-router'
-import { KeyRound, Sparkles } from 'lucide-react'
+import { Home, KeyRound, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import {
   AgentBoxDrawer,
@@ -51,6 +51,7 @@ function WorkspaceTabs() {
 function RootLayout() {
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const isPublishedApp = pathname.startsWith('/published-app/')
   const open = useAgentBoxStore((state) => state.open)
   const unreadCount = useAgentBoxStore((state) => state.unreadCount)
   const openDrawer = useAgentBoxStore((state) => state.openDrawer)
@@ -59,12 +60,14 @@ function RootLayout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="relative border-b bg-card">
+      {!isPublishedApp ? <header className="relative border-b bg-card">
         <div className="flex h-16 w-full items-center justify-between px-6">
           <div className="flex items-center gap-4">
-            {/* <Link to="/home" className="font-semibold tracking-tight">
-              Y
-            </Link> */}
+            <Button asChild type="button" variant="ghost" size="icon">
+              <Link to="/home" aria-label="返回我的应用">
+                <Home size={18} />
+              </Link>
+            </Button>
             {pathname === '/workflow' ? <WorkspaceManager /> : null}
           </div>
           <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -81,18 +84,20 @@ function RootLayout() {
               <KeyRound size={16} />
               设置key
             </Button>
-            {/* <Button className="relative" onClick={openDrawer}>
-              <Sparkles size={16} />
-              打开 Agent
-              {unreadCount ? (
-                <span className="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-                  {unreadCount}
-                </span>
-              ) : null}
-            </Button> */}
+            {pathname === '/app-builder' ? (
+              <Button className="relative" onClick={openDrawer}>
+                <Sparkles size={16} />
+                打开 Agent
+                {unreadCount ? (
+                  <span className="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
+                    {unreadCount}
+                  </span>
+                ) : null}
+              </Button>
+            ) : null}
           </div>
         </div>
-      </header>
+      </header> : null}
       <Outlet />
       <AgentBoxDrawer
         open={open}

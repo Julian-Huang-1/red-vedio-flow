@@ -38,7 +38,7 @@ export function AgentMessageContent({ message }: { message: AgentMessage }) {
         tone={message.status === 'error' ? 'error' : 'default'}
       >
         {message.command ? <code className="block break-all text-xs">$ {message.command}</code> : null}
-        {message.text ? <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs">{message.text}</pre> : null}
+        {message.text ? <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap break-words text-xs">{message.text}</pre> : null}
         {message.truncated ? <p className="mt-2 text-xs text-muted-foreground">输出已截断</p> : null}
       </SystemCard>
     )
@@ -86,27 +86,27 @@ export function AgentMessageContent({ message }: { message: AgentMessage }) {
 
 function ContentBlocks({ content }: { content: ContentBlock[] }) {
   return (
-    <>
+    <div className="min-w-0 max-w-full [overflow-wrap:anywhere]" data-agent-box-message-content="">
       {content.map((block, index) => {
         if (block.type === 'text') {
-          return <div key={index} className="whitespace-pre-wrap">{block.text}</div>
+          return <div key={index} className="max-w-full whitespace-pre-wrap break-words">{block.text}</div>
         }
         if (block.type === 'thinking') {
           return (
-            <details key={index} className="my-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+            <details key={index} className="my-2 min-w-0 max-w-full overflow-hidden rounded-lg border bg-muted/30 px-3 py-2 text-xs">
               <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-muted-foreground">
                 <Brain size={13} />
                 {block.redacted ? '思考内容已隐藏' : '思考过程'}
               </summary>
               {!block.redacted ? (
-                <div className="mt-2 whitespace-pre-wrap text-muted-foreground">{block.thinking}</div>
+                <div className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">{block.thinking}</div>
               ) : null}
             </details>
           )
         }
         if (block.type === 'toolCall') {
           return (
-            <div key={block.id} className="my-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+            <div key={block.id} className="my-2 min-w-0 max-w-full overflow-hidden rounded-lg border bg-muted/30 px-3 py-2 text-xs">
               <div className="flex items-center gap-1.5 font-medium">
                 <Wrench size={13} />
                 调用 {block.name}
@@ -118,7 +118,7 @@ function ContentBlocks({ content }: { content: ContentBlock[] }) {
         return (
           <img
             key={index}
-            className="my-2 max-h-72 rounded-lg border object-contain"
+            className="my-2 h-auto max-h-72 max-w-full rounded-lg border object-contain"
             src={block.data.startsWith('data:')
               ? block.data
               : `data:${block.mimeType};base64,${block.data}`}
@@ -126,7 +126,7 @@ function ContentBlocks({ content }: { content: ContentBlock[] }) {
           />
         )
       })}
-    </>
+    </div>
   )
 }
 
@@ -143,7 +143,7 @@ function SystemCard({
 }) {
   return (
     <article
-      className="rounded-xl border bg-muted/20 px-3 py-2.5 text-sm"
+      className="min-w-0 max-w-full overflow-hidden rounded-xl border bg-muted/20 px-3 py-2.5 text-sm [overflow-wrap:anywhere]"
       data-agent-box-system-message=""
       data-error={tone === 'error' ? '' : undefined}
     >
