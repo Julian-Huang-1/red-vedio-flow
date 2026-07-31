@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -15,7 +15,7 @@ import type {
 import {
   buildOpenAITextRequest,
 } from '@red-video-flow/workflow-runtime'
-import { ProviderRegistry } from '@red-video-flow/local-backend'
+import { ProviderRegistry, type VisualRunResult } from '@red-video-flow/local-backend'
 import type { LocalServerRuntime } from './runtime.js'
 
 export type WorkflowNodeRunEvent =
@@ -211,7 +211,10 @@ export async function startDurableWorkflowNodeRun(
     )
   }
   const configType = run.inputSnapshot.generationConfig.type
-  if (configType === 'openai-image' || configType === 'volc-video') {
+  if (
+    !runtime.postgresDatabase
+    && (configType === 'openai-image' || configType === 'volc-video')
+  ) {
     await runtime.backend.visualTasks.startNodeRun(runId)
     return
   }
@@ -226,6 +229,9 @@ export async function startDurableWorkflowNodeRun(
     emit: (event) => {
       if (event.type === 'run' && event.status === 'running') {
         runtime.backend.runs.markNodeRunRunning(runId)
+        if (event.providerTask) {
+          runtime.backend.runs.attachNodeProviderTask(runId, event.providerTask)
+        }
         return
       }
       if (event.type === 'text_delta') {
@@ -367,7 +373,7 @@ async function executeImage(
 ): Promise<ImageNodeResult> {
   const visualResult = await executePluginVisual(runtime, execution, 'image')
   const resultId = randomUUID()
-  const assets = registerPluginAssets(runtime, execution, visualResult, 'image', resultId)
+  const assets = await registerPluginAssets(runtime, execution, visualResult, 'image', resultId)
   if (!assets.length) {
     throw new ProviderExecutionError('empty_image_result', 'Image plugin returned no generated image', true)
   }
@@ -403,7 +409,7 @@ async function executeVideo(
 ): Promise<VideoNodeResult> {
   const visualResult = await executePluginVisual(runtime, execution, 'video')
   const resultId = randomUUID()
-  const assets = registerPluginAssets(runtime, execution, visualResult, 'video', resultId)
+  const assets = await registerPluginAssets(runtime, execution, visualResult, 'video', resultId)
   const video = assets.find((asset) => asset.kind === 'video')
   if (!video) {
     throw new ProviderExecutionError('empty_video_result', 'Video plugin returned no generated video', true)
@@ -447,7 +453,7 @@ async function executePluginVisual(
   nodeKind: 'image' | 'video',
 ) {
   const downloadDir = join(runtime.backend.assets.generatedDir, execution.runId)
-  const upstream = await pluginUpstreamNodes(runtime, execution.input)
+  const upstream = await pluginUpstreamNodes(runtime, execution)
   const providerOptions = {
     ...generationConfigOptions(execution.input),
     ...(execution.token ? { apiToken: execution.token } : {}),
@@ -463,34 +469,40 @@ async function executePluginVisual(
     downloadDir,
   }
   updateTrace(runtime, execution, { providerInput: request })
-  let result = await runtime.backend.visual.invoke({
-    ...request,
-    assetUrlForPath: (filePath) => runtime.backend.assets.assetUrlForPath(filePath),
-    onEvent: (event) => {
-      if (event.type === 'meta') {
-        execution.emit({
-          type: 'run',
-          status: 'running',
-          runId: execution.runId,
-          providerTask: {
-            providerId: execution.input.model.providerId,
-            taskId: event.submitId,
-          },
-        })
-      }
-      if (event.type === 'partial-image') {
-        execution.emit({
-          type: 'image_partial',
-          runId: execution.runId,
-          index: event.index,
-          base64: event.base64,
-        })
-      }
-      if (event.type === 'network-request') {
-        appendNetworkRequest(runtime, execution, event.request)
-      }
-    },
-  })
+  const existingSubmitId = runtime.backend.runs
+    ?.getNodeRun?.(execution.runId)
+    ?.providerTask
+    ?.taskId
+  let result: VisualRunResult = existingSubmitId
+    ? { submitId: existingSubmitId }
+    : await runtime.backend.visual.invoke({
+        ...request,
+        assetUrlForPath: (filePath) => runtime.backend.assets.assetUrlForPath(filePath),
+        onEvent: (event) => {
+          if (event.type === 'meta') {
+            execution.emit({
+              type: 'run',
+              status: 'running',
+              runId: execution.runId,
+              providerTask: {
+                providerId: execution.input.model.providerId,
+                taskId: event.submitId,
+              },
+            })
+          }
+          if (event.type === 'partial-image') {
+            execution.emit({
+              type: 'image_partial',
+              runId: execution.runId,
+              index: event.index,
+              base64: event.base64,
+            })
+          }
+          if (event.type === 'network-request') {
+            appendNetworkRequest(runtime, execution, event.request)
+          }
+        },
+      })
 
   const submitId = result.submitId
   while (!result.url && submitId) {
@@ -585,8 +597,9 @@ function sanitizeTraceValue(value: unknown, key = ''): unknown {
 
 async function pluginUpstreamNodes(
   runtime: LocalServerRuntime,
-  input: NodeRunInput,
+  execution: ExecuteInput,
 ) {
+  const input = execution.input
   const assets = [
     ...input.attachments,
     ...input.upstreamResults.flatMap((result) => result.assets),
@@ -611,7 +624,33 @@ async function pluginUpstreamNodes(
         messages: [],
       },
     }
-  })
+  }).reduce<Promise<Array<{
+    id: string
+    position: { x: number; y: number }
+    data: Record<string, unknown>
+  }>>>(async (pending, node, index) => {
+    const nodes = await pending
+    const asset = assets[index]
+    if (runtime.postgresInfrastructure && asset.url.startsWith('/api/blobs/')) {
+      const run = runtime.backend.runs.getNodeRun(execution.runId)
+      const ownerId = run?.userId
+      if (ownerId) {
+        const blobId = decodeURIComponent(asset.url.slice('/api/blobs/'.length))
+        const body = await runtime.postgresInfrastructure.blobs.readForOwner(blobId, ownerId)
+        const chunks: Buffer[] = []
+        for await (const chunk of body) chunks.push(Buffer.from(chunk))
+        const inputDir = join(runtime.backend.assets.generatedDir, 'provider-inputs')
+        await mkdir(inputDir, { recursive: true })
+        const safeName = (asset.name ?? `input-${index}`).replace(/[^a-zA-Z0-9._-]/g, '_')
+        const filePath = join(inputDir, `${blobId}-${safeName}`)
+        await writeFile(filePath, Buffer.concat(chunks))
+        const data = node.data as { value?: Record<string, unknown> }
+        data.value = { ...data.value, localPath: filePath }
+      }
+    }
+    nodes.push(node)
+    return nodes
+  }, Promise.resolve([]))
 }
 
 function generationConfigOptions(input: NodeRunInput) {
@@ -634,7 +673,7 @@ function resolveProviderPrompt(input: NodeRunInput) {
   return [...upstreamText, input.prompt.trim()].filter(Boolean).join('\n\n')
 }
 
-function registerPluginAssets(
+async function registerPluginAssets(
   runtime: LocalServerRuntime,
   execution: ExecuteInput,
   result: {
@@ -660,18 +699,33 @@ function registerPluginAssets(
     mimeType?: string
     role?: 'output' | 'last_frame' | 'preview'
   }> = result.assets?.length ? result.assets : [result]
-  return sourceAssets.flatMap((asset, index) => {
-    if (!asset.localPath || !asset.url) return []
+  const registered: ReturnType<typeof runtime.backend.assets.register>[] = []
+  for (const [index, asset] of sourceAssets.entries()) {
+    if (!asset.localPath || !asset.url) continue
     const kind = asset.role === 'last_frame'
       || asset.mimeType?.startsWith('image/')
       ? 'image'
       : asset.mimeType?.startsWith('video/')
         ? 'video'
         : defaultKind
-    return [runtime.backend.assets.register({
+    let url = asset.url
+    if (runtime.postgresInfrastructure) {
+      const userId = runtime.backend.runs.getNodeRun(execution.runId)?.userId
+      if (!userId) throw new Error('generated asset owner is missing')
+      const bytes = await readFile(asset.localPath)
+      const blob = await runtime.postgresInfrastructure.blobs.put({
+        ownerId: userId,
+        fileName: asset.fileName ?? `result-${index + 1}.${kind === 'image' ? 'png' : 'mp4'}`,
+        contentType: asset.mimeType,
+        size: bytes.length,
+        body: (async function* () { yield bytes })(),
+      })
+      url = runtime.postgresInfrastructure.blobs.toAssetReference(blob, kind).url
+    }
+    registered.push(runtime.backend.assets.register({
       workflowId: execution.workflowId,
       kind,
-      url: asset.url,
+      url,
       localPath: asset.localPath,
       fileName: asset.fileName ?? `result-${index + 1}.${kind === 'image' ? 'png' : 'mp4'}`,
       mimeType: asset.mimeType,
@@ -683,8 +737,9 @@ function registerPluginAssets(
       modelId: execution.input.model.modelId,
       prompt: execution.input.prompt,
       generationConfig: execution.input.generationConfig as unknown as Record<string, unknown>,
-    })]
-  })
+    }))
+  }
+  return registered
 }
 
 async function resolveLocalAssets(
@@ -692,6 +747,19 @@ async function resolveLocalAssets(
   input: NodeRunInput,
 ): Promise<NodeRunInput> {
   const resolveAsset = async (asset: AssetReference): Promise<AssetReference> => {
+    if (runtime.postgresInfrastructure && asset.url.startsWith('/api/blobs/')) {
+      const blobId = decodeURIComponent(asset.url.slice('/api/blobs/'.length))
+      const blob = await runtime.postgresInfrastructure.blobs.stat(blobId)
+      if (!blob) throw new ProviderExecutionError('asset_not_found', `Asset not found: ${asset.id}`, false)
+      const body = await runtime.postgresInfrastructure.blobs.read(blobId)
+      const chunks: Buffer[] = []
+      for await (const chunk of body) chunks.push(Buffer.from(chunk))
+      const mimeType = asset.mimeType ?? blob.contentType ?? 'application/octet-stream'
+      return {
+        ...asset,
+        url: `data:${mimeType};base64,${Buffer.concat(chunks).toString('base64')}`,
+      }
+    }
     if (!asset.url.startsWith('/api/assets/')) return asset
     const filePath = runtime.backend.assets.resolveAssetPath(asset.url)
     if (!filePath) throw new ProviderExecutionError('asset_not_found', `Asset not found: ${asset.id}`, false)

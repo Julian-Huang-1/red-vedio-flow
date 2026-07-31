@@ -40,6 +40,16 @@ export class PostgresChatRepository {
     return rows.map(toSession)
   }
 
+  async listAllSessions() {
+    const rows = await this.sql`SELECT * FROM chat_sessions ORDER BY updated_at DESC`
+    return rows.map(toSession)
+  }
+
+  async listAllMessages() {
+    const rows = await this.sql`SELECT * FROM chat_messages ORDER BY created_at`
+    return rows.map(toMessage)
+  }
+
   async get(ownerId: string, id: string) {
     const sessions = await this.sql`
       SELECT * FROM chat_sessions WHERE id = ${id} AND owner_id = ${ownerId} LIMIT 1
@@ -67,9 +77,12 @@ export class PostgresChatRepository {
     return session
   }
 
-  async delete(ownerId: string, id: string) {
+  async delete(ownerId: string | undefined, id: string) {
     const rows = await this.sql`
-      DELETE FROM chat_sessions WHERE id = ${id} AND owner_id = ${ownerId} RETURNING id
+      DELETE FROM chat_sessions
+      WHERE id = ${id}
+        AND (${ownerId ?? null}::uuid IS NULL OR owner_id = ${ownerId ?? null})
+      RETURNING id
     `
     return rows.length > 0
   }

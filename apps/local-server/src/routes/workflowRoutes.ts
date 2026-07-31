@@ -1,9 +1,11 @@
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, sendJson, type RequestContext } from '../http.js'
+import { workflowDataService } from '../dataServices.js'
 
 export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   const { req, res, pathname, url } = ctx
   const { backend, visualTasks } = runtime
+  const workflows = workflowDataService(runtime)
 
   if (req.method === 'GET' && pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'red-video-flow' })
@@ -43,12 +45,12 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
   }
 
   if (req.method === 'GET' && pathname === '/api/workflows') {
-    sendJson(res, 200, { workflows: backend.workflows.list() })
+    sendJson(res, 200, { workflows: await workflows.list() })
     return true
   }
 
   if (req.method === 'POST' && pathname === '/api/workflows') {
-    sendJson(res, 200, backend.workflows.create(await readJson(req)))
+    sendJson(res, 200, await workflows.create(await readJson(req)))
     return true
   }
 
@@ -99,7 +101,7 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
 
   const workflowId = workflowIdFromPath(pathname)
   if (workflowId && req.method === 'GET') {
-    const workflow = backend.workflows.get(workflowId)
+    const workflow = await workflows.get(workflowId)
     if (!workflow) {
       sendJson(res, 404, { error: 'workflow not found' })
       return true
@@ -109,7 +111,7 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
   }
   if (workflowId && req.method === 'PUT') {
     const body = await readJson(req)
-    sendJson(res, 200, backend.workflows.save({
+    sendJson(res, 200, await workflows.save({
       id: workflowId,
       title: body.title,
       baseRevision: body.baseRevision,
@@ -120,7 +122,7 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
   if (workflowId && req.method === 'PATCH') {
     const body = await readJson(req)
     sendJson(res, 200, {
-      workflow: backend.workflows.patch({
+      workflow: await workflows.patch({
         id: workflowId,
         baseRevision: body.baseRevision,
         ops: body.ops ?? [],
@@ -130,7 +132,7 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
     return true
   }
   if (workflowId && req.method === 'DELETE') {
-    backend.workflows.delete(workflowId)
+    await workflows.delete(workflowId)
     sendJson(res, 200, { ok: true })
     return true
   }

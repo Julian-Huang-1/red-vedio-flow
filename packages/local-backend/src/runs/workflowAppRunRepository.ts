@@ -12,7 +12,13 @@ export type PersistedWorkflowAppRun = {
 }
 
 export class WorkflowAppRunRepository {
+  private onSave?: (run: PersistedWorkflowAppRun) => Promise<void>
+
   constructor(private readonly database: LocalDatabase) {}
+
+  setPersistenceMirror(save: (run: PersistedWorkflowAppRun) => Promise<void>) {
+    this.onSave = save
+  }
 
   get<T extends PersistedWorkflowAppRun>(id: string): T | undefined {
     const row = this.database.db
@@ -64,6 +70,7 @@ export class WorkflowAppRunRepository {
         },
       })
       .run()
+    void this.onSave?.(run)
     return run
   }
 }

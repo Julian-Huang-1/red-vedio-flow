@@ -6,7 +6,18 @@ import { workflows } from '../db/schema.js'
 type WorkflowRow = typeof workflows.$inferSelect
 
 export class WorkflowRepository {
+  private onSave?: (document: WorkflowDocument) => Promise<void>
+  private onDelete?: (id: string) => Promise<void>
+
   constructor(private readonly database: LocalDatabase) {}
+
+  setPersistenceMirror(input: {
+    save(document: WorkflowDocument): Promise<void>
+    delete(id: string): Promise<void>
+  }) {
+    this.onSave = input.save
+    this.onDelete = input.delete
+  }
 
   list() {
     return this.database.db
@@ -30,12 +41,14 @@ export class WorkflowRepository {
         set: toRowValues(document),
       })
       .run()
+    void this.onSave?.(document)
 
     return document
   }
 
   delete(id: string) {
     this.database.db.delete(workflows).where(eq(workflows.id, id)).run()
+    void this.onDelete?.(id)
   }
 }
 

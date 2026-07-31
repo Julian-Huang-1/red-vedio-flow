@@ -29,6 +29,12 @@ type FileResourceInput = {
 }
 
 export class ResourceService {
+  private mirror?: {
+    save(resource: Resource): Promise<void>
+    delete(id: string): Promise<void>
+    bind(binding: ResourceBinding): Promise<void>
+  }
+
   constructor(private readonly database: LocalDatabase) {
     this.database.sqlite.exec(`
       INSERT OR IGNORE INTO resources (
@@ -42,6 +48,14 @@ export class ResourceService {
       FROM assets
       WHERE workflow_id IS NOT NULL
     `)
+  }
+
+  setPersistenceMirror(mirror: {
+    save(resource: Resource): Promise<void>
+    delete(id: string): Promise<void>
+    bind(binding: ResourceBinding): Promise<void>
+  }) {
+    this.mirror = mirror
   }
 
   list(input: {
@@ -121,7 +135,9 @@ export class ResourceService {
         },
       })
       .run()
-    return this.get(input.id)!
+    const resource = this.get(input.id)!
+    void this.mirror?.save(resource)
+    return resource
   }
 
   createText(input: {
@@ -156,7 +172,9 @@ export class ResourceService {
       createdAt: now,
       updatedAt: now,
     }).run()
-    return this.get(id)!
+    const resource = this.get(id)!
+    void this.mirror?.save(resource)
+    return resource
   }
 
   rename(id: string, name: string) {
@@ -164,7 +182,9 @@ export class ResourceService {
       .set({ name: name.trim(), updatedAt: Date.now() })
       .where(eq(resources.id, id))
       .run()
-    return this.get(id)
+    const resource = this.get(id)
+    if (resource) void this.mirror?.save(resource)
+    return resource
   }
 
   softDelete(id: string) {
@@ -172,6 +192,7 @@ export class ResourceService {
       .set({ deletedAt: Date.now(), updatedAt: Date.now() })
       .where(eq(resources.id, id))
       .run()
+    void this.mirror?.delete(id)
   }
 
   bind(input: {
@@ -210,7 +231,9 @@ export class ResourceService {
       createdAt: Date.now(),
     }
     this.database.db.insert(resourceBindings).values(row).run()
-    return toBinding(row as typeof resourceBindings.$inferSelect)
+    const binding = toBinding(row as typeof resourceBindings.$inferSelect)
+    void this.mirror?.bind(binding)
+    return binding
   }
 
   bindings(resourceId: string) {
@@ -218,6 +241,62 @@ export class ResourceService {
       .where(eq(resourceBindings.resourceId, resourceId))
       .all()
       .map(toBinding)
+  }
+
+  hydrate(resource: Resource) {
+    this.database.sqlite.prepare(`
+      INSERT OR REPLACE INTO resources (
+        id, workspace_id, kind, name, mime_type, text_content, url, local_path,
+        file_name, metadata_json, source, source_node_id, source_run_id,
+        source_result_id, provider_id, model_id, prompt, generation_config_json,
+        created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      resource.id,
+      resource.workspaceId,
+      resource.kind,
+      resource.name,
+      resource.mimeType ?? null,
+      resource.text ?? null,
+      resource.url ?? null,
+      resource.localPath ?? null,
+      resource.fileName ?? null,
+      JSON.stringify({
+        size: resource.size,
+        width: resource.width,
+        height: resource.height,
+        duration: resource.duration,
+        thumbnailUrl: resource.thumbnailUrl,
+      }),
+      resource.source,
+      resource.sourceNodeId ?? null,
+      resource.sourceRunId ?? null,
+      resource.sourceResultId ?? null,
+      resource.providerId ?? null,
+      resource.modelId ?? null,
+      resource.prompt ?? null,
+      resource.generationConfig ? JSON.stringify(resource.generationConfig) : null,
+      resource.createdAt,
+      resource.updatedAt,
+      resource.deletedAt ?? null,
+    )
+  }
+
+  hydrateBinding(binding: ResourceBinding) {
+    this.database.sqlite.prepare(`
+      INSERT OR IGNORE INTO resource_bindings (
+        id, resource_id, workflow_id, node_id, run_id, result_id, relation, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      binding.id,
+      binding.resourceId,
+      binding.workflowId,
+      binding.nodeId ?? null,
+      binding.runId ?? null,
+      binding.resultId ?? null,
+      binding.relation,
+      binding.createdAt,
+    )
   }
 }
 

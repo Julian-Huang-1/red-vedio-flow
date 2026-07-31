@@ -61,7 +61,10 @@ export function createRequestHandler(
       ]
 
       for (const handler of handlers) {
-        if (await handler(runtime, context)) return
+        if (await handler(runtime, context)) {
+          await runtime.flushPersistence()
+          return
+        }
       }
       if (url.pathname.startsWith('/api/')) {
         sendJson(res, 404, { error: 'not found' })

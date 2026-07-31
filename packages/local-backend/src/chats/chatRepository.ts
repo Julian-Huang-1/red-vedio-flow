@@ -27,7 +27,21 @@ export type ChatMessageRecord = {
 }
 
 export class ChatRepository {
+  private mirror?: {
+    saveSession(session: ChatSessionRecord): Promise<void>
+    delete(id: string): Promise<void>
+    saveMessage(message: ChatMessageRecord): Promise<void>
+  }
+
   constructor(private readonly database: LocalDatabase) {}
+
+  setPersistenceMirror(mirror: {
+    saveSession(session: ChatSessionRecord): Promise<void>
+    delete(id: string): Promise<void>
+    saveMessage(message: ChatMessageRecord): Promise<void>
+  }) {
+    this.mirror = mirror
+  }
 
   list(query?: string, workflowId?: string) {
     const pattern = query?.trim() ? `%${query.trim()}%` : undefined
@@ -61,6 +75,7 @@ export class ChatRepository {
       ...session,
       workflowId: session.workflowId ?? null,
     }).run()
+    void this.mirror?.saveSession(session)
     return session
   }
 
@@ -69,15 +84,21 @@ export class ChatRepository {
       .set({ title, updatedAt })
       .where(eq(chatSessions.id, id))
       .run()
-    return this.get(id)?.session
+    const session = this.get(id)?.session
+    if (session) void this.mirror?.saveSession(session)
+    return session
   }
 
   touch(id: string, updatedAt: number) {
     this.database.db.update(chatSessions).set({ updatedAt }).where(eq(chatSessions.id, id)).run()
+    const session = this.get(id)?.session
+    if (session) void this.mirror?.saveSession(session)
   }
 
   delete(id: string) {
-    return this.database.db.delete(chatSessions).where(eq(chatSessions.id, id)).run().changes > 0
+    const deleted = this.database.db.delete(chatSessions).where(eq(chatSessions.id, id)).run().changes > 0
+    if (deleted) void this.mirror?.delete(id)
+    return deleted
   }
 
   saveMessage(message: ChatMessageRecord) {
@@ -99,7 +120,40 @@ export class ChatRepository {
     this.database.db.insert(chatMessages).values(values)
       .onConflictDoUpdate({ target: chatMessages.id, set: values }).run()
     this.touch(message.sessionId, message.updatedAt)
+    void this.mirror?.saveMessage(message)
     return message
+  }
+
+  hydrateSession(session: ChatSessionRecord) {
+    this.database.db.insert(chatSessions).values({
+      ...session,
+      workflowId: session.workflowId ?? null,
+    }).onConflictDoUpdate({
+      target: chatSessions.id,
+      set: {
+        title: session.title,
+        workflowId: session.workflowId ?? null,
+        updatedAt: session.updatedAt,
+      },
+    }).run()
+  }
+
+  hydrateMessage(message: ChatMessageRecord) {
+    this.database.db.insert(chatMessages).values({
+      id: message.id,
+      sessionId: message.sessionId,
+      kind: message.kind,
+      role: message.role,
+      text: message.text,
+      status: message.status,
+      agentId: message.agentId ?? null,
+      agentLabel: message.agentLabel ?? null,
+      modelId: message.modelId ?? null,
+      error: message.error ?? null,
+      runJson: message.run === undefined ? null : JSON.stringify(message.run),
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+    }).onConflictDoNothing().run()
   }
 }
 

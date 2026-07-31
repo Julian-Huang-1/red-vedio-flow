@@ -22,6 +22,7 @@ import { LocalJobQueue } from './jobs/jobQueue.js'
 
 export type CreateLocalBackendOptions = {
   dataDir: string
+  databasePath?: string
   cwd?: string
   visualTaskOptions?: VisualTaskServiceOptions
   visual?: VisualServiceContract
@@ -30,7 +31,9 @@ export type CreateLocalBackendOptions = {
 
 export function createLocalBackend(options: CreateLocalBackendOptions) {
   mkdirSync(options.dataDir, { recursive: true })
-  const database = createDatabase(join(options.dataDir, 'red-video-flow.sqlite'))
+  const database = createDatabase(
+    options.databasePath ?? join(options.dataDir, 'red-video-flow.sqlite'),
+  )
   const users = new UserRepository(database)
   const credentials = new CredentialStore(
     database,
@@ -56,12 +59,15 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     credentials,
     options.visualTaskOptions,
   )
+  const chatRepository = new ChatRepository(database)
 
   return {
     dataDir: options.dataDir,
     cwd: options.cwd ?? process.cwd(),
     database,
     workflows,
+    workflowRepository,
+    runRepository,
     runs,
     workflowAppRuns,
     nodeResults,
@@ -70,7 +76,8 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     prompts: new AgentPromptService(),
     visual,
     visualTasks,
-    chats: new ChatService(new ChatRepository(database)),
+    chats: new ChatService(chatRepository),
+    chatRepository,
     users,
     credentials,
     providers: new ProviderRegistry(),

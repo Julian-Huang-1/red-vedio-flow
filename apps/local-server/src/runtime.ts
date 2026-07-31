@@ -19,6 +19,14 @@ import {
   createPostgresInfrastructure,
   migratePostgres,
 } from '@red-video-flow/postgres-backend'
+import {
+  hydrateChatCache,
+  hydrateRunCache,
+  hydrateResourceCache,
+  hydrateWorkflowAppRunCache,
+  hydrateWorkflowCache,
+} from './dataServices.js'
+import { PersistenceFlushQueue } from './persistenceFlushQueue.js'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
   const postgres = config.databaseUrl
@@ -37,6 +45,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
   })
   const backend = createLocalBackend({
     dataDir: config.dataDir,
+    databasePath: postgres ? ':memory:' : undefined,
     cwd: config.cwd,
     visual: new PluginVisualService(plugins, {
       requestTimeoutMs: config.runTimeoutMs,
@@ -53,6 +62,88 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     ? createPostgresInfrastructure(postgres, config.credentialEncryptionKey)
     : undefined
   if (postgresInfrastructure) Object.assign(backend, postgresInfrastructure)
+  const persistence = new PersistenceFlushQueue()
+  if (postgresInfrastructure) {
+    backend.workflowRepository.setPersistenceMirror({
+      save(document) {
+        const operation = (async () => {
+          const current = await postgresInfrastructure.workflowDocuments.get(document.id)
+          if (current?.revision === document.revision) return
+          await postgresInfrastructure.workflowDocuments.save(document, current?.revision)
+        })()
+        persistence.add(operation)
+        return operation
+      },
+      delete(id) {
+        const operation = postgresInfrastructure.workflowDocuments.delete(id).then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+    })
+    backend.runRepository.setPersistenceMirror({
+      save(run) {
+        const operation = postgresInfrastructure.workflowRuns.save(run).then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+      appendEvent(runId, type, data) {
+        const operation = postgresInfrastructure.workflowRuns
+          .appendEvent(runId, type, data)
+          .then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+    })
+    backend.workflowAppRuns.setPersistenceMirror((run) => {
+      const operation = postgresInfrastructure.postgresWorkflowAppRuns.save(run).then(() => undefined)
+      persistence.add(operation)
+      return operation
+    })
+    backend.resources.setPersistenceMirror({
+      save(resource) {
+        const operation = postgresInfrastructure.postgresResources
+          .save(resource)
+          .then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+      delete(id) {
+        const operation = postgresInfrastructure.postgresResources.softDelete(id)
+        persistence.add(operation)
+        return operation
+      },
+      bind(binding) {
+        const operation = postgresInfrastructure.postgresResources
+          .bind(binding)
+          .then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+    })
+    backend.chatRepository.setPersistenceMirror({
+      saveSession(session) {
+        const operation = postgresInfrastructure.postgresChats
+          .saveSession(session)
+          .then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+      delete(id) {
+        const operation = postgresInfrastructure.postgresChats
+          .delete(undefined, id)
+          .then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+      saveMessage(message) {
+        const operation = postgresInfrastructure.postgresChats
+          .saveMessage(message)
+          .then(() => undefined)
+        persistence.add(operation)
+        return operation
+      },
+    })
+  }
   const executions = new ExecutionManager(
     new ExecutionRepository(backend.database),
     plugins,
@@ -140,10 +231,16 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     visualTasks,
     postgresInfrastructure,
     postgresDatabase: postgres,
+    flushPersistence: () => persistence.flush(),
     async start() {
       if (started) return
       started = true
       if (postgres) await migratePostgres(postgres)
+      await hydrateWorkflowCache(runtime)
+      await hydrateRunCache(runtime)
+      await hydrateWorkflowAppRunCache(runtime)
+      await hydrateResourceCache(runtime)
+      await hydrateChatCache(runtime)
       await plugins.start()
       registerBuiltinProviders(runtime)
       executions.bootstrap()

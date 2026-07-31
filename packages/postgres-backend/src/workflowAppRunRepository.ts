@@ -37,6 +37,13 @@ export class PostgresWorkflowAppRunRepository {
     return rows.map((row) => row.data as T)
   }
 
+  async listAll<T extends PostgresWorkflowAppRun>() {
+    const rows = await this.sql`
+      SELECT data FROM workflow_app_runs ORDER BY updated_at DESC
+    `
+    return rows.map((row) => row.data as T)
+  }
+
   async save<T extends PostgresWorkflowAppRun>(run: T) {
     await this.sql`
       INSERT INTO workflow_app_runs (

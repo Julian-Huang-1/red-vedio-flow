@@ -53,6 +53,7 @@ export class WorkflowWorker {
       } else {
         throw new Error(`unsupported job type: ${job.type}`)
       }
+      await this.runtime.flushPersistence()
       await this.runtime.backend.jobs.complete(job.id, this.workerId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

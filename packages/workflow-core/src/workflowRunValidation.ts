@@ -55,6 +55,7 @@ function validateInputNode(
 ) {
   const field = node.data.workflowInput
   if (!field) {
+    if (node.data.serviceRole === 'input' && node.data.serviceLabel?.trim()) return
     issues.push(nodeIssue(node, 'workflow_input_missing', '输入节点缺少字段定义', 'workflowInput'))
     return
   }
@@ -84,6 +85,7 @@ function validateGenerateNode(
 ) {
   const composer = node.data.composer
   if (!composer || typeof composer !== 'object') {
+    if (node.data.serviceRole === 'output' && hasUpstream) return
     issues.push(nodeIssue(node, 'composer_missing', '节点缺少 Composer 配置', 'composer'))
     return
   }

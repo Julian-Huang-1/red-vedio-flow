@@ -7,7 +7,7 @@ import * as schema from './schema.js'
 export type LocalDatabase = ReturnType<typeof createDatabase>
 
 export function createDatabase(databasePath: string) {
-  mkdirSync(dirname(databasePath), { recursive: true })
+  if (databasePath !== ':memory:') mkdirSync(dirname(databasePath), { recursive: true })
   const sqlite = new Database(databasePath)
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')

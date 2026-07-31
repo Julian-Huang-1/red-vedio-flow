@@ -9,7 +9,17 @@ export type PostgresWorkflowRun = {
   userId?: string
   workflowId: string
   nodeId: string
-  status: string
+  status:
+    | 'queued'
+    | 'running'
+    | 'done'
+    | 'error'
+    | 'timeout'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+    | 'timed_out'
+    | 'interrupted'
   prompt: string
   kind?: 'text' | 'image' | 'video'
   inputSnapshot?: NodeRunInput
@@ -41,6 +51,11 @@ export class PostgresRunRepository {
     const rows = await this.sql`
       SELECT * FROM runs WHERE workflow_id = ${workflowId} ORDER BY updated_at DESC
     `
+    return rows.map(toRun)
+  }
+
+  async listAll() {
+    const rows = await this.sql`SELECT * FROM runs ORDER BY updated_at DESC`
     return rows.map(toRun)
   }
 
@@ -127,7 +142,7 @@ function toRun(row: Record<string, unknown>): PostgresWorkflowRun {
     userId: row.user_id ? String(row.user_id) : undefined,
     workflowId: String(row.workflow_id),
     nodeId: String(row.node_id),
-    status: String(row.status),
+    status: String(row.status) as PostgresWorkflowRun['status'],
     prompt: String(row.prompt),
     kind: String(row.kind) as PostgresWorkflowRun['kind'],
     inputSnapshot: row.input as NodeRunInput | undefined,

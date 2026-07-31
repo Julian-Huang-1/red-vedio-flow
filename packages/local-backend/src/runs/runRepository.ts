@@ -43,7 +43,18 @@ export type WorkflowRun = {
 }
 
 export class RunRepository {
+  private onSave?: (run: WorkflowRun) => Promise<void>
+  private onEvent?: (runId: string, type: string, data: unknown) => Promise<void>
+
   constructor(private readonly database: LocalDatabase) {}
+
+  setPersistenceMirror(input: {
+    save(run: WorkflowRun): Promise<void>
+    appendEvent(runId: string, type: string, data: unknown): Promise<void>
+  }) {
+    this.onSave = input.save
+    this.onEvent = input.appendEvent
+  }
 
   get(id: string) {
     const row = this.database.db.select().from(runs).where(eq(runs.id, id)).get()
@@ -82,6 +93,7 @@ export class RunRepository {
         set: toRowValues(run),
       })
       .run()
+    void this.onSave?.(run)
 
     return run
   }
@@ -93,6 +105,7 @@ export class RunRepository {
       dataJson: JSON.stringify(data),
       createdAt: Date.now(),
     }).run()
+    void this.onEvent?.(runId, type, data)
     return {
       id: Number(result.lastInsertRowid),
       runId,
@@ -100,6 +113,19 @@ export class RunRepository {
       data,
       createdAt: Date.now(),
     }
+  }
+
+  hydrateEvent(event: {
+    id: number
+    runId: string
+    type: string
+    data: unknown
+    createdAt: number
+  }) {
+    this.database.sqlite.prepare(`
+      INSERT OR IGNORE INTO node_run_events (id, run_id, type, data_json, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(event.id, event.runId, event.type, JSON.stringify(event.data), event.createdAt)
   }
 
   listEvents(runId: string, after = 0) {

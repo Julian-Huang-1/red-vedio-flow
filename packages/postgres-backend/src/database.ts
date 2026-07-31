@@ -184,10 +184,18 @@ export async function migratePostgres(sql: PostgresDatabase) {
         run_id text,
         result_id text,
         relation text NOT NULL,
-        created_at bigint NOT NULL,
-        UNIQUE NULLS NOT DISTINCT (
-          resource_id, workflow_id, node_id, run_id, result_id, relation
-        )
+        created_at bigint NOT NULL
+      )
+    `
+    await tx`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_bindings_identity
+      ON resource_bindings (
+        resource_id,
+        workflow_id,
+        COALESCE(node_id, ''),
+        COALESCE(run_id, ''),
+        COALESCE(result_id, ''),
+        relation
       )
     `
     await tx`

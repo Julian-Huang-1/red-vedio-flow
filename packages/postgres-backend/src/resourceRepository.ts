@@ -41,6 +41,11 @@ export class PostgresResourceRepository {
     return rows[0] ? toResource(rows[0]) : undefined
   }
 
+  async listAll() {
+    const rows = await this.sql`SELECT * FROM resources ORDER BY updated_at DESC`
+    return rows.map(toResource)
+  }
+
   async save(resource: Resource, blobId?: string) {
     await this.sql`
       INSERT INTO resources (
@@ -105,18 +110,32 @@ export class PostgresResourceRepository {
         ${input.nodeId ?? null}, ${input.runId ?? null}, ${input.resultId ?? null},
         ${input.relation}, ${createdAt}
       )
-      ON CONFLICT (
-        resource_id, workflow_id, node_id, run_id, result_id, relation
-      ) DO UPDATE SET resource_id = EXCLUDED.resource_id
+      ON CONFLICT DO NOTHING
       RETURNING *
     `
-    return toBinding(rows[0])
+    if (rows[0]) return toBinding(rows[0])
+    const existing = await this.sql`
+      SELECT * FROM resource_bindings
+      WHERE resource_id = ${input.resourceId}
+        AND workflow_id = ${input.workflowId}
+        AND node_id IS NOT DISTINCT FROM ${input.nodeId ?? null}
+        AND run_id IS NOT DISTINCT FROM ${input.runId ?? null}
+        AND result_id IS NOT DISTINCT FROM ${input.resultId ?? null}
+        AND relation = ${input.relation}
+      LIMIT 1
+    `
+    return toBinding(existing[0])
   }
 
   async bindings(resourceId: string) {
     const rows = await this.sql`
       SELECT * FROM resource_bindings WHERE resource_id = ${resourceId}
     `
+    return rows.map(toBinding)
+  }
+
+  async listAllBindings() {
+    const rows = await this.sql`SELECT * FROM resource_bindings ORDER BY created_at`
     return rows.map(toBinding)
   }
 }
