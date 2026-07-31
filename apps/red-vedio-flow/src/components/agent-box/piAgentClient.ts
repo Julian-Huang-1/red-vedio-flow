@@ -1,4 +1,5 @@
 import type { AgentAttachment, AgentResourceReference } from './agentBoxTypes'
+import { resolveAgentResourceUrl } from './resourceUrl'
 
 export type PiAgentModelDto = {
   id: string
@@ -214,7 +215,7 @@ async function serializeResource(resource: AgentResourceReference) {
     blob = new Blob([resource.text ?? ''], { type: resource.mimeType })
   } else {
     if (!resource.url) throw new Error(`资源内容不可用：${resource.name}`)
-    const response = await fetch(resource.url)
+    const response = await fetch(resolveAgentResourceUrl(resource.url))
     if (!response.ok) throw new Error(`读取资源失败：${resource.name}`)
     blob = await response.blob()
   }

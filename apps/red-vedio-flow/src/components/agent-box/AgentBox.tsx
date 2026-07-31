@@ -5,7 +5,7 @@ const Root = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('relative grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-background', className)}
+      className={cn('relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-background', className)}
       data-agent-box-root=""
       {...props}
     />

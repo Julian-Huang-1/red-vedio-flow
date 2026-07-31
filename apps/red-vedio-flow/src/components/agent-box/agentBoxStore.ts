@@ -17,6 +17,7 @@ import {
   type PiAgentSessionSummaryDto,
 } from './piAgentClient'
 import { useAppBuilderStore } from '../../pages/app-builder/appBuilderStore'
+import { resolveAgentResourceUrl } from './resourceUrl'
 
 const agents: AgentOption[] = [
   { id: 'workflow-agent', label: '工作流助手', description: '规划和修改视频工作流' },
@@ -55,6 +56,16 @@ let activeRunController: AbortController | undefined
 
 const createId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+function appendResourcesToPrompt(prompt: string, resources: AgentResourceReference[]) {
+  if (!resources.length) return prompt
+  const resourcesWithAbsoluteUrls = resources.map((resource) => ({
+    ...resource,
+    url: resolveAgentResourceUrl(resource.url),
+    thumbnailUrl: resolveAgentResourceUrl(resource.thumbnailUrl),
+  }))
+  return `${prompt}\n\n用户选择的资源对象：\n${JSON.stringify(resourcesWithAbsoluteUrls, null, 2)}`
+}
 
 type AgentBoxState = {
   open: boolean
@@ -246,6 +257,9 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     try {
       const state = get()
       const currentArtifact = useAppBuilderStore.getState().artifactsBySessionId[sessionId]
+      const attachmentResources = appBuilder
+        ? resources.filter((resource) => resource.kind !== 'video')
+        : resources
       const contexts = state.contextIds
         .map((id) => state.contextsById[id])
         .filter(Boolean)
@@ -253,12 +267,12 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       await runner(
         sessionId,
         {
-          message: prompt,
+          message: appBuilder ? appendResourcesToPrompt(prompt, resources) : prompt,
           modelId: state.selectedModelId,
           agentId: state.selectedAgentId,
           contexts,
           attachments,
-          resources,
+          resources: attachmentResources,
           workspace: appBuilder
             ? {
                 type: 'app-builder',

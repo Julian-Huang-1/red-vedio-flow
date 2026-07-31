@@ -51,11 +51,18 @@ import {
 
 describe('agentBoxStore', () => {
   beforeEach(() => {
+    vi.stubGlobal('window', {
+      location: {
+        origin: 'https://cowork.example.com',
+        pathname: '/s/deployment-123/app-builder',
+      },
+    })
     useAgentBoxStore.getState().reset()
   })
 
   afterEach(() => {
     useAgentBoxStore.getState().stop()
+    vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
@@ -114,18 +121,63 @@ describe('agentBoxStore', () => {
     expect(selectCanSubmit(useAgentBoxStore.getState())).toBe(true)
 
     let receivedResources: unknown[] | undefined
+    let receivedMessage = ''
     await useAgentBoxStore.getState().submit(async (_sessionId, input, _signal, onEvent) => {
       receivedResources = input.resources
+      receivedMessage = input.message
       onEvent({ type: 'run-start', runId: 'resource-run' })
       onEvent({ type: 'run-end', status: 'stopped' })
     })
 
     expect(receivedResources).toEqual([resource])
+    const resourceWithAbsoluteUrl = {
+      ...resource,
+      url: 'https://cowork.example.com/s/deployment-123/resources/image-1',
+      thumbnailUrl: undefined,
+    }
+    expect(receivedMessage).toBe(
+      `发送了资源\n\n用户选择的资源对象：\n${JSON.stringify([resourceWithAbsoluteUrl], null, 2)}`,
+    )
     const state = useAgentBoxStore.getState()
     expect(state.pendingResources).toEqual([])
     const userMessage = Object.values(state.messagesById).find((message) => message.role === 'user')
+    expect(userMessage?.text).toBe('发送了资源')
     expect(userMessage?.resourceIds).toEqual([resource.id])
     expect(state.resourcesById[resource.id]).toEqual(resource)
+  })
+
+  it('sends App Builder video resources only as absolute URLs in the message', async () => {
+    const video = {
+      id: 'canvas-resource-video-1',
+      resourceId: 'video-1',
+      kind: 'video' as const,
+      name: '产品演示.mp4',
+      mimeType: 'video/mp4',
+      size: 32 * 1024 * 1024,
+      url: '/resources/video-1',
+      thumbnailUrl: '/resources/video-1/cover',
+      duration: 18,
+    }
+    useAgentBoxStore.getState().selectAgent('app-builder-agent')
+    useAgentBoxStore.getState().addResource(video)
+
+    let receivedResources: unknown[] | undefined
+    let receivedMessage = ''
+    await useAgentBoxStore.getState().submit(async (_sessionId, input, _signal, onEvent) => {
+      receivedResources = input.resources
+      receivedMessage = input.message
+      onEvent({ type: 'run-start', runId: 'video-resource-run' })
+      onEvent({ type: 'run-end', status: 'completed' })
+    })
+
+    expect(receivedResources).toEqual([])
+    expect(receivedMessage).toContain(
+      '"url": "https://cowork.example.com/s/deployment-123/resources/video-1"',
+    )
+    expect(receivedMessage).toContain(
+      '"thumbnailUrl": "https://cowork.example.com/s/deployment-123/resources/video-1/cover"',
+    )
+    expect(receivedMessage).toContain('"duration": 18')
   })
 
   it('submits and completes a streaming response', async () => {

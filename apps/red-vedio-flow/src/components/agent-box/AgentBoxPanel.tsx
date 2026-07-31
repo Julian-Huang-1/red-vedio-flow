@@ -2,7 +2,6 @@ import { AgentBox } from './AgentBox'
 import { useAgentBoxStore } from './agentBoxStore'
 import {
   AgentBoxComposer,
-  AgentBoxContext,
   AgentBoxHeader,
   AgentBoxHistory,
   AgentBoxMessages,
@@ -19,7 +18,6 @@ export function AgentBoxPanel() {
     >
       <AgentBoxServerState />
       <AgentBoxHeader />
-      <AgentBoxContext />
       <AgentBoxMessages />
       <AgentBoxComposer />
       <AgentBoxHistory />
