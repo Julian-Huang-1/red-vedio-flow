@@ -21,6 +21,8 @@ export type BlobAssetApi = {
     fileName: string
     mimeType?: string
   }): Promise<string | undefined>
+  requirePublishedAsset?(input: { kind: ResourceKind; mimeType?: string }): boolean
+  onPublishAssetError?(error: unknown): void | Promise<void>
   onResourceSaved?(resource: Resource): void | Promise<void>
 }
 
@@ -47,7 +49,21 @@ export async function handleBlobAssetRoutes(
       : mimeType?.startsWith('image/')
         ? 'image'
         : 'file'
-    const publicUrl = await api.publishAsset?.({ bytes, fileName, mimeType })
+    const publishRequired = api.requirePublishedAsset?.({ kind, mimeType }) ?? false
+    let publicUrl: string | undefined
+    try {
+      publicUrl = await api.publishAsset?.({ bytes, fileName, mimeType })
+    } catch (error) {
+      await api.onPublishAssetError?.(error)
+      if (publishRequired) {
+        await api.blobs.delete(blob.id).catch(() => undefined)
+        throw error
+      }
+    }
+    if (publishRequired && !publicUrl) {
+      await api.blobs.delete(blob.id).catch(() => undefined)
+      throw new Error('视频上传未返回公网 CDN URL')
+    }
     const asset = {
       ...api.blobs.toAssetReference(blob, kind),
       ...(publicUrl ? { url: publicUrl } : {}),

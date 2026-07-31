@@ -108,6 +108,7 @@ async function pollSeedanceTask(
   context: ProviderExecutionContext,
 ) {
   const url = taskUrl(createUrl, taskId)
+  let consecutiveFailures = 0
   while (!context.signal.aborted) {
     await abortableDelay(2_000, context.signal)
     await context.trace.recordNetworkRequest({
@@ -117,20 +118,41 @@ async function pollSeedanceTask(
       headers: { ...headers, Authorization: '[REDACTED]' },
       recordedAt: Date.now(),
     })
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: context.signal,
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: context.signal,
+      })
+    } catch (error) {
+      if (context.signal.aborted) throw error
+      consecutiveFailures += 1
+      if (consecutiveFailures <= 5) continue
+      throw new ProviderBoundaryError(
+        'seedance_poll_network_error',
+        `Seedance 轮询连续 ${consecutiveFailures} 次网络失败：${error instanceof Error ? error.message : String(error)}`,
+        true,
+      )
+    }
     const payload = await response.json().catch(() => undefined)
     await context.trace.recordResponse(sanitizeProviderPayload(payload))
     if (!response.ok) {
+      const retryable = response.status === 404
+        || response.status === 408
+        || response.status === 429
+        || response.status >= 500
+      if (retryable) {
+        consecutiveFailures += 1
+        if (consecutiveFailures <= 5) continue
+      }
       throw new ProviderBoundaryError(
         `provider_http_${response.status}`,
         providerErrorMessage(payload, response.status),
-        response.status >= 500,
+        retryable,
       )
     }
+    consecutiveFailures = 0
     const record = unwrapProviderPayload(payload)
     const media = seedanceMedia(record)
     if (media.videoUrl) {

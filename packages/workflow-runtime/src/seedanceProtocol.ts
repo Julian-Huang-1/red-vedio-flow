@@ -75,6 +75,9 @@ export function seedanceTaskId(payload: unknown) {
 }
 
 export function seedanceTaskStatus(payload: unknown) {
+  // MaaS may return an error-like status while the asynchronous task has
+  // already been accepted. A task ID is authoritative: keep polling it.
+  if (seedanceTaskId(payload)) return 'running' as const
   const value = findString(payload, ['status', 'state', 'task_status', 'taskStatus'])?.toLowerCase()
   if (value && ['succeeded', 'success', 'completed', 'complete', 'done'].includes(value)) {
     return 'succeeded' as const

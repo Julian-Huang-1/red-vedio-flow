@@ -112,8 +112,22 @@ describe('Seedance protocol', () => {
 
   it('preserves the provider-qualified task ID required by MaaS polling', () => {
     expect(seedanceTaskId({ response: { task_id: 'task-1' } })).toBe('task-1')
+    expect(seedanceTaskId({ response: { id: 'Doubao-seedance2.0:cgt-123' } }))
+      .toBe('Doubao-seedance2.0:cgt-123')
     expect(seedanceTaskId({ id: 'Doubao-seedance2.0:cgt-123' }))
       .toBe('Doubao-seedance2.0:cgt-123')
+  })
+
+  it('treats every response containing a task ID as running', () => {
+    expect(seedanceTaskStatus({
+      response: { id: 'Doubao-seedance2.0:cgt-123' },
+    })).toBe('running')
+    expect(seedanceTaskStatus({
+      response: { id: 'cgt-123', status: 'running' },
+    })).toBe('running')
+    expect(seedanceTaskStatus({
+      response: { id: 'cgt-123', status: 'error' },
+    })).toBe('running')
   })
 
   it('reads wrapped task status and media responses', () => {

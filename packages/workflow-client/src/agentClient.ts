@@ -248,7 +248,11 @@ export async function uploadAsset(file: File, workflowId: string) {
     },
   )
 
-  if (!response.ok) throw new Error('上传本地素材失败')
+  if (!response.ok) {
+    const payload = await response.json().catch(() => undefined) as { error?: unknown } | undefined
+    const detail = typeof payload?.error === 'string' ? `：${payload.error}` : ''
+    throw new Error(`上传本地素材失败${detail}`)
+  }
   const asset = (await response.json()) as UploadedAsset
   const resourceId = asset.resourceId ?? asset.id
   return { ...asset, id: resourceId, resourceId }

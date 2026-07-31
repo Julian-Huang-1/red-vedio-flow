@@ -108,6 +108,13 @@ async function handleBlobs(runtime: CoworkRuntime, ctx: RequestContext, userId: 
       mimeType,
       cookie: ctx.req.headers.cookie,
     }),
+    requirePublishedAsset: ({ kind }) => kind === 'video',
+    onPublishAssetError: (error) => {
+      console.error(
+        '[asset upload] CDN publish failed; using persisted blob URL:',
+        error,
+      )
+    },
     saveResource: (resource, blobId) => (
       runtime.infrastructure.postgresResources.save(resource, blobId)
     ),

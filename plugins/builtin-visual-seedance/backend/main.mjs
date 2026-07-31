@@ -154,7 +154,10 @@ async function query({ executionId, externalTaskId, options = {} }) {
     `${tasksUrl()}/${encodeURIComponent(externalTaskId)}`,
     { method: 'GET' },
   )
-  const status = normalizedStatus(findValueDeep(payload, ['status', 'state', 'task_status', 'taskStatus']))
+  const responseTaskId = findValueDeep(payload, ['id', 'task_id', 'taskId', 'cgt_id', 'cgtId'])
+  const status = responseTaskId
+    ? 'pending'
+    : normalizedStatus(findValueDeep(payload, ['status', 'state', 'task_status', 'taskStatus']))
   const videoUrl = findNamedMediaUrl(payload, ['video_url', 'videoUrl']) ?? findMediaUrl(payload)
   const lastFrameUrl = findNamedMediaUrl(payload, [
     'last_frame_url',
