@@ -79,9 +79,9 @@ function RootLayout() {
               onClick={() => setModelSettingsOpen(true)}
             >
               <KeyRound size={16} />
-              模型设置
+              设置key
             </Button>
-            <Button className="relative" onClick={openDrawer}>
+            {/* <Button className="relative" onClick={openDrawer}>
               <Sparkles size={16} />
               打开 Agent
               {unreadCount ? (
@@ -89,7 +89,7 @@ function RootLayout() {
                   {unreadCount}
                 </span>
               ) : null}
-            </Button>
+            </Button> */}
           </div>
         </div>
       </header>
