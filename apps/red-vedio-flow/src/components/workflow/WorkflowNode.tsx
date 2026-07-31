@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Bug, Check, Copy, FileText, Image, LoaderCircle, Pencil, Upload, Video } from 'lucide-react'
+import { Bug, Check, Copy, FileText, Image, LoaderCircle, Pencil, TriangleAlert, Upload, Video, ZoomIn } from 'lucide-react'
 import { useTaskStore } from '@/stores/taskStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 import { createResourceBinding, uploadAsset } from '@red-video-flow/workflow-client'
 import { queryClient } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { NodeComposer } from './NodeComposer'
 import { NodeDebugDrawer } from './NodeDebugDrawer'
@@ -37,6 +42,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const [editingText, setEditingText] = useState(false)
   const [textDraft, setTextDraft] = useState('')
   const [debugOpen, setDebugOpen] = useState(false)
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
   const contentFileInputRef = useRef<HTMLInputElement>(null)
   const presentation = nodePresentation[data.kind]
   const Icon = presentation.icon
@@ -66,8 +72,25 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
     data.latestRunId ? state.runs[data.latestRunId]?.error?.message : undefined
   ))
   const workflowNodeState = useTaskStore((state) => state.workflowRun?.nodeStates[id])
+  const workflowValidationIssues = useTaskStore((state) => state.workflowValidationIssues)
+  const validationIssues = workflowValidationIssues.filter((issue) => issue.nodeId === id)
   const currentResult = data.results.find((result) => result.id === data.currentResultId)
+  const previewImage = partialImage
+    ? { src: partialImage, alt: '生成预览' }
+    : currentResult?.type === 'image' && currentResult.images[0]
+      ? {
+          src: currentResult.images[0].url,
+          alt: currentResult.images[0].name ?? '节点图片',
+        }
+      : undefined
   const copyableContent = getCopyableContent(currentResult, streamingText)
+  const statusTag = getNodeStatusTag({
+    dataStatus: data.status,
+    executionMode: data.executionMode,
+    presentationLabel: presentation.label,
+    runStatus,
+    workflowStatus: workflowNodeState?.status,
+  })
 
   useEffect(() => {
     if (!copied) return
@@ -168,6 +191,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
       data-node-status={data.status}
       data-execution-state={runStatus ?? 'idle'}
       data-workflow-execution-state={workflowNodeState?.status ?? 'idle'}
+      data-validation-error={validationIssues.length ? '' : undefined}
     >
       <div
         className="relative mx-auto w-[360px]"
@@ -181,19 +205,19 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           position={Position.Left}
           className="!size-2.5 !border-2 !border-background !bg-foreground"
         />
-        <div className="overflow-hidden rounded-xl border bg-card shadow-sm transition-[border-color,box-shadow] group-data-[selected]:border-foreground/40 group-data-[selected]:shadow-md">
+        <div className="overflow-hidden rounded-xl border bg-card shadow-sm transition-[border-color,box-shadow] group-data-[selected]:border-foreground/40 group-data-[selected]:shadow-md group-data-[validation-error]:border-destructive/40">
           <header
             className="flex h-9 items-center gap-2 border-b px-3"
             data-workflow-node-header=""
           >
             <Icon size={14} className="text-muted-foreground" />
             <h2 className="min-w-0 flex-1 truncate text-[13px] font-medium">{data.title}</h2>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium tracking-wider text-muted-foreground">
-              {workflowNodeState?.status === 'running'
-                ? 'RUNNING'
-                : data.executionMode === 'input'
-                  ? 'INPUT'
-                  : presentation.label}
+            <span
+              className={`rounded-full px-2 py-0.5 text-[9px] font-medium tracking-wider ${statusTag.className}`}
+              data-workflow-node-status-tag=""
+              data-status={statusTag.status}
+            >
+              {statusTag.label}
             </span>
             {data.kind === 'image' || data.kind === 'video' ? (
               <>
@@ -227,6 +251,25 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
                     ? <LoaderCircle className="size-3.5 animate-spin" />
                     : <Upload className="size-3.5" />}
                 </Button>
+                {data.kind === 'image' ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="nodrag nopan size-7 text-muted-foreground hover:text-foreground"
+                    aria-label="查看图片大图"
+                    title={previewImage ? '查看图片大图' : '暂无可预览图片'}
+                    disabled={!previewImage}
+                    data-workflow-node-image-preview=""
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setImagePreviewOpen(true)
+                    }}
+                  >
+                    <ZoomIn className="size-3.5" />
+                  </Button>
+                ) : null}
               </>
             ) : null}
             {data.kind === 'text' ? (
@@ -308,17 +351,33 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
               }}
             />
           ) : (
-            <NodePreview
-              kind={data.kind}
-              result={currentResult}
-              streamingText={streamingText}
-              partialImage={partialImage}
-              error={uploadError ?? (
-                data.status === 'error'
-                  ? runError ?? workflowNodeState?.error
-                  : undefined
-              )}
-            />
+            <>
+              <NodePreview
+                kind={data.kind}
+                result={currentResult}
+                streamingText={streamingText}
+                partialImage={partialImage}
+                error={uploadError ?? (
+                  data.status === 'error'
+                    ? runError ?? workflowNodeState?.error
+                    : undefined
+                )}
+              />
+              {validationIssues.length ? (
+                <div
+                  className="flex items-start gap-1.5 border-t border-destructive/20 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive"
+                  data-workflow-node-validation=""
+                >
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    {validationIssues[0].message}
+                    {validationIssues.length > 1
+                      ? `，另有 ${validationIssues.length - 1} 个问题`
+                      : ''}
+                  </span>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
         <Handle
@@ -393,6 +452,21 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
         nodeTitle={data.title}
         onOpenChange={setDebugOpen}
       />
+      {previewImage ? (
+        <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
+          <DialogContent
+            className="w-auto max-w-[calc(100vw-3rem)] border-0 bg-transparent p-0 shadow-none sm:max-w-[calc(100vw-3rem)]"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <DialogTitle className="sr-only">图片大图预览</DialogTitle>
+            <img
+              className="max-h-[90vh] max-w-[calc(100vw-3rem)] object-contain shadow-2xl"
+              src={previewImage.src}
+              alt={previewImage.alt}
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </article>
   )
 }
@@ -406,6 +480,75 @@ function getCopyableContent(
   if (result?.type === 'image') return result.images[0]?.url
   if (result?.type === 'video') return result.video.url
   return undefined
+}
+
+function getNodeStatusTag({
+  dataStatus,
+  executionMode,
+  presentationLabel,
+  runStatus,
+  workflowStatus,
+}: {
+  dataStatus: WorkflowFlowNode['data']['status']
+  executionMode?: WorkflowFlowNode['data']['executionMode']
+  presentationLabel: string
+  runStatus?: string
+  workflowStatus?: string
+}) {
+  if (runStatus === 'queued') {
+    return {
+      status: 'queued',
+      label: 'QUEUED',
+      className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    }
+  }
+  if (runStatus === 'running' || workflowStatus === 'running' || dataStatus === 'running') {
+    return {
+      status: 'running',
+      label: 'RUNNING',
+      className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
+    }
+  }
+  if (runStatus === 'failed' || workflowStatus === 'failed' || dataStatus === 'error') {
+    return {
+      status: 'error',
+      label: 'ERROR',
+      className: 'bg-destructive/10 text-destructive',
+    }
+  }
+  if (runStatus === 'cancelled' || workflowStatus === 'cancelled') {
+    return {
+      status: 'cancelled',
+      label: 'CANCELLED',
+      className: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
+    }
+  }
+  if (workflowStatus === 'skipped') {
+    return {
+      status: 'skipped',
+      label: 'SKIPPED',
+      className: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
+    }
+  }
+  if (runStatus === 'succeeded' || workflowStatus === 'succeeded' || dataStatus === 'done') {
+    return {
+      status: 'done',
+      label: 'DONE',
+      className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+    }
+  }
+  if (executionMode === 'input') {
+    return {
+      status: 'input',
+      label: 'INPUT',
+      className: 'bg-violet-500/10 text-violet-700 dark:text-violet-400',
+    }
+  }
+  return {
+    status: dataStatus,
+    label: presentationLabel,
+    className: 'bg-muted text-muted-foreground',
+  }
 }
 
 function NodePreview({
@@ -436,7 +579,7 @@ function NodePreview({
     )
   }
   if (partialImage) {
-    return <img className="h-[220px] w-full object-cover" src={partialImage} alt="生成预览" />
+    return <img className="h-[220px] w-full bg-muted/30 object-contain" src={partialImage} alt="生成预览" />
   }
   if (result?.type === 'text') {
     return (
@@ -446,11 +589,13 @@ function NodePreview({
     )
   }
   if (result?.type === 'image' && result.images[0]) {
+    const image = result.images[0]
+    const alt = image.name ?? '节点生成图片'
     return (
       <img
-        className="h-[220px] w-full object-cover"
-        src={result.images[0].url}
-        alt={result.images[0].name ?? '节点生成图片'}
+        className="h-[220px] w-full bg-muted/30 object-contain"
+        src={image.url}
+        alt={alt}
       />
     )
   }

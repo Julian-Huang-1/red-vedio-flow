@@ -8,7 +8,7 @@ import {
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Code2, FileInput, FileText, Image, LoaderCircle, Play, Plus, Redo2, Square, Undo2, Video } from 'lucide-react'
+import { Code2, FileInput, FileText, Image, LoaderCircle, Play, Plus, Redo2, Square, TriangleAlert, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { useTaskStore } from '@/stores/taskStore'
@@ -38,6 +38,8 @@ export function WorkflowCanvas() {
   const workflowRun = useTaskStore((state) => state.workflowRun)
   const runWorkflow = useTaskStore((state) => state.runWorkflow)
   const cancelWorkflow = useTaskStore((state) => state.cancelWorkflow)
+  const workflowValidationIssues = useTaskStore((state) => state.workflowValidationIssues)
+  const workflowRunError = useTaskStore((state) => state.workflowRunError)
   const isWorkflowRunning = workflowRun?.status === 'queued' || workflowRun?.status === 'running'
 
   useEffect(() => {
@@ -122,6 +124,20 @@ export function WorkflowCanvas() {
           <Redo2 size={14} />
         </Button>
       </div>
+      {workflowRunError ? (
+        <div
+          className="absolute left-4 top-16 z-10 flex max-w-[520px] items-start gap-2 rounded-lg border border-destructive/20 bg-background/95 px-3 py-2 text-xs text-destructive shadow-sm backdrop-blur"
+          data-workflow-validation-summary=""
+        >
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            {workflowRunError}
+            {workflowValidationIssues.length
+              ? `，共 ${workflowValidationIssues.length} 个问题`
+              : ''}
+          </span>
+        </div>
+      ) : null}
 
       <ReactFlow
         nodes={nodes}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, LoaderCircle, X } from 'lucide-react'
 import { fetchGeneratedWorkflowModule } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
-import { persistCurrentWorkflow } from './WorkspaceManager'
+import { persistCurrentWorkflow } from '@/lib/workflowPersistence'
 
 type WorkflowCodeDialogProps = {
   open: boolean

@@ -3,6 +3,7 @@ import {
   createWorkflowContract,
   collectWorkflowInputSchema,
   generateWorkflowModule,
+  validateWorkflowForRun,
   type AssetReference,
   type MaterialNode,
   type MaterialValue,
@@ -76,11 +77,23 @@ export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: 
     const body = await readJson(req)
     if (typeof body.revision === 'number' && body.revision !== workflow.revision) {
       sendJson(res, 409, {
-        error: `workflow revision conflict: expected ${body.revision}, current ${workflow.revision}`,
+        error: 'workflow_revision_conflict',
+        message: '工作流已发生更新，请保存后重试',
+        expectedRevision: body.revision,
+        currentRevision: workflow.revision,
       })
       return true
     }
     const inputs = isRecord(body.inputs) ? body.inputs : {}
+    const validation = validateWorkflowForRun(workflow, inputs)
+    if (!validation.valid) {
+      sendJson(res, 422, {
+        error: 'workflow_validation_failed',
+        message: '工作流运行前校验未通过',
+        issues: validation.issues,
+      })
+      return true
+    }
     const user = await resolveRequestUser(runtime, req)
     const run = createRun(workflow, inputs, user?.id)
     runtime.backend.workflowAppRuns.save(run)

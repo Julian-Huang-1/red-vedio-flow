@@ -1,5 +1,9 @@
 import { create } from 'zustand'
-import type { NodeRun, NodeRunInput } from '@red-video-flow/workflow-core'
+import type {
+  NodeRun,
+  NodeRunInput,
+  WorkflowRunValidationIssue,
+} from '@red-video-flow/workflow-core'
 import {
   cancelWorkflowAppRun,
   cancelWorkflowNodeRun,
@@ -12,9 +16,11 @@ import {
   subscribeWorkflowNodeRun,
   type WorkflowAppRun,
   type WorkflowNodeRunEvent,
+  WorkflowClientResponseError,
 } from '@red-video-flow/workflow-client'
 import { useWorkflowStore } from './workflowStore'
 import { queryClient } from '@/lib/queryClient'
+import { persistCurrentWorkflow } from '@/lib/workflowPersistence'
 
 type RunProgress = {
   text: string
@@ -25,6 +31,8 @@ type TaskStore = {
   runs: Record<string, NodeRun>
   progress: Record<string, RunProgress>
   workflowRun?: WorkflowAppRun
+  workflowValidationIssues: WorkflowRunValidationIssue[]
+  workflowRunError?: string
   submitNode: (nodeId: string) => Promise<NodeRun | undefined>
   runWorkflow: (inputs?: Record<string, unknown>) => Promise<void>
   cancelWorkflow: () => Promise<void>
@@ -42,15 +50,51 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   runs: {},
   progress: {},
   workflowRun: undefined,
+  workflowValidationIssues: [],
+  workflowRunError: undefined,
   runWorkflow: async (inputs = {}) => {
-    const workflow = useWorkflowStore.getState()
-    const { run } = await createWorkflowAppRun(
-      workflow.workflowId,
-      inputs,
-      workflow.revision,
-    )
-    set({ workflowRun: run })
-    await pollWorkflowAppRun(run.id, workflow.workflowId, set)
+    set({ workflowValidationIssues: [], workflowRunError: undefined })
+    try {
+      await persistCurrentWorkflow()
+      let workflow = useWorkflowStore.getState()
+      let response
+      try {
+        response = await createWorkflowAppRun(
+          workflow.workflowId,
+          inputs,
+          workflow.revision,
+        )
+      } catch (error) {
+        if (
+          !(error instanceof WorkflowClientResponseError)
+          || error.status !== 409
+          || useWorkflowStore.getState().changeVersion
+        ) {
+          throw error
+        }
+        const latest = await fetchWorkflow(workflow.workflowId)
+        useWorkflowStore.getState().loadWorkflow(latest)
+        workflow = useWorkflowStore.getState()
+        response = await createWorkflowAppRun(
+          workflow.workflowId,
+          inputs,
+          workflow.revision,
+        )
+      }
+      const { run } = response
+      set({ workflowRun: run })
+      await pollWorkflowAppRun(run.id, workflow.workflowId, set)
+    } catch (error) {
+      if (error instanceof WorkflowClientResponseError && error.status === 422) {
+        const payload = asValidationPayload(error.payload)
+        set({
+          workflowValidationIssues: payload?.issues ?? [],
+          workflowRunError: payload?.message ?? error.message,
+        })
+        return
+      }
+      set({ workflowRunError: error instanceof Error ? error.message : String(error) })
+    }
   },
   cancelWorkflow: async () => {
     const runId = get().workflowRun?.id
@@ -66,6 +110,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
     const run = get().createRun(workflow.workflowId, nodeId, input)
     workflow.setLatestRun(nodeId, run.id)
+    workflow.setNodeStatus(nodeId, 'running')
     const abortController = new AbortController()
     runAbortControllers.set(run.id, abortController)
 
@@ -86,7 +131,11 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       const status = get().runs[run.id]?.status
       if (status === 'queued' || status === 'running') {
         await get().restoreWorkflowRuns(workflow.workflowId).catch(() => undefined)
-      } else if (status !== 'cancelled' && status !== 'failed') {
+        const recovered = get().runs[run.id]?.status
+        if (recovered === 'queued' || recovered === 'running') return get().runs[run.id]
+      }
+      const finalStatus = get().runs[run.id]?.status
+      if (finalStatus !== 'cancelled' && finalStatus !== 'failed') {
         useWorkflowStore.getState().setNodeStatus(nodeId, 'error')
         get().markFailed(run.id, {
           code: errorCode(error),
@@ -181,6 +230,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     })
   },
 }))
+
+function asValidationPayload(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return undefined
+  const value = payload as Record<string, unknown>
+  if (!Array.isArray(value.issues)) return undefined
+  return {
+    message: typeof value.message === 'string' ? value.message : undefined,
+    issues: value.issues as WorkflowRunValidationIssue[],
+  }
+}
 
 async function pollWorkflowAppRun(
   runId: string,
