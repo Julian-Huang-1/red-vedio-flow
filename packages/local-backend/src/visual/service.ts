@@ -61,6 +61,7 @@ export type QueryVisualTaskInput = {
   providerId?: string
   submitId: string
   nodeKind?: string
+  providerOptions?: Record<string, unknown>
   downloadDir: string
   assetUrlForPath: (filePath: string) => string
   onEvent?: (event: VisualEvent) => void

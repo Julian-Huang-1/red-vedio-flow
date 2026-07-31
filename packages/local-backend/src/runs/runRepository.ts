@@ -19,6 +19,7 @@ export type WorkflowRunStatus =
 
 export type WorkflowRun = {
   id: string
+  userId?: string
   workflowId: string
   nodeId: string
   status: WorkflowRunStatus
@@ -119,6 +120,7 @@ export class RunRepository {
 function toRun(row: RunRow): WorkflowRun {
   return {
     id: row.id,
+    userId: row.userId ?? undefined,
     workflowId: row.workflowId,
     nodeId: row.nodeId,
     status: row.status as WorkflowRunStatus,
@@ -145,6 +147,7 @@ function toRun(row: RunRow): WorkflowRun {
 function toRowValues(run: WorkflowRun): typeof runs.$inferInsert {
   return {
     id: run.id,
+    userId: run.userId ?? null,
     workflowId: run.workflowId,
     nodeId: run.nodeId,
     status: run.status,

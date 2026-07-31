@@ -16,7 +16,7 @@ import {
 import type { VisualCapability } from '@red-video-flow/plugin-contract'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, resourcePath, sendJson, type RequestContext } from '../http.js'
-import { startDurableWorkflowNodeRun } from '../nodeExecutionService.js'
+import { resolveRequestUser } from '../auth.js'
 
 type AppRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
@@ -30,6 +30,7 @@ type AppRunEvent = {
 
 type AppRun = {
   id: string
+  userId?: string
   workflowId: string
   revision: number
   status: AppRunStatus
@@ -80,9 +81,15 @@ export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: 
       return true
     }
     const inputs = isRecord(body.inputs) ? body.inputs : {}
-    const run = createRun(workflow, inputs)
+    const user = await resolveRequestUser(runtime, req)
+    const run = createRun(workflow, inputs, user?.id)
     runtime.backend.workflowAppRuns.save(run)
-    void executeRun(runtime, workflow, run)
+    await runtime.backend.jobs.enqueue({
+      id: `schedule-workflow:${run.id}`,
+      type: 'schedule-workflow',
+      payload: { runId: run.id },
+      maxAttempts: 1,
+    })
     sendJson(res, 202, { run: publicRun(run) })
     return true
   }
@@ -223,6 +230,18 @@ async function executeRun(
       addEvent(runtime, run, 'failed', undefined, run.error)
     }
   }
+}
+
+export async function startWorkflowAppRun(
+  runtime: LocalServerRuntime,
+  runId: string,
+) {
+  const run = runtime.backend.workflowAppRuns.get<AppRun>(runId)
+  if (!run) throw new Error(`workflow run not found: ${runId}`)
+  if (run.status !== 'queued' && run.status !== 'running') return
+  const workflow = runtime.backend.workflows.get(run.workflowId)
+  if (!workflow) throw new Error(`workflow not found: ${run.workflowId}`)
+  await executeRun(runtime, workflow, run)
 }
 
 function executeTextNode(
@@ -397,12 +416,17 @@ function validateWorkflowInput(
   }
 }
 
-function createRun(workflow: WorkflowDocument, inputs: Record<string, unknown>): AppRun {
+function createRun(
+  workflow: WorkflowDocument,
+  inputs: Record<string, unknown>,
+  userId?: string,
+): AppRun {
   const now = Date.now()
   const graphSnapshot = structuredClone(workflow)
   const executionPlan = createExecutionPlan(graphSnapshot.graph)
   return {
     id: `app-run-${now}-${Math.round(Math.random() * 1_000_000)}`,
+    userId,
     workflowId: workflow.id,
     revision: workflow.revision,
     status: 'queued',
@@ -438,7 +462,7 @@ function addEvent(
 }
 
 function publicRun(run: AppRun) {
-  const { cancelled: _, ...safe } = run
+  const { cancelled: _, userId: __, ...safe } = run
   return safe
 }
 
@@ -528,6 +552,7 @@ async function executeComposerNode(
   )
   persistTopologyComposerContext(runtime, workflow.id, node.id, upstreamResults)
   const run = runtime.backend.runs.createNodeRun({
+    userId: workflowRun.userId,
     workflowId: workflow.id,
     nodeId: node.id,
     input: {
@@ -538,7 +563,12 @@ async function executeComposerNode(
       generationConfig: composer.generationConfig,
     },
   })
-  await startDurableWorkflowNodeRun(runtime, run.id)
+  await runtime.backend.jobs.enqueue({
+    id: `execute-node:${run.id}`,
+    type: 'execute-node',
+    payload: { runId: run.id },
+    maxAttempts: 1,
+  })
   const completed = await waitForNodeRun(runtime, run.id, workflowRun)
   if (completed.status !== 'succeeded') {
     throw new Error(completed.error?.message || `${node.data.title} 执行失败`)

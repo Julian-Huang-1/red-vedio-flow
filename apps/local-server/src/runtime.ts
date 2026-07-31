@@ -12,9 +12,18 @@ import { AgentRegistrationTokens } from './agentRegistrationTokens.js'
 import { AgentModelUpdateTokens } from './agentModelUpdateTokens.js'
 import { RuntimeInfoStore } from './runtimeInfo.js'
 import { PiAgentService } from './piAgentService.js'
-import { startDurableWorkflowNodeRun } from './nodeExecutionService.js'
+import { WorkflowWorker } from './worker.js'
+import { registerBuiltinProviders } from './nodeExecutionService.js'
+import {
+  createPostgresDatabase,
+  createPostgresInfrastructure,
+  migratePostgres,
+} from '@red-video-flow/postgres-backend'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
+  const postgres = config.databaseUrl
+    ? createPostgresDatabase(config.databaseUrl)
+    : undefined
   const agentRegistry = new AgentRegistry(config.dataDir)
   const agentRegistrationTokens = new AgentRegistrationTokens()
   const agentModelUpdateTokens = new AgentModelUpdateTokens()
@@ -38,7 +47,12 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
       videoTimeoutMs: config.visualTaskVideoTimeoutMs,
       leaseDurationMs: config.visualTaskLeaseDurationMs,
     },
+    credentialEncryptionKey: config.credentialEncryptionKey,
   })
+  const postgresInfrastructure = postgres
+    ? createPostgresInfrastructure(postgres, config.credentialEncryptionKey)
+    : undefined
+  if (postgresInfrastructure) Object.assign(backend, postgresInfrastructure)
   const executions = new ExecutionManager(
     new ExecutionRepository(backend.database),
     plugins,
@@ -60,6 +74,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
       )
     },
   })
+  let worker: WorkflowWorker | undefined
 
   let runReaperTimer: NodeJS.Timeout | undefined
   let started = false
@@ -90,26 +105,25 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
 
   function recoverNodeRuns() {
     for (const run of backend.runs.listRecoverableNodeRuns()) {
-      const type = run.inputSnapshot.generationConfig.type
-      if (type === 'openai-image' || type === 'volc-video') {
-        if (!backend.visualTasks.findByRunId(run.id)) {
-          void startDurableWorkflowNodeRun(runtime, run.id).catch((error) => {
-            backend.runs.failNodeRun(run.id, {
-              code: 'recovery_failed',
-              message: error instanceof Error ? error.message : String(error),
-              retryable: true,
-              status: 'interrupted',
-            })
-          })
-        }
-      } else {
-        backend.runs.failNodeRun(run.id, {
-          code: 'server_restarted',
-          message: '服务重启中断了文本生成，请重新运行。',
-          retryable: true,
-          status: 'interrupted',
+      if (!backend.visualTasks.findByRunId(run.id)) {
+        void backend.jobs.enqueue({
+          id: `execute-node:${run.id}`,
+          type: 'execute-node',
+          payload: { runId: run.id },
+          maxAttempts: 1,
         })
       }
+    }
+  }
+
+  function recoverWorkflowRuns() {
+    for (const run of backend.workflowAppRuns.listByStatuses(['queued', 'running'])) {
+      void backend.jobs.enqueue({
+        id: `schedule-workflow:${run.id}`,
+        type: 'schedule-workflow',
+        payload: { runId: run.id },
+        maxAttempts: 1,
+      })
     }
   }
 
@@ -124,23 +138,32 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     plugins,
     executions,
     visualTasks,
+    postgresInfrastructure,
+    postgresDatabase: postgres,
     async start() {
       if (started) return
       started = true
+      if (postgres) await migratePostgres(postgres)
       await plugins.start()
+      registerBuiltinProviders(runtime)
       executions.bootstrap()
       visualTasks.start()
+      worker = new WorkflowWorker(runtime)
+      worker.start()
       recoverNodeRuns()
+      recoverWorkflowRuns()
       startRunReaper()
     },
     close() {
       closePromise ??= (async () => {
         stopRunReaper()
+        await worker?.stop()
         await executions.close()
         await visualTasks.stop()
         await piAgent.close()
         await plugins.close()
         backend.database.sqlite.close()
+        await postgres?.end({ timeout: 5 })
       })()
       return closePromise
     },

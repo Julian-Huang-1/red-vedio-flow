@@ -11,6 +11,26 @@ export const workflows = sqliteTable('workflows', {
   updatedAt: integer('updated_at').notNull(),
 })
 
+export const appUsers = sqliteTable('app_users', {
+  id: text('id').primaryKey(),
+  ssoId: text('sso_id').notNull().unique(),
+  username: text('username').notNull(),
+  email: text('email').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+})
+
+export const userModelCredentials = sqliteTable('user_model_credentials', {
+  userId: text('user_id').primaryKey().references(() => appUsers.id, { onDelete: 'cascade' }),
+  encryptedToken: text('encrypted_token').notNull(),
+  encryptionIv: text('encryption_iv').notNull(),
+  encryptionAuthTag: text('encryption_auth_tag').notNull(),
+  encryptionKeyVersion: integer('encryption_key_version').notNull().default(1),
+  tokenFingerprint: text('token_fingerprint').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+})
+
 export const assets = sqliteTable('assets', {
   id: text('id').primaryKey(),
   workflowId: text('workflow_id'),
@@ -66,6 +86,7 @@ export const resourceBindings = sqliteTable('resource_bindings', {
 
 export const runs = sqliteTable('runs', {
   id: text('id').primaryKey(),
+  userId: text('user_id').references(() => appUsers.id, { onDelete: 'set null' }),
   workflowId: text('workflow_id').notNull(),
   nodeId: text('node_id').notNull(),
   status: text('status').notNull(),
@@ -99,6 +120,26 @@ export const nodeRunEvents = sqliteTable('node_run_events', {
   createdAt: integer('created_at').notNull(),
 }, (table) => [
   index('idx_node_run_events_run').on(table.runId, table.id),
+])
+
+export const jobs = sqliteTable('jobs', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  status: text('status').notNull(),
+  priority: integer('priority').notNull().default(0),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  runAt: integer('run_at').notNull(),
+  lockedBy: text('locked_by'),
+  lockedAt: integer('locked_at'),
+  leaseExpiresAt: integer('lease_expires_at'),
+  lastError: text('last_error'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => [
+  index('idx_jobs_claim').on(table.status, table.runAt, table.priority),
+  index('idx_jobs_lease').on(table.status, table.leaseExpiresAt),
 ])
 
 export const workflowAppRuns = sqliteTable('workflow_app_runs', {

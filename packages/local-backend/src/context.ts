@@ -15,17 +15,27 @@ import { VisualTaskRepository } from './visual/taskRepository.js'
 import { VisualTaskService, type VisualTaskServiceOptions } from './visual/taskService.js'
 import { ChatRepository } from './chats/chatRepository.js'
 import { ChatService } from './chats/chatService.js'
+import { UserRepository } from './auth/userRepository.js'
+import { CredentialStore } from './auth/credentialStore.js'
+import { ProviderRegistry } from './providers/providerRegistry.js'
+import { LocalJobQueue } from './jobs/jobQueue.js'
 
 export type CreateLocalBackendOptions = {
   dataDir: string
   cwd?: string
   visualTaskOptions?: VisualTaskServiceOptions
   visual?: VisualServiceContract
+  credentialEncryptionKey?: string
 }
 
 export function createLocalBackend(options: CreateLocalBackendOptions) {
   mkdirSync(options.dataDir, { recursive: true })
   const database = createDatabase(join(options.dataDir, 'red-video-flow.sqlite'))
+  const users = new UserRepository(database)
+  const credentials = new CredentialStore(
+    database,
+    options.credentialEncryptionKey ?? `local-development:${options.dataDir}`,
+  )
   const workflowRepository = new WorkflowRepository(database)
   const workflows = new WorkflowService(workflowRepository)
   const runRepository = new RunRepository(database)
@@ -43,6 +53,7 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     assets,
     runs,
     nodeResults,
+    credentials,
     options.visualTaskOptions,
   )
 
@@ -60,6 +71,10 @@ export function createLocalBackend(options: CreateLocalBackendOptions) {
     visual,
     visualTasks,
     chats: new ChatService(new ChatRepository(database)),
+    users,
+    credentials,
+    providers: new ProviderRegistry(),
+    jobs: new LocalJobQueue(database),
   }
 }
 

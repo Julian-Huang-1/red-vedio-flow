@@ -133,8 +133,24 @@ function parseDebugText(text: string) {
     : text
 
   try {
-    return JSON.parse(normalized)
+    return redactSecrets(JSON.parse(normalized))
   } catch {
     return normalized
   }
+}
+
+const secretKeyPattern = /(authorization|api[-_]?key|token|secret|password|cookie)/i
+
+function redactSecrets(value: unknown, key = ''): unknown {
+  if (secretKeyPattern.test(key)) return '[REDACTED]'
+  if (Array.isArray(value)) return value.map((item) => redactSecrets(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        redactSecrets(entryValue, entryKey),
+      ]),
+    )
+  }
+  return value
 }

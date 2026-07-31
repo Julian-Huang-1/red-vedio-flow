@@ -71,6 +71,7 @@ export class RunService {
 
   createNodeRun(input: {
     id?: string
+    userId?: string
     workflowId: string
     nodeId: string
     input: NodeRunInput
@@ -91,6 +92,7 @@ export class RunService {
     const now = Date.now()
     const run: WorkflowRun = {
       id: input.id ?? createRunId(),
+      userId: input.userId,
       workflowId: input.workflowId,
       nodeId: input.nodeId,
       kind: node.data.materialType,
@@ -490,6 +492,7 @@ function markRunTimedOut(run: WorkflowRun, now: number, message: string): Workfl
 function toNodeRun(run: WorkflowRun): NodeRun {
   return {
     id: run.id,
+    userId: run.userId,
     workflowId: run.workflowId,
     nodeId: run.nodeId,
     status: normalizeNodeRunStatus(run.status),

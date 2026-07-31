@@ -167,6 +167,7 @@ export type NodeRunTrace = {
 
 export type NodeRun = {
   id: string
+  userId?: string
   workflowId: string
   nodeId: string
   status: NodeRunStatus

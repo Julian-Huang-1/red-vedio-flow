@@ -1,4 +1,5 @@
 export * from './agentTypes'
+export * from './backendContracts'
 export * from './executionPlan'
 export * from './graphRules'
 export * from './generationTypes'

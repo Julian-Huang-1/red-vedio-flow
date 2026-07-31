@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, inArray } from 'drizzle-orm'
 import type { LocalDatabase } from '../db/client.js'
 import { workflowAppRuns } from '../db/schema.js'
 
@@ -28,6 +28,16 @@ export class WorkflowAppRunRepository {
       .select()
       .from(workflowAppRuns)
       .where(eq(workflowAppRuns.workflowId, workflowId))
+      .orderBy(desc(workflowAppRuns.updatedAt))
+      .all()
+      .map((row) => JSON.parse(row.dataJson) as T)
+  }
+
+  listByStatuses<T extends PersistedWorkflowAppRun>(statuses: string[]): T[] {
+    return this.database.db
+      .select()
+      .from(workflowAppRuns)
+      .where(inArray(workflowAppRuns.status, statuses))
       .orderBy(desc(workflowAppRuns.updatedAt))
       .all()
       .map((row) => JSON.parse(row.dataJson) as T)

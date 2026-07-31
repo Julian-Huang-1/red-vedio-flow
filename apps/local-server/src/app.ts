@@ -16,6 +16,8 @@ import { handleWorkflowAppRoutes } from './routes/workflowAppRoutes.js'
 import { handleDefaultModelRoutes } from './routes/defaultModelRoutes.js'
 import { handlePiAgentRoutes } from './routes/piAgentRoutes.js'
 import { handleResourceRoutes } from './routes/resourceRoutes.js'
+import { handleCredentialRoutes } from './routes/credentialRoutes.js'
+import { handleHealthRoutes } from './routes/healthRoutes.js'
 
 type RequestHandlerOptions = {
   webFallback?: (req: IncomingMessage, res: ServerResponse) => void
@@ -44,8 +46,10 @@ export function createRequestHandler(
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`)
       const context = { req, res, url, pathname: url.pathname }
       const handlers = [
+        handleHealthRoutes,
         handlePiAgentRoutes,
         handleDefaultModelRoutes,
+        handleCredentialRoutes,
         handlePluginRoutes,
         handleDiscoveryRoutes,
         handleWorkflowRoutes,

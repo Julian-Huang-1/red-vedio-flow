@@ -31,6 +31,27 @@ function migrate(sqlite: Database.Database) {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS app_users (
+      id TEXT PRIMARY KEY,
+      sso_id TEXT NOT NULL UNIQUE,
+      username TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_model_credentials (
+      user_id TEXT PRIMARY KEY,
+      encrypted_token TEXT NOT NULL,
+      encryption_iv TEXT NOT NULL,
+      encryption_auth_tag TEXT NOT NULL,
+      encryption_key_version INTEGER NOT NULL DEFAULT 1,
+      token_fingerprint TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY,
       workflow_id TEXT,
@@ -81,6 +102,7 @@ function migrate(sqlite: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
       workflow_id TEXT NOT NULL,
       node_id TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -101,7 +123,8 @@ function migrate(sqlite: Database.Database) {
       started_at INTEGER NOT NULL,
       heartbeat_at INTEGER NOT NULL DEFAULT 0,
       finished_at INTEGER,
-      FOREIGN KEY (workflow_id) REFERENCES workflows(id)
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id),
+      FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS node_run_events (
@@ -111,6 +134,23 @@ function migrate(sqlite: Database.Database) {
       data_json TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      run_at INTEGER NOT NULL,
+      locked_by TEXT,
+      locked_at INTEGER,
+      lease_expires_at INTEGER,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS executions (
@@ -190,9 +230,12 @@ function migrate(sqlite: Database.Database) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_sso_id ON app_users(sso_id);
     CREATE INDEX IF NOT EXISTS idx_runs_node_id ON runs(node_id);
     CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
     CREATE INDEX IF NOT EXISTS idx_node_run_events_run ON node_run_events(run_id, id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_claim ON jobs(status, run_at, priority DESC);
+    CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(status, lease_expires_at);
     CREATE INDEX IF NOT EXISTS idx_workflow_app_runs_workflow
       ON workflow_app_runs(workflow_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_workflow_app_runs_status
@@ -227,6 +270,7 @@ function migrate(sqlite: Database.Database) {
     sqlite.exec(`UPDATE runs SET heartbeat_at = started_at WHERE heartbeat_at = 0;`)
   }
   const runAdditions = [
+    ['user_id', 'TEXT'],
     ['kind', `TEXT NOT NULL DEFAULT 'text'`],
     ['input_json', 'TEXT'],
     ['provider_id', 'TEXT'],

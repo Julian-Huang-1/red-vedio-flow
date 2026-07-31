@@ -63,6 +63,9 @@ importers:
       '@red-video-flow/plugin-contract':
         specifier: workspace:*
         version: link:../../packages/plugin-contract
+      '@red-video-flow/postgres-backend':
+        specifier: workspace:*
+        version: link:../../packages/postgres-backend
       '@red-video-flow/workflow-core':
         specifier: workspace:*
         version: link:../../packages/workflow-core
@@ -105,10 +108,10 @@ importers:
         version: 1.170.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/router-plugin':
         specifier: ^1.168.22
-        version: 1.168.22(@tanstack/react-router@1.170.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(esbuild@0.28.1)(rollup@4.62.2)(vite@6.4.3(@types/node@26.1.1)(jiti@1.21.7)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
+        version: 1.168.22(@tanstack/react-router@1.170.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(esbuild@0.28.1)(rollup@4.62.2)(vite@6.4.3(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
       '@vitejs/plugin-react':
         specifier: ^4.3.4
-        version: 4.7.0(vite@6.4.3(@types/node@26.1.1)(jiti@1.21.7)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
+        version: 4.7.0(vite@6.4.3(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
       '@xyflow/react':
         specifier: ^12.3.6
         version: 12.11.2(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -135,7 +138,7 @@ importers:
         version: 1.0.7(tailwindcss@3.4.19(tsx@4.23.1)(yaml@2.9.0))
       vite:
         specifier: ^6.0.5
-        version: 6.4.3(@types/node@26.1.1)(jiti@1.21.7)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0)
+        version: 6.4.3(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0)
       zustand:
         specifier: ^5.0.2
         version: 5.0.14(@types/react@18.3.31)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
@@ -178,10 +181,10 @@ importers:
         version: 1.170.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/router-plugin':
         specifier: ^1.168.22
-        version: 1.168.22(@tanstack/react-router@1.170.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(esbuild@0.28.1)(rollup@4.62.2)(vite@6.4.3(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
+        version: 1.168.22(@tanstack/react-router@1.170.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(esbuild@0.28.1)(rollup@4.62.2)(vite@6.4.3(@types/node@26.1.1)(jiti@1.21.7)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
       '@vitejs/plugin-react':
         specifier: ^4.3.4
-        version: 4.7.0(vite@6.4.3(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
+        version: 4.7.0(vite@6.4.3(@types/node@26.1.1)(jiti@1.21.7)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0))
       '@xyflow/react':
         specifier: ^12.3.6
         version: 12.11.2(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -196,7 +199,7 @@ importers:
         version: 18.3.1(react@18.3.1)
       vite:
         specifier: ^6.0.5
-        version: 6.4.3(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0)
+        version: 6.4.3(@types/node@26.1.1)(jiti@1.21.7)(less@4.6.7)(tsx@4.23.1)(yaml@2.9.0)
       zustand:
         specifier: ^5.0.2
         version: 5.0.14(@types/react@18.3.31)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
@@ -233,7 +236,7 @@ importers:
         version: 12.11.1
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)
+        version: 0.45.2(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(postgres@3.4.9)
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
@@ -263,6 +266,19 @@ importers:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+
+  packages/postgres-backend:
+    dependencies:
+      '@red-video-flow/workflow-core':
+        specifier: workspace:*
+        version: link:../workflow-core
+      postgres:
+        specifier: ^3.4.7
+        version: 3.4.9
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
 
   packages/workflow-cli:
     dependencies:
@@ -3282,6 +3298,10 @@ packages:
     resolution: {integrity: sha512-Mz8SaolMd8nB+G13WkORcxQKHZ/NE4xXevtkJHVuG+guo9/wYKlIMTKAqGdEmYOXR2ijPjTYNHssizdaVSUNdQ==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/postcss/-/postcss-8.5.19.tgz}
     engines: {node: ^10 || ^12 || >=14}
 
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/postgres/-/postgres-3.4.9.tgz}
+    engines: {node: '>=12'}
+
   postject@1.0.0-alpha.6:
     resolution: {integrity: sha512-b9Eb8h2eVqNE8edvKdwqkrY6O7kAwmI8kcnBv1NScolYJbo59XUF0noFq+lxbC1yN20bmC0WBEbDC5H/7ASb0A==, tarball: https://artifactory.devops.xiaohongshu.com/artifactory/api/npm/npm-public/postject/-/postject-1.0.0-alpha.6.tgz}
     engines: {node: '>=14.0.0'}
@@ -6142,11 +6162,12 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1):
+  drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(postgres@3.4.9):
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       '@types/better-sqlite3': 7.6.13
       better-sqlite3: 12.11.1
+      postgres: 3.4.9
 
   dunder-proto@1.0.1:
     dependencies:
@@ -7089,6 +7110,8 @@ snapshots:
       nanoid: 3.3.16
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  postgres@3.4.9: {}
 
   postject@1.0.0-alpha.6:
     dependencies:

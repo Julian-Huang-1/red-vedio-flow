@@ -6,6 +6,7 @@ import type {
   MaterialValue,
   NodeRunInput,
   NodeRunTrace,
+  CredentialStore,
   WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
 import type { AssetService } from '../assets/assetService.js'
@@ -58,6 +59,7 @@ export class VisualTaskService {
     private readonly assets: AssetService,
     private readonly runs: RunService,
     private readonly nodeResults: NodeResultProjector,
+    private readonly credentials: CredentialStore,
     options: VisualTaskServiceOptions = {},
   ) {
     this.pollIntervalMs = options.pollIntervalMs ?? 5_000
@@ -155,6 +157,10 @@ export class VisualTaskService {
       inputSnapshot: run.inputSnapshot,
     })
     const upstream = await this.upstreamNodes(run.inputSnapshot)
+    const token = run.userId
+      ? await this.credentials.getModelToken(run.userId)
+      : undefined
+    if (run.userId && !token) throw new Error('请先在设置中保存模型 API Token。')
     const request = {
       executionId: task.id,
       idempotencyKey: runId,
@@ -162,7 +168,10 @@ export class VisualTaskService {
       nodeKind: task.nodeKind,
       prompt: resolveProviderPrompt(run.inputSnapshot),
       upstream,
-      providerOptions: generationConfigOptions(run.inputSnapshot),
+      providerOptions: {
+        ...generationConfigOptions(run.inputSnapshot),
+        ...(token ? { apiToken: token } : {}),
+      },
       downloadDir: join(this.assets.generatedDir, runId),
     }
     this.runs.updateNodeRunTrace(runId, sanitizeTrace({
@@ -385,11 +394,16 @@ export class VisualTaskService {
     }
 
     try {
+      const run = task.runId ? this.runs.getNodeRun(task.runId) : undefined
+      const token = run?.userId
+        ? await this.credentials.getModelToken(run.userId)
+        : undefined
       const result = await this.visual.query({
         executionId: task.id,
         submitId: task.submitId,
         providerId: task.provider,
         nodeKind: task.nodeKind,
+        providerOptions: token ? { apiToken: token } : undefined,
         downloadDir: join(this.assets.generatedDir, `task-${task.submitId}`),
         assetUrlForPath: (filePath) => this.assets.assetUrlForPath(filePath),
         onEvent: (event) => {

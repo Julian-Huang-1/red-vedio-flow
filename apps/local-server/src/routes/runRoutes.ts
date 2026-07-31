@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import type { UpstreamResultReference } from '@red-video-flow/workflow-core'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, sendJson, writeSse, type RequestContext } from '../http.js'
-import { startDurableWorkflowNodeRun } from '../nodeExecutionService.js'
+import { resolveRequestUser } from '../auth.js'
 
 export async function handleRunRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   const { req, res, pathname } = ctx
@@ -60,8 +60,10 @@ async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext)
   }
 
   persistComposerUpstreamResults(runtime, workflowId, nodeId, body.input.upstreamResults)
+  const user = await resolveRequestUser(runtime, req)
   const run = runtime.backend.runs.createNodeRun({
     id: runId,
+    userId: user?.id,
     workflowId,
     nodeId,
     input: body.input,
@@ -87,12 +89,11 @@ async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext)
     return
   }
   res.on('close', unsubscribe)
-  void startDurableWorkflowNodeRun(runtime, run.id).catch((error) => {
-    runtime.backend.runs.failNodeRun(run.id, {
-      code: 'execution_failed',
-      message: error instanceof Error ? error.message : String(error),
-      retryable: true,
-    })
+  await runtime.backend.jobs.enqueue({
+    id: `execute-node:${run.id}`,
+    type: 'execute-node',
+    payload: { runId: run.id },
+    maxAttempts: 1,
   })
 }
 

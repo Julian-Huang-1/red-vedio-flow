@@ -7,12 +7,15 @@ import type {
   NodeResult,
   NodeRunInput,
   NodeRunTrace,
+  Provider,
+  ProviderExecutionContext,
   TextNodeResult,
   VideoNodeResult,
 } from '@red-video-flow/workflow-core'
 import {
   buildOpenAITextRequest,
 } from '@red-video-flow/workflow-runtime'
+import { ProviderRegistry } from '@red-video-flow/local-backend'
 import type { LocalServerRuntime } from './runtime.js'
 
 export type WorkflowNodeRunEvent =
@@ -30,12 +33,14 @@ type ExecuteInput = {
   input: NodeRunInput
   signal: AbortSignal
   emit: (event: WorkflowNodeRunEvent) => void
+  token?: string
 }
 
 export async function executeWorkflowNodeRun(
   runtime: LocalServerRuntime,
   execution: ExecuteInput,
 ) {
+  registerBuiltinProviders(runtime)
   execution.emit({ type: 'run', status: 'queued', runId: execution.runId })
   const runningRevision = persistNodeStatus(runtime, execution, 'running')
   execution.emit({
@@ -55,16 +60,22 @@ export async function executeWorkflowNodeRun(
 
   try {
     const configType = execution.input.generationConfig.type
-    let results: NodeResult[]
-    if (configType === 'openai-text') {
-      results = [await executeText(runtime, execution)]
-    } else if (configType === 'openai-image') {
-      results = [await executeImage(runtime, execution)]
-    } else if (configType === 'volc-video') {
-      results = [await executeVideo(runtime, execution)]
-    } else {
+    const modality = configType === 'openai-text'
+      ? 'text'
+      : configType === 'openai-image'
+        ? 'image'
+        : configType === 'volc-video'
+          ? 'video'
+          : undefined
+    if (!modality) {
       throw new ProviderExecutionError('unsupported_config', `Unsupported generation config: ${configType}`, false)
     }
+    const provider = runtime.backend.providers.resolve(execution.input.model.providerId, modality)
+    const providerResult = await provider.execute(
+      execution.input,
+      providerContext(runtime, execution),
+    )
+    const results = providerResult.results
 
     const workflowRevision = persistNodeResults(runtime, execution, results)
     for (const result of results) execution.emit({ type: 'result', runId: execution.runId, result })
@@ -90,6 +101,98 @@ export async function executeWorkflowNodeRun(
   }
 }
 
+export function registerBuiltinProviders(runtime: LocalServerRuntime) {
+  if (!runtime.backend.providers) {
+    Object.assign(runtime.backend, { providers: new ProviderRegistry() })
+  }
+  if (runtime.backend.providers.list().length) return
+  runtime.backend.providers.register(createProvider(runtime, 'rednote-maas', 'text'))
+  runtime.backend.providers.setFallback(createProvider(runtime, 'builtin.text', 'text'))
+  runtime.backend.providers.setFallback(createProvider(runtime, 'builtin.image', 'image'))
+  runtime.backend.providers.setFallback(createProvider(runtime, 'builtin.video', 'video'))
+}
+
+function createProvider(
+  runtime: LocalServerRuntime,
+  id: string,
+  modality: Provider['modality'],
+): Provider {
+  return {
+    id,
+    modality,
+    async execute(input, context) {
+      const execution: ExecuteInput = {
+        runId: context.runId,
+        workflowId: context.workflowId,
+        nodeId: context.nodeId,
+        input,
+        signal: context.signal,
+        token: context.token,
+        emit: (event) => {
+          if (event.type === 'text_delta') {
+            context.emit({ type: 'text-delta', delta: event.delta })
+          } else if (event.type === 'image_partial') {
+            context.emit({
+              type: 'partial-image',
+              index: event.index,
+              base64: event.base64,
+            })
+          } else if (event.type === 'run' && event.providerTask?.taskId) {
+            context.emit({ type: 'provider-task', taskId: event.providerTask.taskId })
+          }
+        },
+      }
+      const result = modality === 'text'
+        ? await executeText(runtime, execution)
+        : modality === 'image'
+          ? await executeImage(runtime, execution)
+          : await executeVideo(runtime, execution)
+      return { results: [result] }
+    },
+  }
+}
+
+function providerContext(
+  runtime: LocalServerRuntime,
+  execution: ExecuteInput,
+): ProviderExecutionContext {
+  return {
+    runId: execution.runId,
+    workflowId: execution.workflowId,
+    nodeId: execution.nodeId,
+    userId: runtime.backend.runs?.getNodeRun?.(execution.runId)?.userId ?? 'local',
+    token: execution.token ?? runtime.config?.maasApiKey ?? '',
+    signal: execution.signal,
+    emit: (event) => {
+      if (event.type === 'text-delta') {
+        execution.emit({ type: 'text_delta', runId: execution.runId, delta: event.delta })
+      } else if (event.type === 'partial-image') {
+        execution.emit({
+          type: 'image_partial',
+          runId: execution.runId,
+          index: event.index,
+          base64: event.base64,
+        })
+      } else if (event.type === 'provider-task') {
+        execution.emit({
+          type: 'run',
+          status: 'running',
+          runId: execution.runId,
+          providerTask: {
+            providerId: execution.input.model.providerId,
+            taskId: event.taskId,
+          },
+        })
+      }
+    },
+    trace: {
+      recordProviderInput: async (input) => updateTrace(runtime, execution, { providerInput: input }),
+      recordNetworkRequest: async (request) => appendNetworkRequest(runtime, execution, request),
+      recordResponse: async (response) => updateTrace(runtime, execution, { response }),
+    },
+  }
+}
+
 export async function startDurableWorkflowNodeRun(
   runtime: LocalServerRuntime,
   runId: string,
@@ -97,6 +200,16 @@ export async function startDurableWorkflowNodeRun(
 ) {
   const run = runtime.backend.runs.getNodeRun(runId)
   if (!run) throw new Error(`node run not found: ${runId}`)
+  const token = run.userId
+    ? await runtime.backend.credentials.getModelToken(run.userId)
+    : undefined
+  if (run.userId && !token) {
+    throw new ProviderExecutionError(
+      'model_credential_missing',
+      '请先在设置中保存模型 API Token。',
+      false,
+    )
+  }
   const configType = run.inputSnapshot.generationConfig.type
   if (configType === 'openai-image' || configType === 'volc-video') {
     await runtime.backend.visualTasks.startNodeRun(runId)
@@ -109,6 +222,7 @@ export async function startDurableWorkflowNodeRun(
     nodeId: run.nodeId,
     input: run.inputSnapshot,
     signal,
+    token,
     emit: (event) => {
       if (event.type === 'run' && event.status === 'running') {
         runtime.backend.runs.markNodeRunRunning(runId)
@@ -188,7 +302,7 @@ async function executeText(
   const request = buildOpenAITextRequest(await resolveLocalAssets(runtime, execution.input))
   const response = await providerFetch(
     `${runtime.config.textModelBaseUrl}/responses`,
-    runtime.config.maasApiKey,
+    execution.token ?? runtime.config.maasApiKey,
     request,
     execution.signal,
     (networkRequest) => appendNetworkRequest(runtime, execution, networkRequest),
@@ -334,7 +448,10 @@ async function executePluginVisual(
 ) {
   const downloadDir = join(runtime.backend.assets.generatedDir, execution.runId)
   const upstream = await pluginUpstreamNodes(runtime, execution.input)
-  const providerOptions = generationConfigOptions(execution.input)
+  const providerOptions = {
+    ...generationConfigOptions(execution.input),
+    ...(execution.token ? { apiToken: execution.token } : {}),
+  }
   const request = {
     executionId: execution.runId,
     idempotencyKey: execution.runId,
@@ -383,6 +500,7 @@ async function executePluginVisual(
       executionId: `${execution.runId}-query`,
       providerId: execution.input.model.modelId,
       submitId,
+      providerOptions: execution.token ? { apiToken: execution.token } : undefined,
       downloadDir,
       assetUrlForPath: (filePath) => runtime.backend.assets.assetUrlForPath(filePath),
     })

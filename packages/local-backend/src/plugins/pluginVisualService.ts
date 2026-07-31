@@ -95,7 +95,10 @@ export class PluginVisualService implements VisualServiceContract {
           input: {
             executionId,
             externalTaskId: input.submitId,
-            options: { downloadDir: input.downloadDir },
+            options: {
+              ...input.providerOptions,
+              downloadDir: input.downloadDir,
+            },
           },
         },
         this.options.requestTimeoutMs,
