@@ -31,6 +31,19 @@ export type AgentAttachment = {
   file?: File
 }
 
+export type AgentResourceReference = {
+  id: string
+  resourceId: string
+  kind: 'image' | 'video' | 'text' | 'file'
+  name: string
+  mimeType: string
+  size: number
+  url?: string
+  text?: string
+  thumbnailUrl?: string
+  duration?: number
+}
+
 export type AgentContextItem = {
   id: string
   kind: AgentContextKind
@@ -44,6 +57,7 @@ export type AgentMessage = {
   status: AgentMessageStatus
   createdAt: number
   attachmentIds: string[]
+  resourceIds?: string[]
   content?: AgentMessageContent[]
   errorMessage?: string
   toolCallId?: string

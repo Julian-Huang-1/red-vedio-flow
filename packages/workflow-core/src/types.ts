@@ -88,6 +88,17 @@ export type WorkflowEdge = {
   target: string
 }
 
+export type WorkflowSubgraph = {
+  id: string
+  name: string
+  nodeIds: string[]
+  position?: XYPosition
+  width?: number
+  height?: number
+  createdAt: number
+  updatedAt: number
+}
+
 export type WorkflowDocument = {
   schemaVersion: 1
   id: string
@@ -98,6 +109,7 @@ export type WorkflowDocument = {
   graph: {
     nodes: MaterialNode[]
     edges: WorkflowEdge[]
+    subgraphs?: WorkflowSubgraph[]
   }
 }
 

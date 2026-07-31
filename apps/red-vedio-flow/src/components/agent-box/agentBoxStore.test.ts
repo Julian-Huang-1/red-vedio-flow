@@ -97,6 +97,37 @@ describe('agentBoxStore', () => {
     expect(selectCanSubmit(state)).toBe(true)
   })
 
+  it('selects canvas resources without duplicates and sends them with the prompt', async () => {
+    const resource = {
+      id: 'canvas-resource-image-1',
+      resourceId: 'image-1',
+      kind: 'image' as const,
+      name: '角色参考图.png',
+      mimeType: 'image/png',
+      size: 1024,
+      url: '/resources/image-1',
+    }
+    useAgentBoxStore.getState().selectAgent('app-builder-agent')
+    useAgentBoxStore.getState().addResource(resource)
+    useAgentBoxStore.getState().addResource(resource)
+    expect(useAgentBoxStore.getState().pendingResources).toHaveLength(1)
+    expect(selectCanSubmit(useAgentBoxStore.getState())).toBe(true)
+
+    let receivedResources: unknown[] | undefined
+    await useAgentBoxStore.getState().submit(async (_sessionId, input, _signal, onEvent) => {
+      receivedResources = input.resources
+      onEvent({ type: 'run-start', runId: 'resource-run' })
+      onEvent({ type: 'run-end', status: 'stopped' })
+    })
+
+    expect(receivedResources).toEqual([resource])
+    const state = useAgentBoxStore.getState()
+    expect(state.pendingResources).toEqual([])
+    const userMessage = Object.values(state.messagesById).find((message) => message.role === 'user')
+    expect(userMessage?.resourceIds).toEqual([resource.id])
+    expect(state.resourcesById[resource.id]).toEqual(resource)
+  })
+
   it('submits and completes a streaming response', async () => {
     vi.useFakeTimers()
     useAgentBoxStore.getState().setDraft('生成一个工作流')

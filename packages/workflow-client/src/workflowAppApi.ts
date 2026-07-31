@@ -79,9 +79,12 @@ export async function cancelWorkflowAppRun(runId: string) {
 export async function fetchGeneratedWorkflowModule(
   workflowId: string,
   language: 'js' | 'ts' = 'ts',
+  subgraphId?: string,
 ) {
+  const query = new URLSearchParams({ language })
+  if (subgraphId) query.set('subgraphId', subgraphId)
   const response = await getWorkflowClientTransport().request(
-    `/api/workflows/${encodeURIComponent(workflowId)}/code?language=${language}`,
+    `/api/workflows/${encodeURIComponent(workflowId)}/code?${query}`,
   )
   return readJsonResponse<GeneratedWorkflowModule>(response, '无法生成 Workflow 代码')
 }

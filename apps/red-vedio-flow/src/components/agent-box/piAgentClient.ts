@@ -1,4 +1,4 @@
-import type { AgentAttachment } from './agentBoxTypes'
+import type { AgentAttachment, AgentResourceReference } from './agentBoxTypes'
 
 export type PiAgentModelDto = {
   id: string
@@ -99,6 +99,7 @@ export type PiAgentPromptInput = {
   agentId?: string
   contexts: Array<{ kind: string; title: string }>
   attachments?: AgentAttachment[]
+  resources?: AgentResourceReference[]
   workspace?: {
     type: 'app-builder'
     currentArtifact?: {
@@ -163,6 +164,10 @@ export async function streamPiAgentPrompt(
   signal: AbortSignal,
   onEvent: (event: PiAgentEvent) => void,
 ) {
+  const attachments = await Promise.all([
+    ...(input.attachments ?? []).map(serializeAttachment),
+    ...(input.resources ?? []).map(serializeResource),
+  ])
   const response = await fetch(
     `/api/pi-agent/sessions/${encodeURIComponent(sessionId)}/prompt`,
     {
@@ -170,9 +175,8 @@ export async function streamPiAgentPrompt(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...input,
-        attachments: await Promise.all(
-          (input.attachments ?? []).map(serializeAttachment),
-        ),
+        attachments,
+        resources: undefined,
       }),
       signal,
     },
@@ -204,6 +208,25 @@ export async function streamPiAgentPrompt(
   }
 }
 
+async function serializeResource(resource: AgentResourceReference) {
+  let blob: Blob
+  if (resource.kind === 'text') {
+    blob = new Blob([resource.text ?? ''], { type: resource.mimeType })
+  } else {
+    if (!resource.url) throw new Error(`资源内容不可用：${resource.name}`)
+    const response = await fetch(resource.url)
+    if (!response.ok) throw new Error(`读取资源失败：${resource.name}`)
+    blob = await response.blob()
+  }
+  if (blob.size > 8 * 1024 * 1024) throw new Error(`资源不能超过 8MB：${resource.name}`)
+  return {
+    name: resource.name,
+    mimeType: blob.type || resource.mimeType,
+    size: blob.size,
+    data: await blobToBase64(blob, resource.name),
+  }
+}
+
 async function serializeAttachment(attachment: AgentAttachment) {
   if (!attachment.file) {
     throw new Error(`附件内容不可用：${attachment.name}`)
@@ -220,14 +243,18 @@ async function serializeAttachment(attachment: AgentAttachment) {
 }
 
 function fileToBase64(file: File) {
+  return blobToBase64(file, file.name)
+}
+
+function blobToBase64(blob: Blob, name: string) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error(`读取附件失败：${file.name}`))
+    reader.onerror = () => reject(reader.error ?? new Error(`读取附件失败：${name}`))
     reader.onload = () => {
       const value = String(reader.result)
       resolve(value.slice(value.indexOf(',') + 1))
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(blob)
   })
 }
 

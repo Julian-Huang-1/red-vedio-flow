@@ -12,6 +12,7 @@ export function applyWorkflowPatch(document: WorkflowDocument, ops: WorkflowPatc
   let title = document.title
   let nodes = document.graph.nodes
   let edges = document.graph.edges
+  let subgraphs = document.graph.subgraphs
 
   for (const op of ops) {
     switch (op.type) {
@@ -26,6 +27,9 @@ export function applyWorkflowPatch(document: WorkflowDocument, ops: WorkflowPatc
         ensureNode(nodes, op.nodeId)
         nodes = nodes.filter((node) => node.id !== op.nodeId)
         edges = edges.filter((edge) => edge.source !== op.nodeId && edge.target !== op.nodeId)
+        subgraphs = subgraphs
+          ?.map((subgraph) => ({ ...subgraph, nodeIds: subgraph.nodeIds.filter((id) => id !== op.nodeId) }))
+          .filter((subgraph) => subgraph.nodeIds.length > 0)
         break
       case 'moveNode':
         nodes = updateNode(nodes, op.nodeId, (node) => ({ ...node, position: op.position }))
@@ -125,7 +129,7 @@ export function applyWorkflowPatch(document: WorkflowDocument, ops: WorkflowPatc
   return {
     ...document,
     title,
-    graph: { nodes, edges },
+    graph: { ...document.graph, nodes, edges, subgraphs },
   }
 }
 

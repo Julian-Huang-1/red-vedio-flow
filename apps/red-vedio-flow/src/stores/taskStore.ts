@@ -4,6 +4,7 @@ import type {
   NodeRunInput,
   WorkflowRunValidationIssue,
 } from '@red-video-flow/workflow-core'
+import { createExecutionPlan } from '@red-video-flow/workflow-core'
 import {
   cancelWorkflowAppRun,
   cancelWorkflowNodeRun,
@@ -33,6 +34,7 @@ type TaskStore = {
   workflowValidationIssues: WorkflowRunValidationIssue[]
   workflowRunError?: string
   submitNode: (nodeId: string) => Promise<NodeRun | undefined>
+  runSubgraph: (subgraphId: string) => Promise<void>
   runWorkflow: (inputs?: Record<string, unknown>) => Promise<void>
   cancelWorkflow: () => Promise<void>
   restoreWorkflowRuns: (workflowId: string) => Promise<void>
@@ -51,6 +53,26 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   workflowRun: undefined,
   workflowValidationIssues: [],
   workflowRunError: undefined,
+  runSubgraph: async (subgraphId) => {
+    const workflow = useWorkflowStore.getState()
+    const subgraph = workflow.subgraphs.find((item) => item.id === subgraphId)
+    if (!subgraph) return
+    const nodeIds = new Set(subgraph.nodeIds)
+    const document = workflow.toWorkflowDocument()
+    const graph = {
+      nodes: document.graph.nodes.filter((node) => nodeIds.has(node.id)),
+      edges: document.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+    }
+    const plan = createExecutionPlan(graph)
+    for (const level of plan.levels) {
+      const executable = level.filter((nodeId) => {
+        const node = workflow.nodes.find((item) => item.id === nodeId)
+        return node?.data.executionMode !== 'input'
+      })
+      const runs = await Promise.all(executable.map((nodeId) => get().submitNode(nodeId)))
+      if (runs.some((run) => run?.status === 'failed' || run?.status === 'cancelled')) break
+    }
+  },
   runWorkflow: async (inputs = {}) => {
     set({ workflowValidationIssues: [], workflowRunError: undefined })
     try {

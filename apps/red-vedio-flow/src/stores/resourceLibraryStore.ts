@@ -4,6 +4,8 @@ import type { ResourceKind, ResourceSource } from '@red-video-flow/workflow-core
 export type ResourceAddTarget = {
   nodeId: string
   type: 'node-result' | 'composer-attachment'
+} | {
+  type: 'agent-resource'
 }
 
 type ResourceLibraryStore = {
@@ -15,6 +17,7 @@ type ResourceLibraryStore = {
   selectedResourceId?: string
   addTarget?: ResourceAddTarget
   openLibrary: () => void
+  openForAgent: () => void
   closeLibrary: () => void
   setScope: (scope: 'all' | 'workspace') => void
   setKind: (kind?: ResourceKind) => void
@@ -29,7 +32,8 @@ export const useResourceLibraryStore = create<ResourceLibraryStore>((set) => ({
   scope: 'workspace',
   query: '',
   openLibrary: () => set({ open: true }),
-  closeLibrary: () => set({ open: false }),
+  openForAgent: () => set({ open: true, scope: 'workspace', addTarget: { type: 'agent-resource' } }),
+  closeLibrary: () => set({ open: false, addTarget: undefined }),
   setScope: (scope) => set({ scope }),
   setKind: (kind) => set({ kind }),
   setSource: (source) => set({ source }),

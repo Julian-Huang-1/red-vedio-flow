@@ -7,12 +7,16 @@ import { persistCurrentWorkflow } from '@/lib/workflowPersistence'
 type WorkflowCodeDialogProps = {
   open: boolean
   workflowId: string
+  subgraphId?: string
+  title?: string
   onOpenChange: (open: boolean) => void
 }
 
 export function WorkflowCodeDialog({
   open,
   workflowId,
+  subgraphId,
+  title = '工作流代码',
   onOpenChange,
 }: WorkflowCodeDialogProps) {
   const [language, setLanguage] = useState<'js' | 'ts'>('ts')
@@ -30,7 +34,7 @@ export function WorkflowCodeDialog({
     setLoading(true)
     setError(undefined)
     void persistCurrentWorkflow()
-      .then(() => fetchGeneratedWorkflowModule(workflowId, language))
+      .then(() => fetchGeneratedWorkflowModule(workflowId, language, subgraphId))
       .then((generated) => {
         if (active) setCode(generated.code)
       })
@@ -46,7 +50,7 @@ export function WorkflowCodeDialog({
     return () => {
       active = false
     }
-  }, [language, open, workflowId])
+  }, [language, open, subgraphId, workflowId])
 
   if (!open) return null
 
@@ -68,14 +72,14 @@ export function WorkflowCodeDialog({
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="工作流代码"
+        aria-label={title}
         className="flex h-[min(760px,88vh)] w-[min(1000px,94vw)] flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         data-workflow-code-dialog=""
       >
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-4">
           <div>
-            <h2 className="text-sm font-semibold">工作流代码</h2>
-            <p className="text-xs text-muted-foreground">由当前画布拓扑和 Composer 配置生成</p>
+            <h2 className="text-sm font-semibold">{title}</h2>
+            <p className="text-xs text-muted-foreground">由子图内部拓扑和 Composer 配置生成</p>
           </div>
           <div className="flex items-center gap-1">
             <div className="mr-2 flex rounded-lg bg-muted p-0.5">

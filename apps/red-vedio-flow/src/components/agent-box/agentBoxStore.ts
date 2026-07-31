@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentModelOption,
   AgentOption,
+  AgentResourceReference,
   AgentRunStatus,
   AgentSession,
 } from './agentBoxTypes'
@@ -68,7 +69,9 @@ type AgentBoxState = {
   selectedModelId: string
   draft: string
   pendingAttachments: AgentAttachment[]
+  pendingResources: AgentResourceReference[]
   attachmentsById: Record<string, AgentAttachment>
+  resourcesById: Record<string, AgentResourceReference>
   mentionedNodeIds: string[]
   contextIds: string[]
   contextsById: Record<string, AgentContextItem>
@@ -103,6 +106,8 @@ type AgentBoxActions = {
   setDraft: (value: string) => void
   addAttachment: (file: File) => void
   removeAttachment: (id: string) => void
+  addResource: (resource: AgentResourceReference) => void
+  removeResource: (id: string) => void
   mentionNode: (id: string, title: string) => void
   addContext: (item: AgentContextItem) => void
   removeContext: (id: string) => void
@@ -132,7 +137,9 @@ const initialState: AgentBoxState = {
   selectedModelId: models[0].id,
   draft: '',
   pendingAttachments: [],
+  pendingResources: [],
   attachmentsById: {},
+  resourcesById: {},
   mentionedNodeIds: [],
   contextIds: Object.keys(initialContexts),
   contextsById: initialContexts,
@@ -202,6 +209,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     prompt: string,
     runner: PromptRunner = streamPiAgentPrompt,
     attachments: AgentAttachment[] = [],
+    resources: AgentResourceReference[] = [],
   ) => {
     const assistantMessageId = createId('message-assistant')
     const runId = createId('run')
@@ -250,6 +258,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
           agentId: state.selectedAgentId,
           contexts,
           attachments,
+          resources,
           workspace: appBuilder
             ? {
                 type: 'app-builder',
@@ -481,6 +490,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
         historyOpen: false,
         draft: '',
         pendingAttachments: [],
+        pendingResources: [],
         mentionedNodeIds: [],
         runError: undefined,
       }))
@@ -540,6 +550,15 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     removeAttachment: (id) => set((state) => ({
       pendingAttachments: state.pendingAttachments.filter((attachment) => attachment.id !== id),
     })),
+    addResource: (resource) => set((state) => ({
+      pendingResources: state.pendingResources.some((item) => item.resourceId === resource.resourceId)
+        ? state.pendingResources
+        : [...state.pendingResources, resource],
+      resourcesById: { ...state.resourcesById, [resource.id]: resource },
+    })),
+    removeResource: (id) => set((state) => ({
+      pendingResources: state.pendingResources.filter((resource) => resource.id !== id),
+    })),
     mentionNode: (id, title) => set((state) => ({
       draft: `${state.draft}${state.draft && !state.draft.endsWith(' ') ? ' ' : ''}@${title} `,
       mentionedNodeIds: state.mentionedNodeIds.includes(id)
@@ -564,7 +583,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       const state = get()
       if (
         state.runStatus !== 'idle'
-        || (!state.draft.trim() && !state.pendingAttachments.length)
+        || (!state.draft.trim() && !state.pendingAttachments.length && !state.pendingResources.length)
       ) return
 
       let sessionId = state.activeSessionId
@@ -578,15 +597,17 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       const userMessage: AgentMessage = {
         id: userMessageId,
         role: 'user',
-        text: state.draft.trim() || '发送了附件',
+        text: state.draft.trim() || '发送了资源',
         status: 'completed',
         createdAt: Date.now(),
         attachmentIds: state.pendingAttachments.map((attachment) => attachment.id),
+        resourceIds: state.pendingResources.map((resource) => resource.id),
       }
       const session = get().sessionsById[sessionId]
       set((current) => ({
         draft: '',
         pendingAttachments: [],
+        pendingResources: [],
         mentionedNodeIds: [],
         messagesById: { ...current.messagesById, [userMessageId]: userMessage },
         sessionsById: {
@@ -601,7 +622,13 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
           },
         },
       }))
-      await runAssistant(sessionId, userMessage.text, runner, state.pendingAttachments)
+      await runAssistant(
+        sessionId,
+        userMessage.text,
+        runner,
+        state.pendingAttachments,
+        state.pendingResources,
+      )
     },
     stop: (aborter = abortPiAgentPrompt) => {
       const state = get()
@@ -663,6 +690,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
         },
         draft: '',
         pendingAttachments: [],
+        pendingResources: [],
         runError: undefined,
       }))
     },
@@ -690,4 +718,4 @@ export const selectIsRunning = (state: AgentBoxStore) =>
 
 export const selectCanSubmit = (state: AgentBoxStore) =>
   state.runStatus === 'idle'
-  && (Boolean(state.draft.trim()) || state.pendingAttachments.length > 0)
+  && (Boolean(state.draft.trim()) || state.pendingAttachments.length > 0 || state.pendingResources.length > 0)

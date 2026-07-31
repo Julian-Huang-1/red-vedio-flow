@@ -19,6 +19,7 @@ import {
   type NodeRunInput,
   type UpstreamResultReference,
   type WorkflowDocument,
+  type WorkflowSubgraph,
 } from '@red-video-flow/workflow-core'
 import type {
   WorkflowFlowNode,
@@ -33,6 +34,7 @@ type WorkflowStore = {
   changeVersion: number
   nodes: WorkflowFlowNode[]
   edges: Edge[]
+  subgraphs: WorkflowSubgraph[]
   past: WorkflowSnapshot[]
   future: WorkflowSnapshot[]
   selectedNodeId?: string
@@ -44,6 +46,15 @@ type WorkflowStore = {
   undo: () => void
   redo: () => void
   selectNode: (nodeId?: string) => void
+  createSubgraph: (nodeIds: string[]) => WorkflowSubgraph | undefined
+  renameSubgraph: (id: string, name: string) => void
+  moveSubgraph: (id: string, position: { x: number; y: number }) => void
+  updateSubgraphLayout: (
+    id: string,
+    layout: { position?: { x: number; y: number }; width?: number; height?: number },
+  ) => void
+  dissolveSubgraph: (id: string) => void
+  deleteSubgraph: (id: string, deleteNodes?: boolean) => void
   updateComposer: (nodeId: string, patch: Partial<NodeComposerData>) => void
   syncComposerUpstreamResults: (
     nodeId: string,
@@ -65,6 +76,7 @@ type WorkflowStore = {
 type WorkflowSnapshot = {
   nodes: WorkflowFlowNode[]
   edges: Edge[]
+  subgraphs: WorkflowSubgraph[]
   selectedNodeId?: string
 }
 
@@ -103,6 +115,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   changeVersion: 0,
   nodes: [],
   edges: [],
+  subgraphs: [],
   past: [],
   future: [],
   onNodesChange: (changes) => {
@@ -117,6 +130,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       : undefined
     set(commitHistory(get(), {
       nodes,
+      subgraphs: get().subgraphs
+        .map((item) => ({ ...item, nodeIds: item.nodeIds.filter((id) => nodes.some((node) => node.id === id)) }))
+        .filter((item) => item.nodeIds.length > 0),
       selectedNodeId: nodes.find((node) => node.selected)?.id,
     }, groupKey))
     if (positionChanges.length && positionChanges.every((change) => !change.dragging)) {
@@ -130,6 +146,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
   connectNodes: (connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return
+    const sourceGroup = get().subgraphs.find((item) => item.nodeIds.includes(connection.source!))?.id
+    const targetGroup = get().subgraphs.find((item) => item.nodeIds.includes(connection.target!))?.id
+    if (sourceGroup !== targetGroup && (sourceGroup || targetGroup)) return
     const exists = get().edges.some(
       (edge) => edge.source === connection.source && edge.target === connection.target,
     )
@@ -203,6 +222,100 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set(commitHistory(get(), {
       selectedNodeId: nodeId,
       nodes,
+    }))
+  },
+  createSubgraph: (nodeIds) => {
+    const assigned = new Set(get().subgraphs.flatMap((item) => item.nodeIds))
+    const validIds = [...new Set(nodeIds)].filter((id) => (
+      !assigned.has(id) && get().nodes.some((node) => node.id === id)
+    ))
+    if (!validIds.length) return undefined
+    const now = Date.now()
+    const members = get().nodes.filter((node) => validIds.includes(node.id))
+    const left = Math.min(...members.map((node) => node.position.x)) - 24
+    const top = Math.min(...members.map((node) => node.position.y)) - 76
+    const right = Math.max(...members.map((node) => node.position.x + (node.measured?.width ?? node.width ?? 360))) + 24
+    const bottom = Math.max(...members.map((node) => node.position.y + (node.measured?.height ?? node.height ?? 260))) + 24
+    const subgraph: WorkflowSubgraph = {
+      id: `subgraph-${now}`,
+      name: `子图 ${get().subgraphs.length + 1}`,
+      nodeIds: validIds,
+      position: { x: left, y: top },
+      width: right - left,
+      height: bottom - top,
+      createdAt: now,
+      updatedAt: now,
+    }
+    set(commitHistory(get(), {
+      subgraphs: [...get().subgraphs, subgraph],
+      nodes: get().nodes.map((node) => validIds.includes(node.id)
+        ? {
+            ...node,
+            position: { x: node.position.x - left, y: node.position.y - top },
+            parentId: subgraph.id,
+            extent: 'parent' as const,
+            expandParent: true,
+            selected: false,
+          }
+        : { ...node, selected: false }),
+      selectedNodeId: undefined,
+    }))
+    return subgraph
+  },
+  renameSubgraph: (id, name) => {
+    const nextName = name.trim()
+    if (!nextName) return
+    set(commitHistory(get(), {
+      subgraphs: get().subgraphs.map((item) => item.id === id
+        ? { ...item, name: nextName, updatedAt: Date.now() }
+        : item),
+    }))
+  },
+  moveSubgraph: (id, position) => {
+    set(commitHistory(get(), {
+      subgraphs: get().subgraphs.map((item) => item.id === id
+        ? { ...item, position, updatedAt: Date.now() }
+        : item),
+    }, `subgraph-position:${id}`))
+  },
+  updateSubgraphLayout: (id, layout) => {
+    set({
+      subgraphs: get().subgraphs.map((item) => item.id === id
+        ? {
+            ...item,
+            position: layout.position ?? item.position,
+            width: layout.width ?? item.width,
+            height: layout.height ?? item.height,
+            updatedAt: Date.now(),
+          }
+        : item),
+      changeVersion: get().changeVersion + 1,
+    })
+  },
+  dissolveSubgraph: (id) => {
+    const subgraph = get().subgraphs.find((item) => item.id === id)
+    if (!subgraph) return
+    const origin = subgraph.position ?? { x: 0, y: 0 }
+    set(commitHistory(get(), {
+      subgraphs: get().subgraphs.filter((item) => item.id !== id),
+      nodes: get().nodes.map((node) => node.parentId === id
+        ? {
+            ...node,
+            position: { x: node.position.x + origin.x, y: node.position.y + origin.y },
+            parentId: undefined,
+            extent: undefined,
+          }
+        : node),
+    }))
+  },
+  deleteSubgraph: (id, deleteNodes = false) => {
+    const subgraph = get().subgraphs.find((item) => item.id === id)
+    if (!subgraph) return
+    const removed = new Set(deleteNodes ? subgraph.nodeIds : [])
+    set(commitHistory(get(), {
+      subgraphs: get().subgraphs.filter((item) => item.id !== id),
+      nodes: get().nodes.filter((node) => !removed.has(node.id)),
+      edges: get().edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)),
     }))
   },
   updateComposer: (nodeId, patch) => {
@@ -294,15 +407,17 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
   loadWorkflow: (document) => {
     activeHistoryGroup = undefined
+    const normalized = normalizeSubgraphLayout(document.graph.nodes, document.graph.subgraphs ?? [])
     set({
       workflowId: document.id,
       workflowTitle: document.title,
       revision: document.revision,
-      nodes: document.graph.nodes.map(toFlowNode),
+      nodes: normalized.nodes.map((node) => toFlowNode(node, normalized.subgraphs)),
       edges: document.graph.edges.map((edge, index) => ({
         ...edge,
         id: edge.id ?? `edge-${edge.source}-${edge.target}-${index}`,
       })),
+      subgraphs: normalized.subgraphs,
       selectedNodeId: undefined,
       past: [],
       future: [],
@@ -355,6 +470,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       graph: {
         nodes: state.nodes.map(toMaterialNode),
         edges: state.edges.map(({ id, source, target }) => ({ id, source, target })),
+        subgraphs: state.subgraphs,
       },
     }
   },
@@ -365,10 +481,11 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
   window.__workflowStore = useWorkflowStore
 }
 
-function snapshot(state: Pick<WorkflowStore, 'nodes' | 'edges' | 'selectedNodeId'>): WorkflowSnapshot {
+function snapshot(state: Pick<WorkflowStore, 'nodes' | 'edges' | 'subgraphs' | 'selectedNodeId'>): WorkflowSnapshot {
   return cloneSnapshot({
     nodes: state.nodes,
     edges: state.edges,
+    subgraphs: state.subgraphs,
     selectedNodeId: state.selectedNodeId,
   })
 }
@@ -429,14 +546,18 @@ function createWorkflowNode(
   }
 }
 
-function toFlowNode(node: MaterialNode): WorkflowFlowNode {
+function toFlowNode(node: MaterialNode, subgraphs: WorkflowSubgraph[] = []): WorkflowFlowNode {
   const definition = nodeDefinitions[node.data.materialType]
+  const parent = subgraphs.find((subgraph) => subgraph.nodeIds.includes(node.id))
   return {
     id: node.id,
     type: 'workflow',
     position: node.position,
     width: node.width,
     height: node.height,
+    parentId: parent?.id,
+    extent: parent ? 'parent' : undefined,
+    expandParent: Boolean(parent),
     data: {
       ...definition,
       status: node.data.status,
@@ -451,6 +572,32 @@ function toFlowNode(node: MaterialNode): WorkflowFlowNode {
       serviceLabel: node.data.serviceLabel,
     },
   }
+}
+
+function normalizeSubgraphLayout(
+  sourceNodes: MaterialNode[],
+  sourceSubgraphs: WorkflowSubgraph[],
+): { nodes: MaterialNode[]; subgraphs: WorkflowSubgraph[] } {
+  let nodes = structuredClone(sourceNodes)
+  const subgraphs = sourceSubgraphs.map((subgraph) => {
+    if (subgraph.position && subgraph.width && subgraph.height) return subgraph
+    const members = nodes.filter((node) => subgraph.nodeIds.includes(node.id))
+    if (!members.length) return subgraph
+    const left = Math.min(...members.map((node) => node.position.x)) - 24
+    const top = Math.min(...members.map((node) => node.position.y)) - 76
+    const right = Math.max(...members.map((node) => node.position.x + (node.width ?? 360))) + 24
+    const bottom = Math.max(...members.map((node) => node.position.y + (node.height ?? 260))) + 24
+    nodes = nodes.map((node) => subgraph.nodeIds.includes(node.id)
+      ? { ...node, position: { x: node.position.x - left, y: node.position.y - top } }
+      : node)
+    return {
+      ...subgraph,
+      position: { x: left, y: top },
+      width: right - left,
+      height: bottom - top,
+    }
+  })
+  return { nodes, subgraphs }
 }
 
 function toMaterialNode(node: WorkflowFlowNode): MaterialNode {

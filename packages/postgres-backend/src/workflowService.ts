@@ -2,9 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   WorkflowPatchError,
   applyWorkflowPatch,
-  type MaterialNode,
   type WorkflowDocument,
-  type WorkflowEdge,
   type WorkflowPatchOperation,
 } from '@red-video-flow/workflow-core'
 import {
@@ -16,10 +14,7 @@ export type PostgresSaveWorkflowInput = {
   id: string
   title?: string
   baseRevision?: number
-  graph: {
-    nodes: MaterialNode[]
-    edges: WorkflowEdge[]
-  }
+  graph: WorkflowDocument['graph']
 }
 
 export type PostgresPatchWorkflowInput = {

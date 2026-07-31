@@ -1,12 +1,14 @@
-import { File, Image } from 'lucide-react'
-import type { AgentAttachment } from '../agentBoxTypes'
+import { File, FileText, Image, Video } from 'lucide-react'
+import type { AgentAttachment, AgentResourceReference } from '../agentBoxTypes'
 
 export function AgentMessageAttachments({
   attachments,
+  resources = [],
 }: {
   attachments: AgentAttachment[]
+  resources?: AgentResourceReference[]
 }) {
-  if (!attachments.length) return null
+  if (!attachments.length && !resources.length) return null
 
   return (
     <div
@@ -26,6 +28,24 @@ export function AgentMessageAttachments({
             <span className="shrink-0 text-muted-foreground">
               {formatFileSize(attachment.size)}
             </span>
+          </span>
+        )
+      })}
+      {resources.map((resource) => {
+        const Icon = resource.kind === 'image'
+          ? Image
+          : resource.kind === 'video'
+            ? Video
+            : resource.kind === 'text' ? FileText : File
+        return (
+          <span
+            key={resource.id}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background/60 px-2 py-1 text-[11px]"
+            data-agent-box-message-resource=""
+          >
+            <Icon size={12} className="shrink-0" />
+            <span className="max-w-40 truncate">{resource.name}</span>
+            <span className="shrink-0 text-muted-foreground">画布资源</span>
           </span>
         )
       })}

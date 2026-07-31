@@ -1,29 +1,34 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
+  type Node,
+  type NodeChange,
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Code2, FileInput, FileText, Image, LoaderCircle, Play, Plus, Redo2, Square, TriangleAlert, Undo2, Video } from 'lucide-react'
+import { FileInput, FileText, Image, MousePointer2, Plus, Redo2, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { useTaskStore } from '@/stores/taskStore'
 import { WorkflowNode } from './WorkflowNode'
 import { WorkflowCodeDialog } from './WorkflowCodeDialog'
-import type { WorkflowNodeData } from './workflowTypes'
+import { WorkflowSubgraphNode, type WorkflowSubgraphFlowNode } from './WorkflowSubgraphNode'
+import type { WorkflowFlowNode, WorkflowNodeData } from './workflowTypes'
 
 const nodeTypes: NodeTypes = {
   workflow: WorkflowNode,
+  subgraph: WorkflowSubgraphNode,
 }
 
 export function WorkflowCanvas() {
   const nodes = useWorkflowStore((state) => state.nodes)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const edges = useWorkflowStore((state) => state.edges)
+  const subgraphs = useWorkflowStore((state) => state.subgraphs)
   const onNodesChange = useWorkflowStore((state) => state.onNodesChange)
   const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange)
   const connectNodes = useWorkflowStore((state) => state.connectNodes)
@@ -33,14 +38,64 @@ export function WorkflowCanvas() {
   const undo = useWorkflowStore((state) => state.undo)
   const redo = useWorkflowStore((state) => state.redo)
   const selectNode = useWorkflowStore((state) => state.selectNode)
+  const createSubgraph = useWorkflowStore((state) => state.createSubgraph)
+  const moveSubgraph = useWorkflowStore((state) => state.moveSubgraph)
+  const updateSubgraphLayout = useWorkflowStore((state) => state.updateSubgraphLayout)
+  const renameSubgraph = useWorkflowStore((state) => state.renameSubgraph)
+  const dissolveSubgraph = useWorkflowStore((state) => state.dissolveSubgraph)
+  const deleteSubgraph = useWorkflowStore((state) => state.deleteSubgraph)
   const registeredNodeTypes = useMemo(() => nodeTypes, [])
-  const [codeDialogOpen, setCodeDialogOpen] = useState(false)
-  const workflowRun = useTaskStore((state) => state.workflowRun)
-  const runWorkflow = useTaskStore((state) => state.runWorkflow)
-  const cancelWorkflow = useTaskStore((state) => state.cancelWorkflow)
-  const workflowValidationIssues = useTaskStore((state) => state.workflowValidationIssues)
-  const workflowRunError = useTaskStore((state) => state.workflowRunError)
-  const isWorkflowRunning = workflowRun?.status === 'queued' || workflowRun?.status === 'running'
+  const runSubgraph = useTaskStore((state) => state.runSubgraph)
+  const [codeSubgraphId, setCodeSubgraphId] = useState<string>()
+  const [selectedSubgraphId, setSelectedSubgraphId] = useState<string>()
+  const [selectionMode, setSelectionMode] = useState(false)
+  const selectionIdsRef = useRef<string[]>([])
+  const renderedNodes = useMemo(() => {
+    const cards: WorkflowSubgraphFlowNode[] = subgraphs.flatMap((subgraph) => {
+      const members = nodes.filter((node) => subgraph.nodeIds.includes(node.id))
+      if (!members.length) return []
+      const statuses = members.map((node) => node.data.status)
+      const status = statuses.some((item) => item === 'running')
+        ? 'running'
+        : statuses.some((item) => item === 'error')
+          ? 'error'
+          : statuses.every((item) => item === 'done') ? 'done' : 'idle'
+      return [{
+        id: subgraph.id,
+        type: 'subgraph' as const,
+        position: subgraph.position ?? { x: 0, y: 0 },
+        width: subgraph.width ?? 416,
+        height: subgraph.height ?? 352,
+        style: { width: subgraph.width ?? 416, height: subgraph.height ?? 352 },
+        selected: selectedSubgraphId === subgraph.id,
+        selectable: true,
+        draggable: true,
+        dragHandle: '.drag-handle',
+        deletable: false,
+        zIndex: 0,
+        data: {
+          name: subgraph.name,
+          nodeCount: subgraph.nodeIds.length,
+          status,
+          onRun: () => void runSubgraph(subgraph.id),
+          onViewCode: () => setCodeSubgraphId(subgraph.id),
+          onRename: (name: string) => renameSubgraph(subgraph.id, name),
+          onDissolve: () => dissolveSubgraph(subgraph.id),
+          onDelete: () => {
+            if (window.confirm(`删除子图“${subgraph.name}”及其全部节点？`)) deleteSubgraph(subgraph.id, true)
+          },
+        },
+      }]
+    })
+    return [
+      ...cards,
+      ...nodes.map((node) => ({
+        ...node,
+        expandParent: Boolean(node.parentId),
+        zIndex: node.parentId ? 1 : 0,
+      })),
+    ] as Node[]
+  }, [deleteSubgraph, dissolveSubgraph, nodes, renameSubgraph, runSubgraph, selectedSubgraphId, subgraphs])
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
@@ -68,35 +123,19 @@ export function WorkflowCanvas() {
         <NodeButton label="图片" icon={Image} onClick={() => addNode('image')} />
         <NodeButton label="视频" icon={Video} onClick={() => addNode('video')} />
         <NodeButton label="输入" icon={FileInput} onClick={() => addNode('text', 'input')} />
-        <div className="mx-0.5 h-5 w-px bg-border" />
         <Button
-          variant={isWorkflowRunning ? 'secondary' : 'default'}
+          variant={selectionMode ? 'default' : 'ghost'}
           size="sm"
           className="h-8 gap-1.5"
-          aria-label={isWorkflowRunning ? '停止工作流' : '运行工作流'}
-          data-workflow-run=""
+          aria-pressed={selectionMode}
+          data-workflow-subgraph-selection=""
           onClick={() => {
-            if (isWorkflowRunning) void cancelWorkflow()
-            else void runWorkflow()
+            selectionIdsRef.current = []
+            setSelectionMode((value) => !value)
           }}
         >
-          {workflowRun?.status === 'queued'
-            ? <LoaderCircle size={13} className="animate-spin" />
-            : isWorkflowRunning
-              ? <Square size={11} fill="currentColor" />
-              : <Play size={13} fill="currentColor" />}
-          {isWorkflowRunning ? '停止' : '运行工作流'}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5"
-          aria-label="查看工作流代码"
-          data-workflow-view-code=""
-          onClick={() => setCodeDialogOpen(true)}
-        >
-          <Code2 size={14} />
-          查看代码
+          <MousePointer2 size={14} />
+          {selectionMode ? '拖拽圈选节点' : '流程圈选'}
         </Button>
         <div className="mx-0.5 h-5 w-px bg-border" />
         <Button
@@ -124,35 +163,77 @@ export function WorkflowCanvas() {
           <Redo2 size={14} />
         </Button>
       </div>
-      {workflowRunError ? (
-        <div
-          className="absolute left-4 top-16 z-10 flex max-w-[520px] items-start gap-2 rounded-lg border border-destructive/20 bg-background/95 px-3 py-2 text-xs text-destructive shadow-sm backdrop-blur"
-          data-workflow-validation-summary=""
-        >
-          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            {workflowRunError}
-            {workflowValidationIssues.length
-              ? `，共 ${workflowValidationIssues.length} 个问题`
-              : ''}
-          </span>
-        </div>
-      ) : null}
-
-      <ReactFlow
-        nodes={nodes}
+      <ReactFlow<Node>
+        nodes={renderedNodes}
         edges={edges}
         nodeTypes={registeredNodeTypes}
-        onNodesChange={onNodesChange}
+        onNodesChange={(changes) => {
+          const nodeChanges = changes.filter((change) => {
+            const id = 'id' in change ? change.id : change.item.id
+            return !id.startsWith('subgraph-')
+          }) as NodeChange<WorkflowFlowNode>[]
+          if (nodeChanges.length) onNodesChange(nodeChanges)
+
+          const groupChanges = changes.filter((change) => (
+            'id' in change && change.id.startsWith('subgraph-')
+          ))
+          const groupIds = [...new Set(groupChanges.map((change) => 'id' in change ? change.id : ''))]
+          groupIds.forEach((id) => {
+            const positionChange = groupChanges.find((change) => change.type === 'position' && change.id === id)
+            const dimensionsChange = groupChanges.find((change) => change.type === 'dimensions' && change.id === id)
+            const position = positionChange?.type === 'position' ? positionChange.position : undefined
+            if (dimensionsChange?.type === 'dimensions') {
+              updateSubgraphLayout(id, {
+                position,
+                width: dimensionsChange.dimensions?.width,
+                height: dimensionsChange.dimensions?.height,
+              })
+            } else if (position) {
+              moveSubgraph(id, position)
+            }
+          })
+        }}
         onEdgesChange={onEdgesChange}
         onConnect={connectNodes}
-        onNodeClick={(_, node) => selectNode(node.id)}
+        onNodeClick={(_, node) => {
+          if (node.type === 'subgraph') {
+            setSelectedSubgraphId(node.id)
+            selectNode(undefined)
+            return
+          }
+          setSelectedSubgraphId(undefined)
+          selectNode(node.id)
+        }}
         onEdgeClick={() => selectNode(undefined)}
-        onPaneClick={() => selectNode(undefined)}
+        onPaneClick={() => {
+          setSelectedSubgraphId(undefined)
+          selectNode(undefined)
+        }}
+        onSelectionChange={({ nodes: selected }) => {
+          if (!selectionMode) return
+          const ids = selected.filter((node) => node.type === 'workflow').map((node) => node.id)
+          selectionIdsRef.current = ids
+        }}
+        onSelectionEnd={() => {
+          if (!selectionMode) return
+          // React Flow emits selection changes and selection-end in the same
+          // frame. Defer once so the controlled node selection is committed.
+          window.setTimeout(() => {
+            const selectedIds = useWorkflowStore.getState().nodes
+              .filter((node) => node.selected)
+              .map((node) => node.id)
+            const ids = selectedIds.length ? selectedIds : selectionIdsRef.current
+            if (!ids.length) return
+            createSubgraph(ids)
+            selectionIdsRef.current = []
+            setSelectionMode(false)
+          }, 0)
+        }}
+        selectionOnDrag={selectionMode}
         elementsSelectable
         elevateEdgesOnSelect
         deleteKeyCode={['Backspace', 'Delete']}
-        panOnDrag={false}
+        panOnDrag={!selectionMode}
         panOnScroll
         zoomOnScroll={false}
         proOptions={{ hideAttribution: true }}
@@ -170,6 +251,7 @@ export function WorkflowCanvas() {
           pannable
           zoomable
           nodeColor={(node) => {
+            if (node.type === 'subgraph') return '#8b7cf6'
             const kind = (node.data as WorkflowNodeData).kind
             if (kind === 'image') return '#8b5cf6'
             if (kind === 'video') return '#f97316'
@@ -178,9 +260,11 @@ export function WorkflowCanvas() {
         />
       </ReactFlow>
       <WorkflowCodeDialog
-        open={codeDialogOpen}
+        open={Boolean(codeSubgraphId)}
         workflowId={workflowId}
-        onOpenChange={setCodeDialogOpen}
+        subgraphId={codeSubgraphId}
+        title={`${subgraphs.find((item) => item.id === codeSubgraphId)?.name ?? '子图'} JS 代码`}
+        onOpenChange={(open) => { if (!open) setCodeSubgraphId(undefined) }}
       />
     </div>
   )

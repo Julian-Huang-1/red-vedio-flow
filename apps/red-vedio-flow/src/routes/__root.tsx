@@ -15,6 +15,7 @@ import { WorkspaceManager } from '@/components/workflow'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ModelSettingsDialog } from '@/components/model-settings'
+import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 
 const WORKSPACE_TABS = [
   { label: '画布', to: '/workflow' },
@@ -53,6 +54,7 @@ function RootLayout() {
   const unreadCount = useAgentBoxStore((state) => state.unreadCount)
   const openDrawer = useAgentBoxStore((state) => state.openDrawer)
   const closeDrawer = useAgentBoxStore((state) => state.closeDrawer)
+  const closeResourceLibrary = useResourceLibraryStore((state) => state.closeLibrary)
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -95,7 +97,10 @@ function RootLayout() {
         open={open}
         onOpenChange={(nextOpen) => {
           if (nextOpen) openDrawer()
-          else closeDrawer()
+          else {
+            closeResourceLibrary()
+            closeDrawer()
+          }
         }}
       >
         <AgentBoxPanel />

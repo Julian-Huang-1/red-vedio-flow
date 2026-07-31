@@ -10,6 +10,7 @@ import { AgentMessageContent } from './AgentMessageContent'
 function AgentMessageItem({ id }: { id: string }) {
   const message = useAgentBoxStore((state) => state.messagesById[id])
   const attachmentsById = useAgentBoxStore((state) => state.attachmentsById)
+  const resourcesById = useAgentBoxStore((state) => state.resourcesById)
   const retry = useAgentBoxStore((state) => state.retry)
   const promptMutation = usePiAgentPromptMutation()
   const attachments = useMemo(
@@ -17,6 +18,12 @@ function AgentMessageItem({ id }: { id: string }) {
       .map((attachmentId) => attachmentsById[attachmentId])
       .filter(Boolean) ?? [],
     [attachmentsById, message?.attachmentIds],
+  )
+  const resources = useMemo(
+    () => message?.resourceIds
+      ?.map((resourceId) => resourcesById[resourceId])
+      .filter(Boolean) ?? [],
+    [message?.resourceIds, resourcesById],
   )
 
   if (!message) return null
@@ -28,7 +35,7 @@ function AgentMessageItem({ id }: { id: string }) {
   return (
     <AgentBox.Message role={message.role} data-status={message.status}>
       <AgentMessageContent message={message} />
-      <AgentMessageAttachments attachments={attachments} />
+      <AgentMessageAttachments attachments={attachments} resources={resources} />
       {message.status === 'streaming' ? (
         <span className="mt-2 inline-block size-1.5 animate-pulse rounded-full bg-current opacity-60" />
       ) : null}

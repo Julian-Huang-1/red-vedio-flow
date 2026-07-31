@@ -108,4 +108,27 @@ describe('applyWorkflowPatch', () => {
       },
     })
   })
+
+  it('preserves subgraph resources and removes deleted node membership', () => {
+    const first = node('text-1', 'text', 'prompt')
+    const second = node('image-1', 'image')
+    const source = document([first, second])
+    source.graph.subgraphs = [{
+      id: 'subgraph-1',
+      name: '子图 1',
+      nodeIds: [first.id, second.id],
+      createdAt: 1,
+      updatedAt: 1,
+    }]
+
+    const updated = applyWorkflowPatch(source, [{
+      type: 'setNodeStatus',
+      nodeId: first.id,
+      status: 'running',
+    }])
+    expect(updated.graph.subgraphs?.[0]?.nodeIds).toEqual([first.id, second.id])
+
+    const removed = applyWorkflowPatch(updated, [{ type: 'removeNode', nodeId: first.id }])
+    expect(removed.graph.subgraphs?.[0]?.nodeIds).toEqual([second.id])
+  })
 })

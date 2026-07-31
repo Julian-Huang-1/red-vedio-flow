@@ -54,7 +54,9 @@ export async function handleWorkflowRoutes(
   }
   if (route.length === 2 && action === 'code' && ctx.req.method === 'GET') {
     const workflow = await requireWorkflow(workflows, workflowId)
-    sendJson(ctx.res, 200, generateWorkflowModule(workflow, {
+    const subgraphId = ctx.url.searchParams.get('subgraphId')
+    const target = subgraphId ? subgraphWorkflow(workflow, subgraphId) : workflow
+    sendJson(ctx.res, 200, generateWorkflowModule(target, {
       language: ctx.url.searchParams.get('language') === 'js' ? 'js' : 'ts',
     }))
     return true
@@ -105,6 +107,28 @@ export async function handleWorkflowRoutes(
     return true
   }
   return false
+}
+
+function subgraphWorkflow(workflow: WorkflowDocument, subgraphId: string): WorkflowDocument {
+  const subgraph = workflow.graph.subgraphs?.find((item) => item.id === subgraphId)
+  if (!subgraph) throw new HttpError(404, `subgraph not found: ${subgraphId}`)
+  const nodeIds = new Set(subgraph.nodeIds)
+  const edges = workflow.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+  const sources = new Set(edges.map((edge) => edge.source))
+  const selectedNodes = workflow.graph.nodes.filter((node) => nodeIds.has(node.id))
+  const hasExplicitOutput = selectedNodes.some((node) => node.data.serviceRole === 'output')
+  return {
+    ...workflow,
+    id: `${workflow.id}:${subgraph.id}`,
+    title: subgraph.name,
+    graph: {
+      nodes: selectedNodes.map((node) => !hasExplicitOutput && !sources.has(node.id)
+        ? { ...node, data: { ...node.data, serviceRole: 'output', serviceLabel: node.id } }
+        : node),
+      edges,
+      subgraphs: [subgraph],
+    },
+  }
 }
 
 async function requireWorkflow(workflows: WorkflowApi, id: string) {

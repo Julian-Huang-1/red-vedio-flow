@@ -15,6 +15,7 @@ export type {
   AgentMessage,
   AgentModelOption,
   AgentOption,
+  AgentResourceReference,
   AgentRunStatus,
   AgentSession,
 } from './agentBoxTypes'

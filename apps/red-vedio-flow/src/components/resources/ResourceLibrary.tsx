@@ -3,6 +3,8 @@ import type { Resource, ResourceKind } from '@red-video-flow/workflow-core'
 import { createResourceBinding } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useAgentBoxStore } from '@/components/agent-box/agentBoxStore'
+import { cn } from '@/lib/utils'
 import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import {
@@ -27,7 +29,13 @@ const scopes = [
   { value: 'workspace', label: '当前工作区' },
 ] as const
 
-export function ResourceLibrary() {
+export function ResourceLibrary({
+  className,
+  variant = 'workflow',
+}: {
+  className?: string
+  variant?: 'workflow' | 'agent'
+} = {}) {
   const open = useResourceLibraryStore((state) => state.open)
   const closeLibrary = useResourceLibraryStore((state) => state.closeLibrary)
   const scope = useResourceLibraryStore((state) => state.scope)
@@ -37,6 +45,9 @@ export function ResourceLibrary() {
   const query = useResourceLibraryStore((state) => state.query)
   const setQuery = useResourceLibraryStore((state) => state.setQuery)
   const addTarget = useResourceLibraryStore((state) => state.addTarget)
+  const pendingResources = useAgentBoxStore((state) => state.pendingResources)
+  const addAgentResource = useAgentBoxStore((state) => state.addResource)
+  const removeAgentResource = useAgentBoxStore((state) => state.removeResource)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId)
   const addAttachment = useWorkflowStore((state) => state.addAttachment)
@@ -51,10 +62,12 @@ export function ResourceLibrary() {
   })
   const deleteMutation = useDeleteResourceMutation(workflowId)
 
-  if (!open) return null
+  const agentTarget = addTarget?.type === 'agent-resource'
+  if (!open || (variant === 'agent') !== agentTarget) return null
 
-  const target = selectedNodeId && addTarget?.nodeId === selectedNodeId
-    ? addTarget
+  const nodeAddTarget = addTarget && addTarget.type !== 'agent-resource' ? addTarget : undefined
+  const target = selectedNodeId && nodeAddTarget?.nodeId === selectedNodeId
+    ? nodeAddTarget
     : selectedNodeId
       ? { nodeId: selectedNodeId, type: 'node-result' as const }
       : undefined
@@ -63,6 +76,27 @@ export function ResourceLibrary() {
     : undefined
 
   async function addResource(resource: Resource) {
+    if (agentTarget) {
+      const id = `canvas-resource-${resource.id}`
+      const selected = pendingResources.some((item) => item.resourceId === resource.id)
+      if (selected) {
+        removeAgentResource(id)
+      } else {
+        addAgentResource({
+          id,
+          resourceId: resource.id,
+          kind: resource.kind,
+          name: resource.name,
+          mimeType: resource.mimeType || defaultMimeType(resource.kind),
+          size: resource.size ?? 0,
+          url: resource.url,
+          text: resource.text,
+          thumbnailUrl: resource.thumbnailUrl,
+          duration: resource.duration,
+        })
+      }
+      return
+    }
     if (!target || !targetNode) return
     if (target.type === 'node-result') {
       if (!canUseAsNodeResult(resource, targetNode.data.kind)) return
@@ -158,14 +192,17 @@ export function ResourceLibrary() {
 
   return (
     <aside
-      className="absolute inset-y-0 right-0 z-30 flex w-[380px] flex-col border-l bg-background shadow-xl"
+      className={cn(
+        'absolute right-0 z-30 flex w-[380px] flex-col border-l bg-background shadow-xl',
+        variant === 'workflow' && 'inset-y-0',
+        className,
+      )}
       data-resource-library=""
       data-open=""
     >
       <header className="flex h-14 shrink-0 items-center justify-between border-b px-4">
         <div>
           <h2 className="text-sm font-semibold">资源库</h2>
-          <p className="text-[11px] text-muted-foreground">当前画布的上传与生成素材</p>
         </div>
         <Button variant="ghost" size="icon" className="size-8" onClick={closeLibrary}>
           <X className="size-4" />
@@ -179,9 +216,6 @@ export function ResourceLibrary() {
           onChange={(event) => setQuery(event.target.value)}
         />
         <div className="space-y-1.5">
-          <p className="px-1 text-[11px] font-medium text-muted-foreground">
-            资源范围
-          </p>
           <div
             className="flex items-end gap-5 border-b px-1"
             role="tablist"
@@ -258,7 +292,9 @@ export function ResourceLibrary() {
               <ResourceCard
                 key={resource.id}
                 resource={resource}
-                canAttach={canAddResource(resource, targetNode?.data.kind, target?.type)}
+                canAttach={agentTarget || canAddResource(resource, targetNode?.data.kind, target?.type)}
+                selected={agentTarget && pendingResources.some((item) => item.resourceId === resource.id)}
+                allowDelete={!agentTarget}
                 attachDisabledReason={getAddDisabledReason(
                   resource,
                   targetNode?.data.kind,
@@ -319,12 +355,16 @@ function getAddDisabledReason(
 function ResourceCard({
   resource,
   canAttach,
+  selected = false,
+  allowDelete = true,
   attachDisabledReason,
   onAttach,
   onDelete,
 }: {
   resource: Resource
   canAttach: boolean
+  selected?: boolean
+  allowDelete?: boolean
   attachDisabledReason?: string
   onAttach: () => void
   onDelete: () => void
@@ -346,28 +386,37 @@ function ResourceCard({
         <div className="flex items-center justify-between">
           <Button
             size="sm"
-            variant="secondary"
+            variant={selected ? 'default' : 'secondary'}
             className="h-6 gap-1 px-2 text-[10px]"
             disabled={!canAttach}
             title={attachDisabledReason}
             onClick={onAttach}
           >
-            <Plus className="size-3" />
-            加入
+            {selected ? <X className="size-3" /> : <Plus className="size-3" />}
+            {selected ? '取消' : '选择'}
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-6 text-muted-foreground hover:text-destructive"
-            aria-label="删除资源"
-            onClick={onDelete}
-          >
-            <Trash2 className="size-3" />
-          </Button>
+          {allowDelete ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground hover:text-destructive"
+              aria-label="删除资源"
+              onClick={onDelete}
+            >
+              <Trash2 className="size-3" />
+            </Button>
+          ) : <span />}
         </div>
       </div>
     </article>
   )
+}
+
+function defaultMimeType(kind: ResourceKind) {
+  if (kind === 'text') return 'text/plain'
+  if (kind === 'image') return 'image/*'
+  if (kind === 'video') return 'video/*'
+  return 'application/octet-stream'
 }
 
 function ResourcePreview({ resource }: { resource: Resource }) {

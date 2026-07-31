@@ -1,5 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { ResourceLibrary } from '@/components/resources'
+import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 
 type AgentBoxDrawerProps = {
   open: boolean
@@ -14,16 +16,21 @@ export function AgentBoxDrawer({
   children,
   className,
 }: AgentBoxDrawerProps) {
+  const resourceLibraryOpen = useResourceLibraryStore((state) =>
+    state.open && state.addTarget?.type === 'agent-resource')
+  const closeResourceLibrary = useResourceLibraryStore((state) => state.closeLibrary)
   useEffect(() => {
     if (!open) return
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onOpenChange(false)
+      if (event.key !== 'Escape') return
+      if (resourceLibraryOpen) closeResourceLibrary()
+      else onOpenChange(false)
     }
 
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onOpenChange, open])
+  }, [closeResourceLibrary, onOpenChange, open, resourceLibraryOpen])
 
   return (
     <div
@@ -41,6 +48,10 @@ export function AgentBoxDrawer({
         aria-label="关闭 Agent"
         tabIndex={open ? 0 : -1}
         onClick={() => onOpenChange(false)}
+      />
+      <ResourceLibrary
+        variant="agent"
+        className="bottom-0 right-[440px] top-auto z-20 h-[70%] animate-in rounded-2xl border-t fade-in slide-in-from-bottom-6 duration-300 max-[820px]:right-0 max-[820px]:z-40 mr-[2px]"
       />
       <aside
         className={cn(
