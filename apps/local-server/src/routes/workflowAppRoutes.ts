@@ -15,9 +15,10 @@ import {
   type WorkflowExecutionPlan,
 } from '@red-video-flow/workflow-core'
 import type { VisualCapability } from '@red-video-flow/plugin-contract'
+import { handleDurableAppRunRoutes } from '@red-video-flow/api-server'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, resourcePath, sendJson, type RequestContext } from '../http.js'
-import { resolveRequestUser } from '../auth.js'
+import { requireRequestUser, resolveRequestUser } from '../auth.js'
 
 type AppRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
@@ -55,6 +56,20 @@ type AppRun = {
 
 export async function handleWorkflowAppRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   const { req, res, pathname } = ctx
+  if (
+    runtime.postgresInfrastructure
+    && (
+      pathname.startsWith('/api/workflow-runs/')
+      || /^\/api\/workflows\/[^/]+\/runs$/.test(pathname)
+    )
+  ) {
+    const user = await requireRequestUser(runtime, req)
+    return handleDurableAppRunRoutes({
+      config: { workerConcurrency: runtime.config.workerConcurrency },
+      infrastructure: runtime.postgresInfrastructure,
+      providers: runtime.backend.providers,
+    }, ctx, user.id)
+  }
 
   if (req.method === 'GET' && /^\/api\/workflows\/[^/]+\/contract$/.test(pathname)) {
     const workflowId = resourcePath(pathname, '/api/workflows/')?.[0]

@@ -24,7 +24,6 @@ import { persistCurrentWorkflow } from '@/lib/workflowPersistence'
 
 type RunProgress = {
   text: string
-  partialImages: Record<number, string>
 }
 
 type TaskStore = {
@@ -154,7 +153,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       fetchWorkflowAppRuns(workflowId),
     ])
     const progress = { ...get().progress }
-    for (const run of runs) progress[run.id] ??= { text: '', partialImages: {} }
+    for (const run of runs) progress[run.id] ??= { text: '' }
     set({
       runs: Object.fromEntries(runs.map((run) => [run.id, run])),
       progress,
@@ -190,7 +189,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       runs: { ...get().runs, [run.id]: run },
       progress: {
         ...get().progress,
-        [run.id]: { text: '', partialImages: {} },
+        [run.id]: { text: '' },
       },
     })
     return run
@@ -287,27 +286,11 @@ function projectRunEvent(
     return
   }
   if (event.type === 'text_delta') {
-    const current = get().progress[event.runId] ?? { text: '', partialImages: {} }
+    const current = get().progress[event.runId] ?? { text: '' }
     set({
       progress: {
         ...get().progress,
         [event.runId]: { ...current, text: current.text + event.delta },
-      },
-    })
-    return
-  }
-  if (event.type === 'image_partial') {
-    const current = get().progress[event.runId] ?? { text: '', partialImages: {} }
-    set({
-      progress: {
-        ...get().progress,
-        [event.runId]: {
-          ...current,
-          partialImages: {
-            ...current.partialImages,
-            [event.index]: `data:image/png;base64,${event.base64}`,
-          },
-        },
       },
     })
     return

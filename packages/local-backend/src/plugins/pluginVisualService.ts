@@ -140,16 +140,6 @@ export class PluginVisualService implements VisualServiceContract {
           progress: typeof data.progress === 'number' ? data.progress : undefined,
           text: typeof data.text === 'string' ? data.text : undefined,
         })
-      } else if (
-        event.params.type === 'partial_image'
-        && typeof data.base64 === 'string'
-      ) {
-        onEvent?.({
-          type: 'partial-image',
-          index: typeof data.index === 'number' ? data.index : 0,
-          base64: data.base64,
-          mimeType: typeof data.mimeType === 'string' ? data.mimeType : undefined,
-        })
       } else if (event.params.type === 'debug_http_request') {
         onEvent?.({
           type: 'network-request',

@@ -15,11 +15,13 @@
   ],
   "scripts": {
     "dev": "pnpm --filter @red-video-flow/local-server dev:web",
-    "dev:web": "pnpm --filter @red-video-flow/web dev",
+    "dev:cowork": "pnpm --filter @red-video-flow/red-vedio-flow dev:cowork",
+    "dev:web": "pnpm --filter @red-video-flow/red-vedio-flow dev",
     "dev:agents": "pnpm --filter @red-video-flow/local-server dev",
     "dev:electron": "node apps/electron/scripts/dev.mjs",
     "build": "pnpm -r --if-present build",
-    "build:web": "pnpm --filter @red-video-flow/web build",
+    "build:web": "pnpm --filter @red-video-flow/red-vedio-flow build",
+    "build:cowork": "pnpm --filter @red-video-flow/red-vedio-flow build && pnpm --filter @red-video-flow/cowork-server build && node scripts/prepare-cowork-release.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -29,11 +31,12 @@
     "dist:win": "pnpm --filter @red-video-flow/electron dist:win",
     "start": "pnpm build && pnpm --filter @red-video-flow/local-server start",
     "serve": "pnpm --filter @red-video-flow/local-server start",
-    "preview": "pnpm --filter @red-video-flow/web preview"
+    "preview": "pnpm --filter @red-video-flow/red-vedio-flow preview"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "concurrently": "^10.0.3",
+    "esbuild": "^0.25.12",
     "typescript": "^5.6.3",
     "vitest": "^4.1.10"
   }

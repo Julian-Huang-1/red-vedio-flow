@@ -283,29 +283,13 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   buildRunInput: (nodeId) => {
     const node = get().nodes.find((item) => item.id === nodeId)
     if (!node) throw new Error(`Workflow node not found: ${nodeId}`)
-    const currentResult = node.data.results.find(
-      (result) => result.id === node.data.currentResultId,
-    )
     const generationConfig = node.data.composer.generationConfig
-    const resolvedGenerationConfig = generationConfig.type === 'openai-image'
-      && currentResult?.type === 'image'
-      && currentResult.provider.responseId
-      ? {
-          ...generationConfig,
-          providerOptions: {
-            ...generationConfig.providerOptions,
-            previousResponseId:
-              generationConfig.providerOptions?.previousResponseId
-              ?? currentResult.provider.responseId,
-          },
-        }
-      : generationConfig
     return {
       prompt: node.data.composer.prompt,
       attachments: node.data.composer.attachments,
       upstreamResults: collectUpstreamResults(nodeId, get().nodes, get().edges),
       model: node.data.composer.model,
-      generationConfig: resolvedGenerationConfig,
+      generationConfig,
     }
   },
   loadWorkflow: (document) => {

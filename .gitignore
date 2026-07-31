@@ -5,3 +5,9 @@ release
 .data
 .DS_Store
 *.local
+db.properties
+ai.properties
+.cowork-release
+.cowork-release-guard
+.cowork-release-guard-*.zip
+.guard-transform-.cowork-release-guard

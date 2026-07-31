@@ -27,7 +27,11 @@ await rm(stageDir, { recursive: true, force: true })
 await mkdir(stageDir, { recursive: true })
 await mkdir(resolve(stageDir, 'dist'), { recursive: true })
 await cp(resolve(electronDir, 'dist/main.js'), resolve(stageDir, 'dist/main.js'))
-await cp(resolve(repoRoot, 'apps/web/dist'), resolve(stageDir, 'web-dist'), { recursive: true })
+await cp(
+  resolve(repoRoot, 'apps/red-vedio-flow/dist'),
+  resolve(stageDir, 'web-dist'),
+  { recursive: true },
+)
 await cp(resolve(repoRoot, 'plugins'), resolve(stageDir, 'builtin-plugins'), { recursive: true })
 await cp(resolve(electronDir, 'dist/rvf'), resolve(stageDir, 'rvf'), { recursive: true })
 await mkdir(resolve(stageDir, 'bin'), { recursive: true })

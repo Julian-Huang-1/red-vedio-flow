@@ -36,7 +36,10 @@ export class PostgresResourceRepository {
 
   async get(id: string) {
     const rows = await this.sql`
-      SELECT * FROM resources WHERE id = ${id} AND deleted_at IS NULL LIMIT 1
+      SELECT * FROM resources
+      WHERE (id = ${id} OR blob_id = ${id}) AND deleted_at IS NULL
+      ORDER BY CASE WHEN id = ${id} THEN 0 ELSE 1 END
+      LIMIT 1
     `
     return rows[0] ? toResource(rows[0]) : undefined
   }

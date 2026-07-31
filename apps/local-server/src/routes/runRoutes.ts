@@ -1,11 +1,32 @@
 import { join } from 'node:path'
-import type { UpstreamResultReference } from '@red-video-flow/workflow-core'
+import { readFile } from 'node:fs/promises'
+import type {
+  AssetReference,
+  NodeRunInput,
+  UpstreamResultReference,
+} from '@red-video-flow/workflow-core'
+import { handleDurableNodeRunRoutes } from '@red-video-flow/api-server'
+import { contentTypeFor } from '@red-video-flow/local-backend'
 import type { LocalServerRuntime } from '../runtime.js'
 import { readJson, sendJson, writeSse, type RequestContext } from '../http.js'
-import { resolveRequestUser } from '../auth.js'
+import { requireRequestUser, resolveRequestUser } from '../auth.js'
 
 export async function handleRunRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   const { req, res, pathname } = ctx
+  if (
+    runtime.postgresInfrastructure
+    && (
+      pathname === '/api/workflow-node-runs'
+      || pathname.startsWith('/api/workflow-node-runs/')
+    )
+  ) {
+    const user = await requireRequestUser(runtime, req)
+    return handleDurableNodeRunRoutes({
+      config: { workerConcurrency: runtime.config.workerConcurrency },
+      infrastructure: runtime.postgresInfrastructure,
+      providers: runtime.backend.providers,
+    }, ctx, user.id)
+  }
   if (req.method === 'POST' && pathname === '/api/workflow-node-runs') {
     await runWorkflowNode(runtime, ctx)
     return true
@@ -59,14 +80,19 @@ async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext)
     return
   }
 
-  persistComposerUpstreamResults(runtime, workflowId, nodeId, body.input.upstreamResults)
   const user = await resolveRequestUser(runtime, req)
+  const input = await migrateLegacyAssetInputs(
+    runtime,
+    body.input as NodeRunInput,
+    user?.id ?? 'local',
+  )
+  persistComposerUpstreamResults(runtime, workflowId, nodeId, input.upstreamResults)
   const run = runtime.backend.runs.createNodeRun({
     id: runId,
     userId: user?.id,
     workflowId,
     nodeId,
-    input: body.input,
+    input,
   })
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -95,6 +121,45 @@ async function runWorkflowNode(runtime: LocalServerRuntime, ctx: RequestContext)
     payload: { runId: run.id },
     maxAttempts: 1,
   })
+}
+
+export async function migrateLegacyAssetInputs(
+  runtime: Pick<LocalServerRuntime, 'backend' | 'blobStorage'>,
+  input: NodeRunInput,
+  ownerId: string,
+): Promise<NodeRunInput> {
+  const migrated = new Map<string, AssetReference>()
+  const migrateAsset = async (asset: AssetReference) => {
+    if (!asset.url.startsWith('/api/assets/')) return asset
+    const cached = migrated.get(asset.url)
+    if (cached) return { ...cached, ...asset, id: cached.id, url: cached.url }
+    const localPath = runtime.backend.assets.resolveAssetPath(asset.url)
+    if (!localPath) throw new Error(`本地素材不存在：${asset.url}`)
+    const bytes = await readFile(localPath)
+    const mimeType = asset.mimeType ?? contentTypeFor(localPath)
+    const blob = await runtime.blobStorage.put({
+      ownerId,
+      fileName: asset.name ?? localPath.split('/').at(-1) ?? 'asset.bin',
+      contentType: mimeType,
+      size: bytes.length,
+      body: (async function* () { yield bytes })(),
+    })
+    const reference = {
+      ...asset,
+      ...runtime.blobStorage.toAssetReference(blob, asset.kind),
+      mimeType,
+    }
+    migrated.set(asset.url, reference)
+    return reference
+  }
+  return {
+    ...input,
+    attachments: await Promise.all(input.attachments.map(migrateAsset)),
+    upstreamResults: await Promise.all(input.upstreamResults.map(async (result) => ({
+      ...result,
+      assets: await Promise.all(result.assets.map(migrateAsset)),
+    }))),
+  }
 }
 
 function persistComposerUpstreamResults(

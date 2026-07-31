@@ -197,15 +197,6 @@ export class VisualTaskService {
               taskId: event.submitId,
             })
           }
-          if (event.type === 'partial-image') {
-            this.runs.appendNodeRunEvent(runId, 'image_partial', {
-              type: 'image_partial',
-              runId,
-              index: event.index,
-              base64: event.base64,
-              mimeType: event.mimeType,
-            })
-          }
           if (event.type === 'network-request') {
             this.appendNetworkRequest(task, event.request)
           }
@@ -702,11 +693,8 @@ function generationConfigOptions(input: NodeRunInput) {
     type: _type,
     version: _version,
     providerOptions,
-    previousResponseId: _previousResponseId,
     ...options
-  } = input.generationConfig as NodeRunInput['generationConfig'] & {
-    previousResponseId?: string
-  }
+  } = input.generationConfig
   return { ...options, ...providerOptions }
 }
 

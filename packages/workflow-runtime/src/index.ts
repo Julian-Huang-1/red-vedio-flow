@@ -1,3 +1,5 @@
 export * from './runWorkflowNode'
 export * from './defineWorkflow'
 export * from './providerAdapters'
+export * from './seedanceProtocol'
+export * from './visualModels'

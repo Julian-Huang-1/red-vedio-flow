@@ -57,7 +57,6 @@ export type ProviderExecutionContext = {
 
 export type ProviderExecutionEvent =
   | { type: 'text-delta'; delta: string }
-  | { type: 'partial-image'; index: number; base64: string; mimeType?: string }
   | { type: 'provider-task'; taskId: string }
   | { type: 'progress'; progress?: number; text?: string }
 
@@ -140,7 +139,13 @@ export interface BlobStorage {
     size?: number
   }): Promise<StoredBlob>
   stat(id: string): Promise<StoredBlob | undefined>
+  statForOwner(id: string, ownerId: string): Promise<StoredBlob | undefined>
   read(id: string, range?: BlobReadRange): Promise<AsyncIterable<Uint8Array>>
+  readForOwner(
+    id: string,
+    ownerId: string,
+    range?: BlobReadRange,
+  ): Promise<AsyncIterable<Uint8Array>>
   delete(id: string): Promise<void>
   toAssetReference(blob: StoredBlob, kind: AssetReference['kind']): AssetReference
 }

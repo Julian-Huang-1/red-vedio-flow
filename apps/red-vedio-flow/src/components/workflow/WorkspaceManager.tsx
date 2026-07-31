@@ -66,7 +66,8 @@ export function WorkspaceManager() {
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })))
-    if (!currentWorkspaceId && workflows[0]) openWorkspace(workflows[0].id)
+    const currentExists = workflows.some((workflow) => workflow.id === currentWorkspaceId)
+    if (!currentExists && workflowsQuery.data) openWorkspace(workflows[0]?.id)
   }, [currentWorkspaceId, openWorkspace, setWorkspaces, workflowsQuery.data])
 
   useEffect(() => {

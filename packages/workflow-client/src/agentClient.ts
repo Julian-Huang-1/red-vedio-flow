@@ -57,6 +57,8 @@ export type RunNodeEvents = {
 
 export type UploadedAsset = {
   id: string
+  resourceId?: string
+  blobId?: string
   workflowId: string
   kind: string
   url: string
@@ -247,7 +249,9 @@ export async function uploadAsset(file: File, workflowId: string) {
   )
 
   if (!response.ok) throw new Error('上传本地素材失败')
-  return (await response.json()) as UploadedAsset
+  const asset = (await response.json()) as UploadedAsset
+  const resourceId = asset.resourceId ?? asset.id
+  return { ...asset, id: resourceId, resourceId }
 }
 
 export async function runVisualNode(

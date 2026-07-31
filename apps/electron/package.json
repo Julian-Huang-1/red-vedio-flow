@@ -13,7 +13,7 @@
     "dist": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage",
     "dist:mac": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --mac",
     "dist:win": "pnpm build:app && pnpm prepare:package && electron-builder --projectDir /tmp/red-video-flow-electron-stage --win",
-    "build:app": "pnpm --filter @red-video-flow/web build && pnpm build",
+    "build:app": "pnpm --filter @red-video-flow/red-vedio-flow build && pnpm build",
     "prepare:package": "node scripts/prepare-package.mjs"
   },
   "dependencies": {
@@ -42,7 +42,7 @@
     ],
     "extraResources": [
       {
-        "from": "../web/dist",
+        "from": "../red-vedio-flow/dist",
         "to": "web-dist"
       },
       {

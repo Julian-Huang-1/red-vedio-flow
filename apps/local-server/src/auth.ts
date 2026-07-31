@@ -26,7 +26,9 @@ export async function requireRequestUser(
 ): Promise<AppUser> {
   const user = parseSsoUser(req.headers['decrypted-userinfo'])
   if (user) return runtime.backend.users.upsertFromSso(user)
-  if (runtime.config.requireSso) throw new HttpError(401, 'SSO login is required')
+  if (runtime.config.deploymentMode === 'cowork' || runtime.config.requireSso) {
+    throw new HttpError(401, 'SSO login is required')
+  }
   return runtime.backend.users.upsertFromSso({
     ssoId: 'local-development-user',
     username: 'Local User',
@@ -40,7 +42,9 @@ export async function resolveRequestUser(
 ): Promise<AppUser | undefined> {
   const user = parseSsoUser(req.headers['decrypted-userinfo'])
   if (!user) {
-    if (runtime.config.requireSso) throw new HttpError(401, 'SSO login is required')
+    if (runtime.config.deploymentMode === 'cowork' || runtime.config.requireSso) {
+      throw new HttpError(401, 'SSO login is required')
+    }
     return runtime.backend.users.upsertFromSso({
       ssoId: 'local-development-user',
       username: 'Local User',

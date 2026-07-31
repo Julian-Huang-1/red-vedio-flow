@@ -22,8 +22,6 @@
         "optionsSchema": {
           "type": "object",
           "properties": {
-            "responseModel": { "type": "string", "title": "Responses 主模型", "default": "gpt-5.6-sol", "advanced": true },
-            "imageGenerationDeployment": { "type": "string", "title": "图片生成部署", "default": "gpt-image-2", "advanced": true },
             "action": { "type": "string", "title": "生成方式", "enum": ["auto", "generate", "edit"], "enumNames": ["自动", "生成", "编辑"], "default": "auto" },
             "size": { "type": "string", "title": "尺寸", "enum": ["auto", "1024x1024", "1536x1024", "1024x1536"], "default": "auto" },
             "quality": { "type": "string", "title": "质量", "enum": ["auto", "low", "medium", "high"], "default": "auto" },
@@ -31,10 +29,7 @@
             "outputFormat": { "type": "string", "title": "输出格式", "enum": ["png", "jpeg", "webp"], "default": "png" },
             "outputCompression": { "type": "integer", "title": "压缩质量", "minimum": 0, "maximum": 100, "default": 100, "advanced": true },
             "inputFidelity": { "type": "string", "title": "输入保真度", "enum": ["low", "high"], "default": "low", "advanced": true },
-            "moderation": { "type": "string", "title": "内容审核", "enum": ["auto", "low"], "default": "auto", "advanced": true },
-            "stream": { "type": "boolean", "title": "流式预览", "default": false, "advanced": true },
-            "partialImages": { "type": "integer", "title": "局部图片数量", "minimum": 0, "maximum": 3, "default": 0, "advanced": true },
-            "previousResponseId": { "type": "string", "title": "上一次 Response ID", "advanced": true }
+            "moderation": { "type": "string", "title": "内容审核", "enum": ["auto", "low"], "default": "auto", "advanced": true }
           }
         }
       }

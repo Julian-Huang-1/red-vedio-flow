@@ -29,7 +29,7 @@ export default defineConfig({
       timeout: 20_000,
     },
     {
-      command: `RED_VIDEO_FLOW_AGENT_ORIGIN=http://127.0.0.1:5816 PATH=${envPath} pnpm --filter @red-video-flow/web exec vite --host 127.0.0.1 --port 5815 --strictPort`,
+      command: `RED_VIDEO_FLOW_AGENT_ORIGIN=http://127.0.0.1:5816 PATH=${envPath} pnpm --filter @red-video-flow/red-vedio-flow exec vite --host 127.0.0.1 --port 5815 --strictPort`,
       url: 'http://127.0.0.1:5815',
       reuseExistingServer: false,
       timeout: 20_000,

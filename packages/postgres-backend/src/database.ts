@@ -2,9 +2,23 @@ import postgres, { type Sql } from 'postgres'
 
 export type PostgresDatabase = Sql<Record<string, never>>
 
-export function createPostgresDatabase(databaseUrl: string) {
-  return postgres(databaseUrl, {
-    max: Number(process.env.RED_VIDEO_FLOW_DB_POOL_SIZE ?? 10),
+export type PostgresConnectionConfig = {
+  host: string
+  port: number
+  username: string
+  password: string
+  database: string
+  maxConnections?: number
+}
+
+export function createPostgresDatabase(config: PostgresConnectionConfig) {
+  return postgres({
+    host: config.host,
+    port: config.port,
+    username: config.username,
+    password: config.password,
+    database: config.database,
+    max: config.maxConnections ?? 10,
     idle_timeout: 20,
     connect_timeout: 10,
     prepare: false,

@@ -14,7 +14,7 @@ function devUrl() {
 function webDistDir() {
   return app.isPackaged
     ? join(process.resourcesPath, 'web-dist')
-    : join(app.getAppPath(), '../web/dist')
+    : join(app.getAppPath(), '../red-vedio-flow/dist')
 }
 
 async function startBackend() {
@@ -34,7 +34,7 @@ async function startBackend() {
     runtimeFilePath: join(userDataDir, 'runtime.json'),
     rvfCliCommand: app.isPackaged ? bundledRvfCommand() : developmentRvfCommand(),
     webMode: app.isPackaged ? 'static' : 'vite',
-    viteRoot: join(app.getAppPath(), '../web'),
+    viteRoot: join(app.getAppPath(), '../red-vedio-flow'),
     distribution: app.isPackaged ? 'electron' : 'source',
   })
 }

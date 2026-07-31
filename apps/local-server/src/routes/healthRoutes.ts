@@ -3,6 +3,15 @@ import { sendJson, type RequestContext } from '../http.js'
 
 export async function handleHealthRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
   if (ctx.req.method !== 'GET') return false
+  if (ctx.pathname === '/health') {
+    try {
+      if (runtime.postgresDatabase) await runtime.postgresDatabase`SELECT 1`
+      sendJson(ctx.res, 200, { ok: true })
+    } catch {
+      sendJson(ctx.res, 503, { ok: false })
+    }
+    return true
+  }
   if (ctx.pathname === '/api/health/live') {
     sendJson(ctx.res, 200, { status: 'ok' })
     return true

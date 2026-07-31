@@ -1,0 +1,21 @@
+{
+  "name": "@red-video-flow/cowork-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@red-video-flow/api-server": "workspace:*",
+    "@red-video-flow/local-server": "workspace:*",
+    "@red-video-flow/postgres-backend": "workspace:*",
+    "@red-video-flow/workflow-core": "workspace:*",
+    "@red-video-flow/workflow-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.6.3"
+  }
+}

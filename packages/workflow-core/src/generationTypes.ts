@@ -43,9 +43,6 @@ export type OpenAIImageGenerationConfig = {
   outputCompression?: number
   inputFidelity?: 'low' | 'high'
   moderation?: 'auto' | 'low'
-  stream?: boolean
-  partialImages?: number
-  previousResponseId?: string
   providerOptions?: Record<string, unknown>
 }
 
@@ -198,7 +195,6 @@ export type ModelCapabilities = {
   imageToImage?: boolean
   multiTurnEdit?: boolean
   multipleReferenceImages?: boolean
-  partialImageStreaming?: boolean
   textToVideo?: boolean
   imageToVideo?: boolean
   supportsLastFrameOutput?: boolean
@@ -261,8 +257,6 @@ export function createDefaultComposer(
         type: 'openai-image',
         version: 1,
         providerOptions: {
-          responseModel: 'gpt-5.6-sol',
-          imageGenerationDeployment: 'gpt-image-2',
           action: 'auto',
           size: 'auto',
           quality: 'auto',
@@ -271,8 +265,6 @@ export function createDefaultComposer(
           outputCompression: 100,
           inputFidelity: 'low',
           moderation: 'auto',
-          stream: false,
-          partialImages: 0,
         },
       },
       updatedAt: now,

@@ -61,13 +61,6 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const streamingText = useTaskStore((state) => (
     data.latestRunId ? state.progress[data.latestRunId]?.text ?? '' : ''
   ))
-  const partialImage = useTaskStore((state) => {
-    if (!data.latestRunId) return undefined
-    const images = state.progress[data.latestRunId]?.partialImages
-    if (!images) return undefined
-    const indexes = Object.keys(images).map(Number).sort((left, right) => right - left)
-    return indexes.length ? images[indexes[0]] : undefined
-  })
   const runError = useTaskStore((state) => (
     data.latestRunId ? state.runs[data.latestRunId]?.error?.message : undefined
   ))
@@ -75,9 +68,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const workflowValidationIssues = useTaskStore((state) => state.workflowValidationIssues)
   const validationIssues = workflowValidationIssues.filter((issue) => issue.nodeId === id)
   const currentResult = data.results.find((result) => result.id === data.currentResultId)
-  const previewImage = partialImage
-    ? { src: partialImage, alt: '生成预览' }
-    : currentResult?.type === 'image' && currentResult.images[0]
+  const previewImage = currentResult?.type === 'image' && currentResult.images[0]
       ? {
           src: currentResult.images[0].url,
           alt: currentResult.images[0].name ?? '节点图片',
@@ -356,7 +347,6 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
                 kind={data.kind}
                 result={currentResult}
                 streamingText={streamingText}
-                partialImage={partialImage}
                 error={uploadError ?? (
                   data.status === 'error'
                     ? runError ?? workflowNodeState?.error
@@ -555,13 +545,11 @@ function NodePreview({
   kind,
   result,
   streamingText,
-  partialImage,
   error,
 }: {
   kind: WorkflowNodeKind
   result?: WorkflowFlowNode['data']['results'][number]
   streamingText?: string
-  partialImage?: string
   error?: string
 }) {
   if (error) {
@@ -577,9 +565,6 @@ function NodePreview({
         {streamingText}
       </div>
     )
-  }
-  if (partialImage) {
-    return <img className="h-[220px] w-full bg-muted/30 object-contain" src={partialImage} alt="生成预览" />
   }
   if (result?.type === 'text') {
     return (

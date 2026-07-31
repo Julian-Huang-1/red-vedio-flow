@@ -136,8 +136,6 @@ async function submit({ executionId, capability, prompt, inputs = [], options = 
     text: responseText(payload),
     metadata: {
       apiMode,
-      responseId: payload?.id,
-      imageGenerationCallIds: imageGenerationCalls(payload).map((item) => item.id).filter(Boolean),
     },
   }
 }
@@ -167,87 +165,6 @@ async function requestImagesEdit(executionId, { prompt, inputs, options, outputF
     method: 'POST',
     body: form,
   })
-}
-
-function resolveResponseModel(value) {
-  if (!value || value === 'gpt-5.5') return 'gpt-5.6-sol'
-  return value
-}
-
-async function requestResponses(executionId, body, imageGenerationDeployment) {
-  const apiKey = process.env.GPT_IMAGE_API_KEY
-  if (!apiKey) throw clientError('GPT_IMAGE_API_KEY is not configured', 'MISSING_API_KEY')
-  const controller = new AbortController()
-  active.set(executionId, controller)
-  try {
-    const url = endpoint('/responses')
-    const headers = {
-      'api-key': apiKey,
-      'Content-Type': 'application/json',
-      'x-ms-oai-image-generation-deployment': imageGenerationDeployment,
-    }
-    emit(executionId, 'debug_http_request', {
-      method: 'POST',
-      url,
-      headers,
-      body,
-      recordedAt: Date.now(),
-    })
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    if (!response.ok) {
-      const text = await response.text()
-      const payload = parseJson(text)
-      const message = findValueDeep(payload, ['message', 'error_message', 'error']) ?? text
-      if (isModerationBlocked(text)) {
-        throw Object.assign(
-          new Error(`图片请求被 Azure 安全审核拦截，请调整提示词或输入图片后重试。${requestIdHint(text)}`),
-          { code: 'MODERATION_BLOCKED', retryable: false },
-        )
-      }
-      throw Object.assign(new Error(`GPT Image API ${response.status}: ${message}`), {
-        code: `HTTP_${response.status}`,
-        retryable: response.status === 429 || response.status >= 500,
-      })
-    }
-    if (!body.stream) return parseJson(await response.text())
-    if (!response.body) throw new Error('GPT Image streaming response has no body')
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let completed
-    for await (const chunk of response.body) {
-      buffer += decoder.decode(chunk, { stream: true })
-      const frames = buffer.split('\n\n')
-      buffer = frames.pop() ?? ''
-      for (const frame of frames) {
-        const line = frame.split('\n').find((item) => item.startsWith('data:'))
-        if (!line) continue
-        const data = line.slice(5).trim()
-        if (!data || data === '[DONE]') continue
-        const event = JSON.parse(data)
-        if (
-          event.type === 'response.image_generation_call.partial_image'
-          && typeof event.partial_image_b64 === 'string'
-        ) {
-          emit(executionId, 'partial_image', {
-            index: Number(event.partial_image_index) || 0,
-            base64: event.partial_image_b64,
-            mimeType: `image/${normalizeOutputFormat(body.tools?.[0]?.output_format)}`,
-          })
-        }
-        if (event.type === 'response.completed') completed = event.response
-        if (event.type === 'response.failed') throw new Error('GPT Image response failed')
-      }
-    }
-    if (!completed) throw new Error('GPT Image stream ended before response.completed')
-    return completed
-  } finally {
-    active.delete(executionId)
-  }
 }
 
 async function requestImagesGeneration(executionId, body) {
@@ -357,10 +274,7 @@ async function assetBlob(asset) {
 }
 
 async function responseAssets(payload, { executionId, downloadDir, outputFormat }) {
-  const calls = imageGenerationCalls(payload)
-  const results = calls.length
-    ? calls.map((item) => ({ base64: item.result }))
-    : Array.isArray(payload?.data)
+  const results = Array.isArray(payload?.data)
     ? payload.data
     : Array.isArray(payload?.output)
       ? payload.output
@@ -390,12 +304,6 @@ async function responseAssets(payload, { executionId, downloadDir, outputFormat 
     })
   }
   return assets
-}
-
-function imageGenerationCalls(payload) {
-  return Array.isArray(payload?.output)
-    ? payload.output.filter((item) => item?.type === 'image_generation_call' && typeof item.result === 'string')
-    : []
 }
 
 function endpoint(pathname) {

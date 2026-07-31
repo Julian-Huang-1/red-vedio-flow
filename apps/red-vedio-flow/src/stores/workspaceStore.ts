@@ -11,7 +11,7 @@ type WorkspaceStore = {
   currentWorkspaceId?: string
   workspaces: WorkspaceSummary[]
   setWorkspaces: (workspaces: WorkspaceSummary[]) => void
-  openWorkspace: (workspaceId: string) => void
+  openWorkspace: (workspaceId?: string) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({

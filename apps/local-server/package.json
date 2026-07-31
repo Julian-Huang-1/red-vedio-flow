@@ -4,17 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/server.ts"
+    ".": "./src/server.ts",
+    "./pi-agent-service": "./src/piAgentService.ts"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
     "dev:web": "RED_VIDEO_FLOW_WEB_MODE=vite tsx src/index.ts",
+    "dev:cowork": "RED_VIDEO_FLOW_WEB_MODE=vite tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/index.ts",
     "start:production": "RED_VIDEO_FLOW_REQUIRE_SSO=true RED_VIDEO_FLOW_WEB_MODE=static tsx src/index.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.82.1",
+    "@red-video-flow/api-server": "workspace:*",
     "@red-video-flow/local-backend": "workspace:*",
     "@red-video-flow/plugin-contract": "workspace:*",
     "@red-video-flow/postgres-backend": "workspace:*",

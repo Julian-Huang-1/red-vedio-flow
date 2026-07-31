@@ -3,6 +3,12 @@ import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
+import type { PostgresConnectionConfig } from '@red-video-flow/postgres-backend'
+import {
+  DEFAULT_IMAGE_PROVIDER_URL,
+  DEFAULT_TEXT_PROVIDER_URL,
+  DEFAULT_VIDEO_PROVIDER_URL,
+} from '@red-video-flow/workflow-runtime/network-provider'
 
 export type LocalServerOptions = {
   preferredPort?: number
@@ -17,7 +23,7 @@ export type LocalServerOptions = {
   distribution?: 'source' | 'electron'
   maasApiKey?: string
   requireSso?: boolean
-  databaseUrl?: string
+  database?: PostgresConnectionConfig
 }
 
 export type LocalServerConfig = {
@@ -41,12 +47,17 @@ export type LocalServerConfig = {
   visualTaskLeaseDurationMs: number
   pluginRequestTimeoutMs: number
   pluginShutdownGraceMs: number
+  workerConcurrency: number
   pluginDirs: string[]
   maasApiKey: string
   textModelBaseUrl: string
+  textProviderUrl: string
+  imageProviderUrl: string
+  videoProviderUrl: string
   credentialEncryptionKey: string
   requireSso: boolean
-  databaseUrl?: string
+  database?: PostgresConnectionConfig
+  deploymentMode: 'local' | 'cowork'
 }
 
 const sourceDir = dirname(fileURLToPath(import.meta.url))
@@ -58,14 +69,13 @@ export function resolveLocalServerConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): LocalServerConfig {
   const workspaceRoot = defaultWorkspaceRoot
-  const databaseUrl = options.databaseUrl
-    ?? env.DATABASE_URL
-    ?? readDatabaseUrl(
-      env.DB_PROPERTIES_PATH
-        ?? env.RED_VIDEO_FLOW_DB_PROPERTIES
-        ?? join(process.cwd(), 'db.properties'),
-    )
-  if (databaseUrl && !env.APP_CREDENTIAL_ENCRYPTION_KEY && !env.RED_VIDEO_FLOW_CREDENTIAL_ENCRYPTION_KEY) {
+  const deploymentMode = env.APP_DEPLOYMENT_MODE === 'cowork' ? 'cowork' : 'local'
+  const database = options.database
+    ?? readDatabaseProperties(join(process.cwd(), 'db.properties'))
+  if (deploymentMode === 'cowork' && !database) {
+    throw new Error('Cowork deployment requires db.properties in the application root')
+  }
+  if (database && !env.APP_CREDENTIAL_ENCRYPTION_KEY && !env.RED_VIDEO_FLOW_CREDENTIAL_ENCRYPTION_KEY) {
     throw new Error('APP_CREDENTIAL_ENCRYPTION_KEY is required when PostgreSQL is enabled')
   }
   const configuredPluginDirs = env.RED_VIDEO_FLOW_PLUGIN_DIRS
@@ -82,10 +92,20 @@ export function resolveLocalServerConfig(
 
   return {
     preferredPort: options.preferredPort
-      ?? readNumber(env.PORT ?? env.RED_VIDEO_FLOW_AGENT_PORT ?? env.RED_VEDIO_FLOW_AGENT_PORT, 5176, 'agent port'),
-    host: env.HOST ?? (databaseUrl ? '0.0.0.0' : '127.0.0.1'),
+      ?? readNumber(
+        deploymentMode === 'cowork'
+          ? env.APP_PORT
+          : env.RED_VIDEO_FLOW_AGENT_PORT ?? env.RED_VEDIO_FLOW_AGENT_PORT,
+        deploymentMode === 'cowork' ? 3000 : 5176,
+        'agent port',
+      ),
+    host: deploymentMode === 'cowork' ? '0.0.0.0' : '127.0.0.1',
     dataDir: resolve(options.dataDir ?? env.RED_VIDEO_FLOW_DATA_DIR ?? join(appDir, '.data')),
-    distDir: resolve(options.webDistDir ?? env.RED_VIDEO_FLOW_WEB_DIST_DIR ?? join(appDir, '../web/dist')),
+    distDir: resolve(
+      options.webDistDir
+        ?? env.RED_VIDEO_FLOW_WEB_DIST_DIR
+        ?? join(appDir, '../red-vedio-flow/dist'),
+    ),
     workspaceRoot,
     cwd: resolve(options.cwd ?? process.cwd()),
     rvfCliCommand: options.rvfCliCommand
@@ -97,7 +117,11 @@ export function resolveLocalServerConfig(
         ?? join(homedir(), '.red-video-flow/runtime.json'),
     ),
     webMode: options.webMode ?? readWebMode(env.RED_VIDEO_FLOW_WEB_MODE),
-    viteRoot: resolve(options.viteRoot ?? env.RED_VIDEO_FLOW_VITE_ROOT ?? join(workspaceRoot, 'apps/web')),
+    viteRoot: resolve(
+      options.viteRoot
+        ?? env.RED_VIDEO_FLOW_VITE_ROOT
+        ?? join(workspaceRoot, 'apps/red-vedio-flow'),
+    ),
     distribution: options.distribution ?? 'source',
     maasApiKey: options.maasApiKey
       ?? env.RED_VIDEO_FLOW_MAAS_API_KEY
@@ -106,11 +130,23 @@ export function resolveLocalServerConfig(
       env.RED_VIDEO_FLOW_TEXT_MODEL_BASE_URL
         ?? 'https://maas.devops.rednote.life/hackson/v1',
     ),
+    textProviderUrl: env.APP_TEXT_PROVIDER_URL?.trim()
+      || env.RED_VIDEO_FLOW_TEXT_PROVIDER_URL?.trim()
+      || DEFAULT_TEXT_PROVIDER_URL,
+    imageProviderUrl: env.APP_IMAGE_PROVIDER_URL?.trim()
+      || env.RED_VIDEO_FLOW_IMAGE_PROVIDER_URL?.trim()
+      || DEFAULT_IMAGE_PROVIDER_URL,
+    videoProviderUrl: env.APP_VIDEO_PROVIDER_URL?.trim()
+      || env.RED_VIDEO_FLOW_VIDEO_PROVIDER_URL?.trim()
+      || DEFAULT_VIDEO_PROVIDER_URL,
     credentialEncryptionKey: env.APP_CREDENTIAL_ENCRYPTION_KEY
       ?? env.RED_VIDEO_FLOW_CREDENTIAL_ENCRYPTION_KEY
       ?? `local-development:${resolve(options.dataDir ?? env.RED_VIDEO_FLOW_DATA_DIR ?? join(appDir, '.data'))}`,
-    requireSso: options.requireSso ?? env.RED_VIDEO_FLOW_REQUIRE_SSO === 'true',
-    databaseUrl,
+    requireSso: deploymentMode === 'cowork'
+      ? true
+      : options.requireSso ?? env.RED_VIDEO_FLOW_REQUIRE_SSO === 'true',
+    database,
+    deploymentMode,
     runTimeoutMs: readNumber(env.RED_VIDEO_FLOW_RUN_TIMEOUT_MS, 120_000, 'run timeout'),
     runReaperIntervalMs: readNumber(env.RED_VIDEO_FLOW_RUN_REAPER_INTERVAL_MS, 30_000, 'run reaper interval'),
     visualTaskIntervalMs: readNumber(env.RED_VIDEO_FLOW_VISUAL_TASK_INTERVAL_MS, 5_000, 'visual task interval'),
@@ -120,12 +156,19 @@ export function resolveLocalServerConfig(
     visualTaskLeaseDurationMs: readNumber(env.RED_VIDEO_FLOW_VISUAL_TASK_LEASE_DURATION_MS, 60_000, 'visual task lease'),
     pluginRequestTimeoutMs: readNumber(env.RED_VIDEO_FLOW_PLUGIN_REQUEST_TIMEOUT_MS, 30_000, 'plugin request timeout'),
     pluginShutdownGraceMs: readNumber(env.RED_VIDEO_FLOW_PLUGIN_SHUTDOWN_GRACE_MS, 3_000, 'plugin shutdown grace'),
+    workerConcurrency: readNumber(
+      env.APP_WORKER_CONCURRENCY ?? env.RED_VIDEO_FLOW_WORKER_CONCURRENCY,
+      3,
+      'worker concurrency',
+    ),
     pluginDirs: pluginDirs.map((item) => resolve(item)),
   }
 }
 
-function readDatabaseUrl(propertiesPath: string | undefined) {
-  if (!propertiesPath || !existsSync(propertiesPath)) return undefined
+export function readDatabaseProperties(
+  propertiesPath: string,
+): PostgresConnectionConfig | undefined {
+  if (!existsSync(propertiesPath)) return undefined
   const properties = Object.fromEntries(
     readFileSync(propertiesPath, 'utf8')
       .split(/\r?\n/)
@@ -138,24 +181,37 @@ function readDatabaseUrl(propertiesPath: string | undefined) {
           : [line.slice(0, separator).trim(), line.slice(separator + 1).trim()]
       }),
   )
-  const rawUrl = properties['db.url']
-    ?? properties.url
-    ?? properties['spring.datasource.url']
-  if (!rawUrl) return undefined
-  const url = rawUrl.replace(/^jdbc:/, '')
-  if (/^postgres(?:ql)?:\/\//.test(url) && !new URL(url).username) {
-    const parsed = new URL(url)
-    const username = properties['db.username']
-      ?? properties.username
-      ?? properties['spring.datasource.username']
-    const password = properties['db.password']
-      ?? properties.password
-      ?? properties['spring.datasource.password']
-    if (username) parsed.username = username
-    if (password) parsed.password = password
-    return parsed.toString()
+  const allowedKeys = new Set([
+    'db.type',
+    'db.host',
+    'db.port',
+    'db.username',
+    'db.password',
+    'db.database',
+  ])
+  const unexpectedKeys = Object.keys(properties).filter((key) => !allowedKeys.has(key))
+  if (unexpectedKeys.length) {
+    throw new Error(`unsupported db.properties keys: ${unexpectedKeys.join(', ')}`)
   }
-  return url
+  if (properties['db.type'] !== 'postgresql') {
+    throw new Error('db.type must be postgresql')
+  }
+  const requiredKeys = [...allowedKeys]
+  const missingKeys = requiredKeys.filter((key) => !properties[key])
+  if (missingKeys.length) {
+    throw new Error(`missing db.properties keys: ${missingKeys.join(', ')}`)
+  }
+  const port = Number(properties['db.port'])
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(`invalid db.port: ${properties['db.port']}`)
+  }
+  return {
+    host: properties['db.host'],
+    port,
+    username: properties['db.username'],
+    password: properties['db.password'],
+    database: properties['db.database'],
+  }
 }
 
 function trimTrailingSlash(value: string) {

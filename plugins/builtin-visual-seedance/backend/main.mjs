@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const MODEL = 'Doubao-seedance2.0'
+const PROVIDER = 'doubao-seedance2.0'
 const DEFAULT_API_BASE_URL = 'https://maas.devops.xiaohongshu.com/hackson/openai'
 const TASKS_PATH = '/doubao/contents/generations/tasks'
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
@@ -113,6 +114,7 @@ async function submit({ executionId, capability, prompt, inputs = [], options = 
   const payload = await requestJson(executionId, tasksUrl(), {
     method: 'POST',
     body: JSON.stringify({
+      provider: PROVIDER,
       model: MODEL,
       content,
       ...pickGenerationOptions(options),

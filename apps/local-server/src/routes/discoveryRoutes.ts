@@ -1,4 +1,5 @@
 import type { LocalServerRuntime } from '../runtime.js'
+import { builtinVisualModels } from '@red-video-flow/workflow-runtime'
 import { HttpError, readJson, resourcePath, sendJson, type RequestContext } from '../http.js'
 
 export async function handleDiscoveryRoutes(runtime: LocalServerRuntime, ctx: RequestContext) {
@@ -146,7 +147,7 @@ export async function handleDiscoveryRoutes(runtime: LocalServerRuntime, ctx: Re
     return true
   }
   if (req.method === 'GET' && pathname === '/api/visual-models') {
-    sendJson(res, 200, await listPluginVisualModels(runtime))
+    sendJson(res, 200, builtinVisualModels)
     return true
   }
   return false

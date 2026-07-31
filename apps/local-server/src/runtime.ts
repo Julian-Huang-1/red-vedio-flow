@@ -1,11 +1,13 @@
 import {
   ExecutionManager,
   ExecutionRepository,
+  FileBlobStorage,
   PluginManager,
   PluginVisualService,
   VisualTaskCoordinator,
   createLocalBackend,
 } from '@red-video-flow/local-backend'
+import { join } from 'node:path'
 import type { LocalServerConfig } from './config.js'
 import { AgentRegistry } from './agentRegistry.js'
 import { AgentRegistrationTokens } from './agentRegistrationTokens.js'
@@ -27,10 +29,11 @@ import {
   hydrateWorkflowCache,
 } from './dataServices.js'
 import { PersistenceFlushQueue } from './persistenceFlushQueue.js'
+import { DurableWorker } from '@red-video-flow/api-server'
 
 export function createLocalServerRuntime(config: LocalServerConfig) {
-  const postgres = config.databaseUrl
-    ? createPostgresDatabase(config.databaseUrl)
+  const postgres = config.database
+    ? createPostgresDatabase(config.database)
     : undefined
   const agentRegistry = new AgentRegistry(config.dataDir)
   const agentRegistrationTokens = new AgentRegistrationTokens()
@@ -62,6 +65,8 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     ? createPostgresInfrastructure(postgres, config.credentialEncryptionKey)
     : undefined
   if (postgresInfrastructure) Object.assign(backend, postgresInfrastructure)
+  const blobStorage = postgresInfrastructure?.blobs
+    ?? new FileBlobStorage(join(config.dataDir, 'blobs'))
   const persistence = new PersistenceFlushQueue()
   if (postgresInfrastructure) {
     backend.workflowRepository.setPersistenceMirror({
@@ -165,7 +170,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
       )
     },
   })
-  let worker: WorkflowWorker | undefined
+  let worker: { start(): void; stop(): Promise<void> } | undefined
 
   let runReaperTimer: NodeJS.Timeout | undefined
   let started = false
@@ -229,6 +234,7 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
     plugins,
     executions,
     visualTasks,
+    blobStorage,
     postgresInfrastructure,
     postgresDatabase: postgres,
     flushPersistence: () => persistence.flush(),
@@ -245,10 +251,18 @@ export function createLocalServerRuntime(config: LocalServerConfig) {
       registerBuiltinProviders(runtime)
       executions.bootstrap()
       visualTasks.start()
-      worker = new WorkflowWorker(runtime)
+      worker = postgresInfrastructure
+        ? new DurableWorker({
+          config: { workerConcurrency: config.workerConcurrency },
+          infrastructure: postgresInfrastructure,
+          providers: backend.providers,
+        })
+        : new WorkflowWorker(runtime)
       worker.start()
-      recoverNodeRuns()
-      recoverWorkflowRuns()
+      if (!postgresInfrastructure) {
+        recoverNodeRuns()
+        recoverWorkflowRuns()
+      }
       startRunReaper()
     },
     close() {

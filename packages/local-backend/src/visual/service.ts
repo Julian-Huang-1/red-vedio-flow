@@ -4,7 +4,6 @@ export type VisualEvent =
   | { type: 'stderr'; text: string }
   | { type: 'meta'; submitId: string }
   | { type: 'progress'; progress?: number; text?: string }
-  | { type: 'partial-image'; index: number; base64: string; mimeType?: string }
   | {
       type: 'network-request'
       request: {

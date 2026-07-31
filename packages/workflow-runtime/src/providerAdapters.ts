@@ -1,10 +1,7 @@
 import type {
   AssetReference,
   NodeRunInput,
-  OpenAIImageGenerationConfig,
   OpenAITextGenerationConfig,
-  UpstreamResultReference,
-  VolcVideoGenerationConfig,
 } from '@red-video-flow/workflow-core'
 
 export type OpenAIInputContent =
@@ -20,33 +17,7 @@ export type OpenAITextRequest = Record<string, unknown> & {
   }>
 }
 
-export type OpenAIImageRequest = Record<string, unknown> & {
-  model: string
-  input: Array<{
-    role: 'user'
-    content: OpenAIInputContent[]
-  }> | string
-  tools: Array<Record<string, unknown> & { type: 'image_generation' }>
-  previous_response_id?: string
-  stream?: boolean
-}
-
-export type VolcVideoContent =
-  | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } }
-  | (Record<string, unknown> & { type: string })
-
-export type VolcVideoCreateTaskRequest = Record<string, unknown> & {
-  model: string
-  content: VolcVideoContent[]
-  callback_url?: string
-  return_last_frame?: boolean
-}
-
-export type ProviderRequest =
-  | OpenAITextRequest
-  | OpenAIImageRequest
-  | VolcVideoCreateTaskRequest
+export type ProviderRequest = OpenAITextRequest
 
 export type ProviderSubmission = {
   providerId: string
@@ -88,62 +59,6 @@ export function buildOpenAITextRequest(input: NodeRunInput): OpenAITextRequest {
   }) as OpenAITextRequest
 }
 
-export function buildOpenAIImageRequest(input: NodeRunInput): OpenAIImageRequest {
-  assertConfig(input, 'openai-image')
-  const config = input.generationConfig
-  const tool = removeUndefined({
-    ...config.providerOptions,
-    type: 'image_generation' as const,
-    action: config.action,
-    size: config.size,
-    quality: config.quality,
-    background: config.background,
-    output_format: config.outputFormat,
-    output_compression: config.outputCompression,
-    input_fidelity: config.inputFidelity,
-    moderation: config.moderation,
-    partial_images: config.partialImages,
-  })
-
-  return removeUndefined({
-    model: input.model.modelId,
-    input: [{ role: 'user' as const, content: buildOpenAIContent(input) }],
-    tools: [tool],
-    previous_response_id: config.previousResponseId,
-    stream: config.stream,
-  }) as OpenAIImageRequest
-}
-
-export function buildVolcVideoCreateTaskRequest(
-  input: NodeRunInput,
-): VolcVideoCreateTaskRequest {
-  assertConfig(input, 'volc-video')
-  const config = input.generationConfig
-  const providerOptions = { ...config.providerOptions }
-  const extraContent = Array.isArray(providerOptions.content)
-    ? providerOptions.content as VolcVideoContent[]
-    : []
-  delete providerOptions.content
-
-  return removeUndefined({
-    ...providerOptions,
-    model: input.model.modelId,
-    content: [
-      {
-        type: 'text' as const,
-        text: buildVideoPrompt(input.prompt, input.upstreamResults, config),
-      },
-      ...imageAssets(input).map((asset) => ({
-        type: 'image_url' as const,
-        image_url: { url: asset.url },
-      })),
-      ...extraContent,
-    ],
-    callback_url: config.callbackUrl,
-    return_last_frame: config.returnLastFrame,
-  }) as VolcVideoCreateTaskRequest
-}
-
 function buildOpenAIContent(input: NodeRunInput): OpenAIInputContent[] {
   const upstreamText = input.upstreamResults
     .map((result) => result.text?.trim())
@@ -159,32 +74,6 @@ function buildOpenAIContent(input: NodeRunInput): OpenAIInputContent[] {
     }
   }
   return content
-}
-
-function buildVideoPrompt(
-  prompt: string,
-  upstreamResults: UpstreamResultReference[],
-  config: VolcVideoGenerationConfig,
-) {
-  const upstreamText = upstreamResults
-    .map((result) => result.text?.trim())
-    .filter((text): text is string => Boolean(text))
-  const flags = [
-    config.ratio ? `--ratio ${config.ratio}` : '',
-    config.duration ? `--dur ${config.duration}` : '',
-    config.resolution ? `--resolution ${config.resolution}` : '',
-    config.frameRate ? `--fps ${config.frameRate}` : '',
-    config.cameraFixed === undefined ? '' : `--camerafixed ${config.cameraFixed}`,
-    config.watermark === undefined ? '' : `--watermark ${config.watermark}`,
-    config.seed === undefined ? '' : `--seed ${config.seed}`,
-  ].filter(Boolean)
-  return [[...upstreamText, prompt.trim()].filter(Boolean).join('\n\n'), ...flags]
-    .filter(Boolean)
-    .join('  ')
-}
-
-function imageAssets(input: NodeRunInput) {
-  return allAssets(input).filter((asset) => asset.kind === 'image')
 }
 
 function allAssets(input: NodeRunInput) {

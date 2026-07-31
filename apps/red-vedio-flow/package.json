@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5175",
+    "dev:cowork": "RED_VIDEO_FLOW_COWORK_DEPLOYMENT_URL=https://cowork.xiaohongshu.com/s/f54388fe vite --host local.xiaohongshu.com --port 5175",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -p tsconfig.json --noEmit"

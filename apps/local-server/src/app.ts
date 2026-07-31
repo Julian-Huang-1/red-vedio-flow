@@ -29,7 +29,10 @@ export function createRequestHandler(
 ) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     try {
-      if (!isAllowedOrigin(req.headers.origin)) {
+      if (
+        runtime.config.deploymentMode !== 'cowork'
+        && !isAllowedOrigin(req.headers.origin)
+      ) {
         sendJson(res, 403, { error: 'cross-origin access is restricted to localhost' })
         return
       }

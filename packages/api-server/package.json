@@ -1,0 +1,21 @@
+{
+  "name": "@red-video-flow/api-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@red-video-flow/postgres-backend": "workspace:*",
+    "@red-video-flow/workflow-runtime": "workspace:*",
+    "@red-video-flow/workflow-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.6.3"
+  }
+}

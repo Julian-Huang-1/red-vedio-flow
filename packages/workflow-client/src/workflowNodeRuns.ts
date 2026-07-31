@@ -9,7 +9,6 @@ import { getWorkflowClientTransport } from './transport'
 export type WorkflowNodeRunEvent =
   | { type: 'run'; status: Extract<NodeRunStatus, 'queued' | 'running'>; runId: string; workflowRevision?: number; providerTask?: { providerId: string; taskId?: string; responseId?: string } }
   | { type: 'text_delta'; runId: string; delta: string }
-  | { type: 'image_partial'; runId: string; index: number; base64: string }
   | { type: 'result'; runId: string; result: NodeResult }
   | { type: 'done'; runId: string; resultIds: string[]; workflowRevision?: number }
   | { type: 'error'; runId: string; code?: string; message: string; retryable: boolean; workflowRevision?: number }

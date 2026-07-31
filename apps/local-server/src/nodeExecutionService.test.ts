@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { NodeRunInput } from '@red-video-flow/workflow-core'
+import type {
+  AssetReference,
+  NodeRunInput,
+  StoredBlob,
+} from '@red-video-flow/workflow-core'
+import { ProviderRegistry } from '@red-video-flow/local-backend'
 import { executeWorkflowNodeRun } from './nodeExecutionService'
 
 describe('executeWorkflowNodeRun', () => {
@@ -7,7 +12,7 @@ describe('executeWorkflowNodeRun', () => {
     vi.unstubAllGlobals()
   })
 
-  it('executes an OpenAI-compatible text run and emits a persisted result event', async () => {
+  it('uses the shared network provider for text runs', async () => {
     const providerFetch = vi.fn(async () => new Response(JSON.stringify({
       id: 'resp-1',
       output: [{
@@ -19,43 +24,19 @@ describe('executeWorkflowNodeRun', () => {
       headers: { 'Content-Type': 'application/json' },
     }))
     vi.stubGlobal('fetch', providerFetch)
-
-    const input: NodeRunInput = {
-      prompt: '写一个分镜',
-      attachments: [],
-      upstreamResults: [],
-      model: { providerId: 'rednote-maas', modelId: 'GPT-5.6 Sol' },
-      generationConfig: {
-        type: 'openai-text',
-        version: 1,
-        stream: false,
-      },
-    }
     const events: Array<Record<string, unknown>> = []
-
-    await executeWorkflowNodeRun({
-      config: {
-        textModelBaseUrl: 'https://example.test/v1',
-        maasApiKey: 'test-key',
-      },
-      backend: {
-        assets: {},
-        resources: {
-          createText: () => ({ id: 'text-resource-1' }),
-          bind: vi.fn(),
-        },
-      },
-    } as never, {
+    const runtime = fakeRuntime()
+    await executeWorkflowNodeRun(runtime as never, {
       runId: 'run-1',
       workflowId: 'workflow-1',
       nodeId: 'node-1',
-      input,
+      input: textInput(),
       signal: new AbortController().signal,
       emit: (event) => events.push(event),
     })
 
     expect(providerFetch).toHaveBeenCalledWith(
-      'https://example.test/v1/responses',
+      'https://example.test/text',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
@@ -72,107 +53,79 @@ describe('executeWorkflowNodeRun', () => {
       result: {
         type: 'text',
         text: '生成完成',
+        resourceId: expect.any(String),
         provider: { responseId: 'resp-1' },
       },
     })
+    expect(runtime.backend.resources.hydrate).toHaveBeenCalled()
+    expect(runtime.backend.resources.bind).toHaveBeenCalled()
   })
 
-  it('delegates image runs to the configured visual plugin', async () => {
-    const invoke = vi.fn(async () => ({
-      url: '/api/assets/generated/run-1/result.png',
-      localPath: '/tmp/generated/run-1/result.png',
-      fileName: 'result.png',
-      mimeType: 'image/png',
-      taskStatus: 'success',
-      assets: [
-        {
-          url: '/api/assets/generated/run-1/result-1.png',
-          localPath: '/tmp/generated/run-1/result-1.png',
-          fileName: 'result-1.png',
-          mimeType: 'image/png',
-          role: 'output',
-        },
-        {
-          url: '/api/assets/generated/run-1/result-2.png',
-          localPath: '/tmp/generated/run-1/result-2.png',
-          fileName: 'result-2.png',
-          mimeType: 'image/png',
-          role: 'output',
-        },
-      ],
+  it('uses the same image generations boundary as Cowork', async () => {
+    const providerFetch = vi.fn(async () => new Response(JSON.stringify({
+      data: [{ b64_json: Buffer.from('generated-image').toString('base64') }],
+      output_format: 'png',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     }))
-    const register = vi.fn((asset) => ({
-      id: `asset-${asset.fileName}`,
-      workflowId: 'workflow-1',
-      createdAt: Date.now(),
-      ...asset,
-    }))
-    const patchWorkflow = vi.fn(() => ({ revision: 8 }))
+    vi.stubGlobal('fetch', providerFetch)
     const events: Array<Record<string, unknown>> = []
-    const input: NodeRunInput = {
-      prompt: '生成一张图片',
-      attachments: [],
-      upstreamResults: [],
-      model: { providerId: 'openai', modelId: 'gpt-image-2' },
-      generationConfig: {
-        type: 'openai-image',
-        version: 1,
-        size: '1024x1024',
-        quality: 'high',
-      },
-    }
-
-    await executeWorkflowNodeRun({
-      backend: {
-        visual: { invoke },
-        resources: { bind: vi.fn() },
-        workflows: {
-          get: () => ({ revision: 7 }),
-          patch: patchWorkflow,
-        },
-        assets: {
-          generatedDir: '/tmp/generated',
-          assetUrlForPath: (path: string) => path,
-          register,
+    const runtime = fakeRuntime({
+      workflow: {
+        revision: 7,
+        graph: {
+          nodes: [{
+            id: 'node-1',
+            position: { x: 0, y: 0 },
+            data: {
+              materialType: 'image',
+              title: 'Image',
+              status: 'empty',
+              value: {},
+              messages: [],
+            },
+          }],
+          edges: [],
         },
       },
-    } as never, {
+    })
+    await executeWorkflowNodeRun(runtime as never, {
       runId: 'run-1',
       workflowId: 'workflow-1',
       nodeId: 'node-1',
-      input,
+      input: {
+        prompt: '生成一张图片',
+        attachments: [],
+        upstreamResults: [],
+        model: { providerId: 'openai', modelId: 'gpt-image-2' },
+        generationConfig: {
+          type: 'openai-image',
+          version: 1,
+          size: '1024x1024',
+          quality: 'high',
+        },
+      },
       signal: new AbortController().signal,
       emit: (event) => events.push(event),
     })
 
-    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
-      modelId: 'gpt-image-2',
-      nodeKind: 'image',
-      providerOptions: expect.objectContaining({
-        size: '1024x1024',
-        quality: 'high',
+    expect(providerFetch).toHaveBeenCalledWith(
+      'https://example.test/image',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"model":"gpt-image-2"'),
       }),
-    }))
-    expect(register).toHaveBeenCalled()
-    expect(patchWorkflow).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'workflow-1',
-      baseRevision: 7,
-      ops: expect.arrayContaining([
-        expect.objectContaining({
-          type: 'appendNodeResult',
-          nodeId: 'node-1',
-          makeCurrent: true,
-        }),
-      ]),
-    }))
+    )
     expect(events.at(-2)).toMatchObject({
       type: 'result',
       result: {
         type: 'image',
-        images: [
-          { id: 'asset-result-1.png' },
-          { id: 'asset-result-2.png' },
-        ],
+        images: [{
+          id: expect.any(String),
+          url: '/api/blobs/blob-1',
+          mimeType: 'image/png',
+        }],
       },
     })
     expect(events.at(-1)).toMatchObject({
@@ -181,3 +134,67 @@ describe('executeWorkflowNodeRun', () => {
     })
   })
 })
+
+function textInput(): NodeRunInput {
+  return {
+    prompt: '写一个分镜',
+    attachments: [],
+    upstreamResults: [],
+    model: { providerId: 'rednote-maas', modelId: 'GPT-5.6 Sol' },
+    generationConfig: {
+      type: 'openai-text',
+      version: 1,
+      stream: false,
+    },
+  }
+}
+
+function fakeRuntime(options: { workflow?: Record<string, unknown> } = {}) {
+  let blobSequence = 0
+  const workflow = options.workflow
+  return {
+    config: {
+      textProviderUrl: 'https://example.test/text',
+      imageProviderUrl: 'https://example.test/image',
+      videoProviderUrl: 'https://example.test/video',
+      maasApiKey: 'test-key',
+    },
+    blobStorage: {
+      put: vi.fn(async (input: { fileName: string; contentType?: string }) => ({
+        id: `blob-${++blobSequence}`,
+        fileName: input.fileName,
+        contentType: input.contentType,
+        size: 15,
+        sha256: 'sha',
+        createdAt: Date.now(),
+      })),
+      toAssetReference: (blob: StoredBlob, kind: AssetReference['kind']) => ({
+        id: blob.id,
+        kind,
+        url: `/api/blobs/${blob.id}`,
+        name: blob.fileName,
+        mimeType: blob.contentType,
+        size: blob.size,
+      }),
+    },
+    backend: {
+      providers: new ProviderRegistry(),
+      workflows: {
+        get: () => workflow,
+        patch: vi.fn(() => ({ revision: 8 })),
+      },
+      runs: {
+        getNodeRun: () => undefined,
+        updateNodeRunTrace: vi.fn(),
+      },
+      resources: {
+        hydrate: vi.fn(),
+        bind: vi.fn((input) => ({
+          id: 'binding-1',
+          ...input,
+          createdAt: Date.now(),
+        })),
+      },
+    },
+  }
+}

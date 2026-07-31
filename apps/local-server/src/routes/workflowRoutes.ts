@@ -1,4 +1,8 @@
 import type { LocalServerRuntime } from '../runtime.js'
+import {
+  handleWorkflowRoutes as handleSharedWorkflowRoutes,
+  type WorkflowApi,
+} from '@red-video-flow/api-server'
 import { readJson, sendJson, type RequestContext } from '../http.js'
 import { workflowDataService } from '../dataServices.js'
 
@@ -6,6 +10,14 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
   const { req, res, pathname, url } = ctx
   const { backend, visualTasks } = runtime
   const workflows = workflowDataService(runtime)
+  const workflowApi: WorkflowApi = {
+    list: () => workflows.list(),
+    get: (id) => workflows.get(id),
+    create: (input) => workflows.create(input),
+    save: (input) => workflows.save(input),
+    patch: (input) => workflows.patch(input),
+    delete: (id) => workflows.delete(id),
+  }
 
   if (req.method === 'GET' && pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'red-video-flow' })
@@ -44,15 +56,7 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
     return true
   }
 
-  if (req.method === 'GET' && pathname === '/api/workflows') {
-    sendJson(res, 200, { workflows: await workflows.list() })
-    return true
-  }
-
-  if (req.method === 'POST' && pathname === '/api/workflows') {
-    sendJson(res, 200, await workflows.create(await readJson(req)))
-    return true
-  }
+  if (await handleSharedWorkflowRoutes(ctx, workflowApi)) return true
 
   const nodeRunPath = nodeRunPathFromPath(pathname)
   if (nodeRunPath && req.method === 'POST' && !nodeRunPath.runId) {
@@ -99,52 +103,7 @@ export async function handleWorkflowRoutes(runtime: LocalServerRuntime, ctx: Req
     return true
   }
 
-  const workflowId = workflowIdFromPath(pathname)
-  if (workflowId && req.method === 'GET') {
-    const workflow = await workflows.get(workflowId)
-    if (!workflow) {
-      sendJson(res, 404, { error: 'workflow not found' })
-      return true
-    }
-    sendJson(res, 200, workflow)
-    return true
-  }
-  if (workflowId && req.method === 'PUT') {
-    const body = await readJson(req)
-    sendJson(res, 200, await workflows.save({
-      id: workflowId,
-      title: body.title,
-      baseRevision: body.baseRevision,
-      graph: body.graph,
-    }))
-    return true
-  }
-  if (workflowId && req.method === 'PATCH') {
-    const body = await readJson(req)
-    sendJson(res, 200, {
-      workflow: await workflows.patch({
-        id: workflowId,
-        baseRevision: body.baseRevision,
-        ops: body.ops ?? [],
-      }),
-      appliedOps: Array.isArray(body.ops) ? body.ops.length : 0,
-    })
-    return true
-  }
-  if (workflowId && req.method === 'DELETE') {
-    await workflows.delete(workflowId)
-    sendJson(res, 200, { ok: true })
-    return true
-  }
-
   return false
-}
-
-function workflowIdFromPath(pathname: string) {
-  const prefix = '/api/workflows/'
-  if (!pathname.startsWith(prefix)) return undefined
-  const id = pathname.slice(prefix.length)
-  return id && !id.includes('/') ? decodeURIComponent(id) : undefined
 }
 
 function nodeRunPathFromPath(pathname: string) {

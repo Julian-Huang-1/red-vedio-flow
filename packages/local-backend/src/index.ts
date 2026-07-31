@@ -1,4 +1,5 @@
 export * from './assets/assetService.js'
+export * from './assets/fileBlobStorage.js'
 export * from './resources/resourceService.js'
 export * from './context.js'
 export * from './db/client.js'
