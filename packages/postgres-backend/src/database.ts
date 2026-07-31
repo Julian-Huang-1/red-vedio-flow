@@ -91,6 +91,7 @@ export async function migratePostgres(sql: PostgresDatabase) {
     await tx`
       CREATE TABLE IF NOT EXISTS workflows (
         id text PRIMARY KEY,
+        owner_id uuid REFERENCES app_users(id) ON DELETE SET NULL,
         title text NOT NULL,
         schema_version integer NOT NULL,
         revision bigint NOT NULL,
@@ -99,6 +100,8 @@ export async function migratePostgres(sql: PostgresDatabase) {
         updated_at bigint NOT NULL
       )
     `
+    await tx`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES app_users(id) ON DELETE SET NULL`
+    await tx`CREATE INDEX IF NOT EXISTS workflows_owner_updated_idx ON workflows(owner_id, updated_at DESC)`
     await tx`
       CREATE TABLE IF NOT EXISTS runs (
         id text PRIMARY KEY,
@@ -281,10 +284,15 @@ export async function migratePostgres(sql: PostgresDatabase) {
         capability_key text NOT NULL,
         workflow_id text NOT NULL REFERENCES workflows(id) ON DELETE RESTRICT,
         workflow_revision bigint NOT NULL,
+        subgraph_id text,
         created_at bigint NOT NULL,
         updated_at bigint NOT NULL,
         UNIQUE (app_id, capability_key)
       )
+    `
+    await tx`
+      ALTER TABLE app_capabilities
+      ADD COLUMN IF NOT EXISTS subgraph_id text
     `
     await tx`
       CREATE TABLE IF NOT EXISTS runtime_sessions (

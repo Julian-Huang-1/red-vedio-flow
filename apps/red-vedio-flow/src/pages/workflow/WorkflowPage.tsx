@@ -8,8 +8,8 @@ export function WorkflowPage() {
   useWorkflowAutosave()
 
   return (
-    <main className="h-[calc(100vh-4rem)] w-full bg-muted/20 p-4">
-      <section className="relative h-full overflow-hidden rounded-2xl border bg-card shadow-sm">
+    <main className="h-screen w-full bg-muted/20">
+      <section className="relative h-full overflow-hidden border bg-card shadow-sm">
         <div className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1">
             <WorkflowCanvas />

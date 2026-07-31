@@ -12,6 +12,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { FileInput, FileText, Image, MousePointer2, Plus, Redo2, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { createWorkflowResource } from '@red-video-flow/workflow-client'
+import { useQueryClient } from '@tanstack/react-query'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { useTaskStore } from '@/stores/taskStore'
 import { WorkflowNode } from './WorkflowNode'
@@ -25,6 +27,7 @@ const nodeTypes: NodeTypes = {
 }
 
 export function WorkflowCanvas() {
+  const queryClient = useQueryClient()
   const nodes = useWorkflowStore((state) => state.nodes)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const edges = useWorkflowStore((state) => state.edges)
@@ -78,6 +81,38 @@ export function WorkflowCanvas() {
           nodeCount: subgraph.nodeIds.length,
           status,
           onRun: () => void runSubgraph(subgraph.id),
+          onPublish: async () => {
+            const memberIds = new Set(subgraph.nodeIds)
+            const inputs = Object.fromEntries(members
+              .filter((node) => node.data.serviceRole === 'input' || node.data.workflowInput)
+              .map((node) => {
+                const input = node.data.workflowInput
+                return [input?.key || node.data.serviceLabel || node.id, {
+                  type: String(input?.valueType || node.data.materialType),
+                  required: input?.required ?? true,
+                  description: input?.description,
+                }]
+              }))
+            const outputs = Object.fromEntries(members
+              .filter((node) => node.data.serviceRole === 'output')
+              .map((node) => [node.data.serviceLabel || node.id, {
+                type: String(node.data.materialType),
+              }]))
+            await createWorkflowResource({
+              workspaceId: workflowId,
+              name: subgraph.name,
+              manifest: {
+                workflowId,
+                workflowRevision: useWorkflowStore.getState().revision,
+                subgraphId: subgraph.id,
+                name: subgraph.name,
+                inputs,
+                outputs,
+                nodeIds: [...memberIds],
+              },
+            })
+            await queryClient.invalidateQueries({ queryKey: ['resources'] })
+          },
           onViewCode: () => setCodeSubgraphId(subgraph.id),
           onRename: (name: string) => renameSubgraph(subgraph.id, name),
           onDissolve: () => dissolveSubgraph(subgraph.id),
@@ -95,7 +130,7 @@ export function WorkflowCanvas() {
         zIndex: node.parentId ? 1 : 0,
       })),
     ] as Node[]
-  }, [deleteSubgraph, dissolveSubgraph, nodes, renameSubgraph, runSubgraph, selectedSubgraphId, subgraphs])
+  }, [deleteSubgraph, dissolveSubgraph, nodes, queryClient, renameSubgraph, runSubgraph, selectedSubgraphId, subgraphs, workflowId])
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
@@ -118,16 +153,26 @@ export function WorkflowCanvas() {
   
   return (
     <div className="relative h-full w-full" data-workflow-canvas="">
-      <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-xl border bg-background/90 p-1.5 shadow-sm backdrop-blur">
+      <div
+        className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border bg-background/90 p-1 shadow-sm backdrop-blur sm:bottom-4 sm:gap-1 sm:p-1.5"
+        data-workflow-create-toolbar=""
+      >
         <NodeButton label="文本" icon={FileText} onClick={() => addNode('text')} />
         <NodeButton label="图片" icon={Image} onClick={() => addNode('image')} />
         <NodeButton label="视频" icon={Video} onClick={() => addNode('video')} />
         <NodeButton label="输入" icon={FileInput} onClick={() => addNode('text', 'input')} />
+      </div>
+      <div
+        className="absolute right-4 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border bg-background/90 p-1.5 shadow-sm backdrop-blur"
+        data-workflow-action-toolbar=""
+      >
         <Button
           variant={selectionMode ? 'default' : 'ghost'}
-          size="sm"
-          className="h-8 gap-1.5"
+          size="icon"
+          className="size-9"
           aria-pressed={selectionMode}
+          aria-label={selectionMode ? '退出流程圈选' : '流程圈选'}
+          title={selectionMode ? '拖拽圈选节点' : '流程圈选'}
           data-workflow-subgraph-selection=""
           onClick={() => {
             selectionIdsRef.current = []
@@ -135,13 +180,12 @@ export function WorkflowCanvas() {
           }}
         >
           <MousePointer2 size={14} />
-          {selectionMode ? '拖拽圈选节点' : '流程圈选'}
         </Button>
-        <div className="mx-0.5 h-5 w-px bg-border" />
+        <div className="my-0.5 h-px w-5 bg-border" />
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-9"
           disabled={!canUndo}
           aria-label="撤回"
           title="撤回（⌘/Ctrl + Z）"
@@ -153,7 +197,7 @@ export function WorkflowCanvas() {
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-9"
           disabled={!canRedo}
           aria-label="重做"
           title="重做（⌘/Ctrl + Shift + Z）"
@@ -280,10 +324,10 @@ function NodeButton({
   onClick: () => void
 }) {
   return (
-    <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={onClick}>
-      <Plus size={13} />
+    <Button variant="ghost" size="sm" className="size-8 gap-1.5 px-0 sm:h-8 sm:w-auto sm:px-3" aria-label={`添加${label}`} onClick={onClick}>
+      <Plus className="hidden sm:block" size={13} />
       <Icon size={14} />
-      {label}
+      <span className="hidden sm:inline">{label}</span>
     </Button>
   )
 }

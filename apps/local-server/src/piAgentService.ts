@@ -232,6 +232,7 @@ export class PiAgentService {
       attachments?: PiAgentAttachmentInput[]
       workspace?: {
         type: 'app-builder'
+        capability?: AppBuilderCapability
         currentArtifact?: {
           id: string
           version: number
@@ -727,6 +728,7 @@ export function formatPrompt(
   textAttachments: Array<{ name: string; text: string }> = [],
   workspace?: {
     type: 'app-builder'
+    capability?: AppBuilderCapability
     currentArtifact?: {
       id: string
       version: number
@@ -736,8 +738,12 @@ export function formatPrompt(
 ) {
   const validContexts = contexts?.filter((item) => item.title?.trim()) ?? []
   const sections = [message]
+  let capabilityInstructions: string | undefined
   if (workspace?.type === 'app-builder') {
     sections.push(APP_BUILDER_INSTRUCTIONS)
+    if (workspace.capability) {
+      capabilityInstructions = formatCapabilityInstructions(workspace.capability)
+    }
     if (workspace.currentArtifact) {
       sections.push(
         `Current HTML artifact (id: ${workspace.currentArtifact.id}, version: ${workspace.currentArtifact.version}):\n\n${workspace.currentArtifact.html}`,
@@ -754,17 +760,43 @@ export function formatPrompt(
   for (const attachment of textAttachments) {
     sections.push(`Attached file: ${attachment.name}\n\n${attachment.text}`)
   }
+  if (capabilityInstructions) sections.push(capabilityInstructions)
   return sections.join('\n\n')
 }
 
 const MAX_HTML_ARTIFACT_BYTES = 300 * 1024
+
+type AppBuilderCapability = {
+  key: string
+  name: string
+  inputs: Record<string, { type: string; required: boolean; description?: string }>
+  outputs: Record<string, { type: string; description?: string }>
+}
+
+function formatCapabilityInstructions(capability: AppBuilderCapability) {
+  return `Selected subgraph capability (use this contract when building the app):
+Capability name: ${capability.name}
+Capability key: ${capability.key}
+Inputs: ${JSON.stringify(capability.inputs, null, 2)}
+Outputs: ${JSON.stringify(capability.outputs, null, 2)}
+
+Runtime HTTP contract:
+- Read appId and token from window.RUNTIME_CONFIG.
+- Start: POST /api/runtime/apps/{appId}/capabilities/${capability.key}/runs
+- Headers: Authorization: Bearer {token}, Content-Type: application/json
+- Body: { "inputs": { ...values matching the input contract above } }
+- Poll: GET /api/runtime/apps/{appId}/runs/{runId} with the same Authorization header.
+- A run succeeds when status is "succeeded". Read media/text values from run.outputs using the output keys above.
+- Handle queued, running, succeeded, failed, and cancelled states in the UI.
+- Never embed workflowId or subgraphId in generated HTML.`
+}
 
 const APP_BUILDER_INSTRUCTIONS = `You are operating in App Builder mode.
 - Build a single complete HTML document with inline CSS and JavaScript.
 - Make the result responsive and usable on desktop and mobile.
 - When modifying an existing artifact, preserve working features unless the user asks to remove them.
 - When the page is ready, call publish_html exactly once with the complete document.
-- Published apps may call their server-side workflow through the prebound "default" capability. Read window.RUNTIME_CONFIG, then POST inputs to /api/runtime/apps/{appId}/capabilities/default/runs with Authorization: Bearer {token}; poll /api/runtime/apps/{appId}/runs/{runId} for results. Never request or embed a workflow id.
+- Use only the selected server capability described below. Call it through the provided runtime HTTP contract.
 - Do not paste the complete HTML into the conversational response.
 - If requirements are unclear, ask a concise clarification question and do not call publish_html.
 - Do not attempt to access the parent window, cookies, local storage, camera, microphone, popups, downloads, or top-level navigation.`

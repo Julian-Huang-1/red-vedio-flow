@@ -103,6 +103,12 @@ export type PiAgentPromptInput = {
   resources?: AgentResourceReference[]
   workspace?: {
     type: 'app-builder'
+    capability?: {
+      key: string
+      name: string
+      inputs: Record<string, { type: string; required: boolean; description?: string }>
+      outputs: Record<string, { type: string; description?: string }>
+    }
     currentArtifact?: {
       id: string
       version: number

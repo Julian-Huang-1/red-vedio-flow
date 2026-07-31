@@ -250,6 +250,28 @@ describe('PiAgentService App Builder artifacts', () => {
     expect(prompt).toContain('call publish_html exactly once')
   })
 
+  it('appends the selected subgraph capability after the common prompt context', () => {
+    const prompt = formatPrompt(
+      '生成一个视频应用',
+      [{ kind: 'workflow', title: '当前画布' }],
+      [{ name: 'requirements.txt', text: '展示生成结果' }],
+      {
+        type: 'app-builder',
+        capability: {
+          key: 'default',
+          name: '文案生成视频',
+          inputs: { prompt: { type: 'text', required: true } },
+          outputs: { video: { type: 'video' } },
+        },
+      },
+    )
+
+    expect(prompt).toContain('You are operating in App Builder mode.')
+    expect(prompt.indexOf('Attached file: requirements.txt'))
+      .toBeLessThan(prompt.indexOf('Selected subgraph capability'))
+    expect(prompt.endsWith('Never embed workflowId or subgraphId in generated HTML.')).toBe(true)
+  })
+
   it('projects publish_html tool details into an artifact event payload', () => {
     expect(projectHtmlArtifact('publish_html', {
       details: {

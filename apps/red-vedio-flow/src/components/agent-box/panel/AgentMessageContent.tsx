@@ -7,6 +7,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import type { AgentMessage, AgentMessageContent as ContentBlock } from '../agentBoxTypes'
+import { MarkdownContent } from './MarkdownContent'
 
 export function AgentMessageContent({ message }: { message: AgentMessage }) {
   const content = message.content?.length
@@ -25,7 +26,7 @@ export function AgentMessageContent({ message }: { message: AgentMessage }) {
         tone={message.isError ? 'error' : 'default'}
       >
         <ContentBlocks content={content} />
-        {message.details !== undefined ? <JsonBlock value={message.details} /> : null}
+        {message.details !== undefined ? <JsonDetails label="查看工具详情" value={message.details} /> : null}
       </SystemCard>
     )
   }
@@ -48,7 +49,7 @@ export function AgentMessageContent({ message }: { message: AgentMessage }) {
     return (
       <SystemCard icon={<Info size={14} />} title={message.customType || '扩展消息'}>
         <ContentBlocks content={content} />
-        {message.details !== undefined ? <JsonBlock value={message.details} /> : null}
+        {message.details !== undefined ? <JsonDetails label="查看扩展详情" value={message.details} /> : null}
       </SystemCard>
     )
   }
@@ -89,7 +90,14 @@ function ContentBlocks({ content }: { content: ContentBlock[] }) {
     <div className="min-w-0 max-w-full [overflow-wrap:anywhere]" data-agent-box-message-content="">
       {content.map((block, index) => {
         if (block.type === 'text') {
-          return <div key={index} className="max-w-full whitespace-pre-wrap break-words">{block.text}</div>
+          return (
+            <MarkdownContent
+              key={index}
+              className="[&+&]:mt-3"
+            >
+              {block.text}
+            </MarkdownContent>
+          )
         }
         if (block.type === 'thinking') {
           return (
@@ -106,13 +114,19 @@ function ContentBlocks({ content }: { content: ContentBlock[] }) {
         }
         if (block.type === 'toolCall') {
           return (
-            <div key={block.id} className="my-2 min-w-0 max-w-full overflow-hidden rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-              <div className="flex items-center gap-1.5 font-medium">
+            <details
+              key={block.id}
+              className="my-2 min-w-0 max-w-full overflow-hidden rounded-lg border bg-muted/30 text-xs"
+              data-agent-box-tool-call=""
+            >
+              <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 font-medium text-muted-foreground hover:text-foreground">
                 <Wrench size={13} />
                 调用 {block.name}
+              </summary>
+              <div className="border-t px-3 pb-3">
+                <JsonBlock value={block.arguments} />
               </div>
-              <JsonBlock value={block.arguments} />
-            </div>
+            </details>
           )
         }
         return (
@@ -143,7 +157,7 @@ function SystemCard({
 }) {
   return (
     <article
-      className="min-w-0 max-w-full overflow-hidden rounded-xl border bg-muted/20 px-3 py-2.5 text-sm [overflow-wrap:anywhere]"
+      className="min-w-0 max-w-full overflow-hidden rounded-xl border bg-muted/20 px-3 py-2.5 text-sm [overflow-wrap:anywhere] data-[error]:border-destructive/30 data-[error]:bg-destructive/5"
       data-agent-box-system-message=""
       data-error={tone === 'error' ? '' : undefined}
     >
@@ -164,6 +178,19 @@ function JsonBlock({ value }: { value: unknown }) {
     <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded bg-background/70 p-2 text-[11px] leading-5">
       {safeStringify(value)}
     </pre>
+  )
+}
+
+function JsonDetails({ label, value }: { label: string; value: unknown }) {
+  return (
+    <details className="mt-2 overflow-hidden rounded-lg border bg-background/50" data-agent-box-json-details="">
+      <summary className="cursor-pointer px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+        {label}
+      </summary>
+      <div className="border-t px-2 pb-2">
+        <JsonBlock value={value} />
+      </div>
+    </details>
   )
 }
 

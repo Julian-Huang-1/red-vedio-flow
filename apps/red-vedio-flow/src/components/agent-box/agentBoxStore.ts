@@ -17,11 +17,10 @@ import {
   type PiAgentSessionSummaryDto,
 } from './piAgentClient'
 import { useAppBuilderStore } from '../../pages/app-builder/appBuilderStore'
+import { useWorkflowStore } from '@/stores/workflowStore'
 import { resolveAgentResourceUrl } from './resourceUrl'
 
 const agents: AgentOption[] = [
-  { id: 'workflow-agent', label: '工作流助手', description: '规划和修改视频工作流' },
-  { id: 'script-agent', label: '脚本助手', description: '编写脚本与分镜' },
   { id: 'app-builder-agent', label: 'App Builder', description: '生成和迭代单文件 HTML 应用' },
 ]
 
@@ -257,6 +256,32 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
     try {
       const state = get()
       const currentArtifact = useAppBuilderStore.getState().artifactsBySessionId[sessionId]
+      const selectedSubgraphId = useAppBuilderStore.getState().selectedSubgraphId
+      const workflow = useWorkflowStore.getState()
+      const subgraph = workflow.subgraphs.find((item) => item.id === selectedSubgraphId)
+      const capabilityNodes = subgraph
+        ? workflow.nodes.filter((node) => subgraph.nodeIds.includes(node.id))
+        : []
+      const capability = subgraph ? {
+        key: 'default',
+        name: subgraph.name,
+        inputs: Object.fromEntries(capabilityNodes
+          .filter((node) => node.data.serviceRole === 'input' || node.data.workflowInput)
+          .map((node) => {
+            const input = node.data.workflowInput
+            const key = input?.key || node.data.serviceLabel || node.id
+            return [key, {
+              type: String(input?.valueType || node.data.materialType),
+              required: input?.required ?? true,
+              description: input?.description,
+            }]
+          })),
+        outputs: Object.fromEntries(capabilityNodes
+          .filter((node) => node.data.serviceRole === 'output')
+          .map((node) => [node.data.serviceLabel || node.id, {
+            type: String(node.data.materialType),
+          }])),
+      } : undefined
       const attachmentResources = appBuilder
         ? resources.filter((resource) => resource.kind !== 'video')
         : resources
@@ -276,6 +301,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
           workspace: appBuilder
             ? {
                 type: 'app-builder',
+                capability,
                 currentArtifact: currentArtifact
                   ? {
                       id: currentArtifact.id,

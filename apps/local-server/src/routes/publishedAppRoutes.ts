@@ -25,7 +25,18 @@ async function handleManagementApi(runtime: LocalServerRuntime, ctx: RequestCont
   const { req, res, pathname } = ctx
   if (pathname === '/api/apps' && req.method === 'GET') {
     const user = await requireRequestUser(runtime, req)
-    sendJson(res, 200, { apps: await runtime.publishedApps.listApps(user.id) })
+    const apps = await runtime.publishedApps.listApps()
+    sendJson(res, 200, { apps: apps.map((app) => publicApp(app, user.id)) })
+    return true
+  }
+
+  const appMatch = pathname.match(/^\/api\/apps\/([^/]+)$/)
+  if (appMatch && req.method === 'DELETE') {
+    const user = await requireRequestUser(runtime, req)
+    const app = await requireOwnedApp(runtime, decodeURIComponent(appMatch[1]), user.id)
+    await runtime.publishedApps.deleteApp(app.id)
+    res.writeHead(204)
+    res.end()
     return true
   }
   if (pathname === '/api/apps' && req.method === 'POST') {
@@ -84,6 +95,18 @@ async function handleManagementApi(runtime: LocalServerRuntime, ctx: RequestCont
     }
   }
 
+  const previewMatch = pathname.match(/^\/api\/apps\/([^/]+)\/preview$/)
+  if (previewMatch && req.method === 'GET') {
+    await requireRequestUser(runtime, req)
+    const app = await requireApp(runtime, decodeURIComponent(previewMatch[1]))
+    if (!app.currentReleaseId) throw new HttpError(404, 'app has no active release')
+    const release = await runtime.publishedApps.getRelease(app.currentReleaseId)
+    if (!release || release.appId !== app.id) throw new HttpError(404, 'release not found')
+    res.writeHead(200, previewHeaders())
+    res.end(release.html)
+    return true
+  }
+
   const activateMatch = pathname.match(/^\/api\/apps\/([^/]+)\/releases\/([^/]+)\/activate$/)
   if (activateMatch && req.method === 'POST') {
     const user = await requireRequestUser(runtime, req)
@@ -121,6 +144,10 @@ async function handleManagementApi(runtime: LocalServerRuntime, ctx: RequestCont
       if (requestedRevision !== workflow.revision) {
         throw new HttpError(409, 'workflow revision does not match current revision')
       }
+      const subgraphId = stringValue(body.subgraphId)
+      if (subgraphId && !workflow.graph.subgraphs?.some((item) => item.id === subgraphId)) {
+        throw new HttpError(404, 'subgraph not found')
+      }
       const now = Date.now()
       const existing = await runtime.publishedApps.getCapability(appId, key)
       const capability = await runtime.publishedApps.saveCapability({
@@ -129,6 +156,7 @@ async function handleManagementApi(runtime: LocalServerRuntime, ctx: RequestCont
         key,
         workflowId,
         workflowRevision: requestedRevision,
+        subgraphId,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       })
@@ -148,7 +176,7 @@ async function handleManagementApi(runtime: LocalServerRuntime, ctx: RequestCont
   if (sessionMatch && req.method === 'POST') {
     const user = await requireRequestUser(runtime, req)
     const appId = decodeURIComponent(sessionMatch[1])
-    const app = await requireOwnedApp(runtime, appId, user.id)
+    const app = await requireApp(runtime, appId)
     if (!app.currentReleaseId) throw new HttpError(409, 'app has no active release')
     const token = `rt_${randomBytes(32).toString('base64url')}`
     const now = Date.now()
@@ -218,6 +246,7 @@ async function handleRuntimeApi(runtime: LocalServerRuntime, ctx: RequestContext
       inputs,
       session.userId,
       capability.workflowRevision,
+      capability.subgraphId,
     )
     if (!result.ok) {
       sendJson(ctx.res, result.error.error === 'workflow_revision_conflict' ? 409 : 422, result.error)
@@ -258,10 +287,20 @@ async function handleRuntimeApi(runtime: LocalServerRuntime, ctx: RequestContext
 }
 
 async function requireOwnedApp(runtime: LocalServerRuntime, appId: string, userId: string) {
-  const app = await runtime.publishedApps.getApp(appId)
-  if (!app) throw new HttpError(404, 'app not found')
+  const app = await requireApp(runtime, appId)
   if (app.ownerId !== userId) throw new HttpError(403, 'app access denied')
   return app
+}
+
+async function requireApp(runtime: LocalServerRuntime, appId: string) {
+  const app = await runtime.publishedApps.getApp(appId)
+  if (!app) throw new HttpError(404, 'app not found')
+  return app
+}
+
+function publicApp(app: PublishedApp, userId: string) {
+  const { ownerId: _, ...safe } = app
+  return { ...safe, isOwner: app.ownerId === userId }
 }
 
 async function requireRuntimeSession(runtime: LocalServerRuntime, token: string, appId: string) {
@@ -288,6 +327,16 @@ function runtimeHeaders(runtime: LocalServerRuntime) {
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': `frame-ancestors ${frameAncestor}`,
+  }
+}
+
+function previewHeaders() {
+  return {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'private, max-age=60',
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data: blob:; font-src https: data:; media-src https: data:; frame-ancestors 'self'",
   }
 }
 

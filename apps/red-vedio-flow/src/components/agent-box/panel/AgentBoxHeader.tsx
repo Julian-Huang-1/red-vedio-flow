@@ -55,21 +55,24 @@ export function AgentBoxHeader() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={selectedModelId} onValueChange={selectModel}>
-            <SelectTrigger
-              className="mt-0.5 h-auto w-auto gap-1 border-0 p-0 text-xs text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0"
-              aria-label="选择模型"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              {models.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {model.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="pointer-events-none invisible h-0 overflow-hidden" aria-hidden="true">
+            <Select value={selectedModelId} onValueChange={selectModel}>
+              <SelectTrigger
+                className="mt-0.5 h-auto w-auto gap-1 border-0 p-0 text-xs text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0"
+                aria-label="选择模型"
+                tabIndex={-1}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {models.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-1">

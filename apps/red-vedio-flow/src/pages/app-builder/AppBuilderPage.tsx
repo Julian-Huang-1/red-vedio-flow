@@ -18,9 +18,7 @@ import { AppPreview } from './AppPreview'
 import { AppPreviewToolbar } from './AppPreviewToolbar'
 import { AppSourceDialog } from './AppSourceDialog'
 import { useAppBuilderStore } from './appBuilderStore'
-import { useWorkflowStore } from '@/stores/workflowStore'
 import {
-  bindDefaultCapability,
   createPublishedApp,
   publishedAppUrl,
   publishAppRelease,
@@ -43,8 +41,6 @@ export function AppBuilderPage() {
   const setPreviewMode = useAppBuilderStore((state) => state.setPreviewMode)
   const setSourceOpen = useAppBuilderStore((state) => state.setSourceOpen)
   const reloadPreview = useAppBuilderStore((state) => state.reloadPreview)
-  const workflowId = useWorkflowStore((state) => state.workflowId)
-  const workflowRevision = useWorkflowStore((state) => state.revision)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string>()
   const [published, setPublished] = useState<{ appId: string; version: number }>()
@@ -57,9 +53,6 @@ export function AppBuilderPage() {
     setPublished(undefined)
     setCopied(false)
     try {
-      if (workflowId === 'default' || workflowRevision <= 0) {
-        throw new Error('请先在画布中选择并保存一个工作流，用作应用的 default 服务端能力。')
-      }
       const storageKey = `published-app:${artifact.id}`
       let appId = window.localStorage.getItem(storageKey)
       if (!appId) {
@@ -71,7 +64,6 @@ export function AppBuilderPage() {
         title: artifact.title,
         html: artifact.html,
       })
-      await bindDefaultCapability(appId, workflowId, workflowRevision)
       setPublished({ appId, version: result.release.version })
     } catch (error) {
       setPublishError(error instanceof Error ? error.message : String(error))
@@ -100,7 +92,7 @@ export function AppBuilderPage() {
   }, [selectAgent])
 
   return (
-    <main className="h-[calc(100vh-4rem)] w-full bg-muted/20 p-4">
+    <main className="h-screen w-full bg-muted/20 px-3 pb-3 pt-20 sm:px-4 sm:pb-4">
       <section
         className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-sm"
         data-app-builder-page=""

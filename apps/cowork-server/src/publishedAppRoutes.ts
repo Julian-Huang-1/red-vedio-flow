@@ -8,7 +8,7 @@ import {
   type CoworkAppRun,
   type RequestContext,
 } from '@red-video-flow/api-server'
-import { validateWorkflowForRun } from '@red-video-flow/workflow-core'
+import { validateWorkflowForRun, type WorkflowDocument } from '@red-video-flow/workflow-core'
 import type { AppRelease, PublishedApp, RuntimeSession } from '@red-video-flow/postgres-backend'
 import type { CoworkRuntime } from './runtime.js'
 
@@ -24,7 +24,18 @@ export async function handlePublishedAppManagementRoutes(
   const { req, res, pathname } = ctx
 
   if (pathname === '/api/apps' && req.method === 'GET') {
-    sendJson(res, 200, { apps: await repository.listApps(userId) })
+    const scope = listScope(ctx)
+    const apps = await repository.listApps(scope === 'mine' ? userId : undefined)
+    sendJson(res, 200, { apps: apps.map((app) => publicApp(app, userId)) })
+    return true
+  }
+
+  const appMatch = pathname.match(/^\/api\/apps\/([^/]+)$/)
+  if (appMatch && req.method === 'DELETE') {
+    const app = await requireOwnedApp(runtime, decodeURIComponent(appMatch[1]), userId)
+    await repository.deleteApp(app.id)
+    res.writeHead(204)
+    res.end()
     return true
   }
   if (pathname === '/api/apps' && req.method === 'POST') {
@@ -81,6 +92,17 @@ export async function handlePublishedAppManagementRoutes(
     }
   }
 
+  const previewMatch = pathname.match(/^\/api\/apps\/([^/]+)\/preview$/)
+  if (previewMatch && req.method === 'GET') {
+    const app = await requireApp(runtime, decodeURIComponent(previewMatch[1]))
+    if (!app.currentReleaseId) throw new HttpError(404, 'app has no active release')
+    const release = await repository.getRelease(app.currentReleaseId)
+    if (!release || release.appId !== app.id) throw new HttpError(404, 'release not found')
+    res.writeHead(200, previewHeaders())
+    res.end(release.html)
+    return true
+  }
+
   const capabilityMatch = pathname.match(/^\/api\/apps\/([^/]+)\/capabilities\/([^/]+)$/)
   if (capabilityMatch && req.method === 'PUT') {
     const appId = decodeURIComponent(capabilityMatch[1])
@@ -98,6 +120,10 @@ export async function handlePublishedAppManagementRoutes(
     if (requestedRevision !== workflow.revision) {
       throw new HttpError(409, 'workflow revision does not match current revision')
     }
+    const subgraphId = stringValue(body.subgraphId)
+    if (subgraphId && !workflow.graph.subgraphs?.some((item) => item.id === subgraphId)) {
+      throw new HttpError(404, 'subgraph not found')
+    }
     const now = Date.now()
     const existing = await repository.getCapability(appId, key)
     const capability = await repository.saveCapability({
@@ -106,6 +132,7 @@ export async function handlePublishedAppManagementRoutes(
       key,
       workflowId,
       workflowRevision: requestedRevision,
+      subgraphId,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     })
@@ -116,7 +143,7 @@ export async function handlePublishedAppManagementRoutes(
   const sessionMatch = pathname.match(/^\/api\/apps\/([^/]+)\/runtime-sessions$/)
   if (sessionMatch && req.method === 'POST') {
     const appId = decodeURIComponent(sessionMatch[1])
-    const app = await requireOwnedApp(runtime, appId, userId)
+    const app = await requireApp(runtime, appId)
     if (!app.currentReleaseId) throw new HttpError(409, 'app has no active release')
     const token = `rt_${randomBytes(32).toString('base64url')}`
     const now = Date.now()
@@ -140,6 +167,14 @@ export async function handlePublishedAppManagementRoutes(
     return true
   }
   return false
+}
+
+function listScope(ctx: RequestContext) {
+  const scope = ctx.url.searchParams.get('scope') ?? 'mine'
+  if (scope !== 'mine' && scope !== 'all') {
+    throw new HttpError(400, 'scope must be mine or all')
+  }
+  return scope
 }
 
 export async function handlePublishedAppRuntimeRoutes(runtime: CoworkRuntime, ctx: RequestContext) {
@@ -174,7 +209,10 @@ export async function handlePublishedAppRuntimeRoutes(runtime: CoworkRuntime, ct
     }
     const body = await readJson(ctx.req)
     const inputs = isRecord(body.inputs) ? body.inputs : {}
-    const validation = validateWorkflowForRun(workflow, inputs)
+    const targetWorkflow = capability.subgraphId
+      ? workflowSubgraph(workflow, capability.subgraphId)
+      : workflow
+    const validation = validateWorkflowForRun(targetWorkflow, inputs)
     if (!validation.valid) {
       sendJson(ctx.res, 422, {
         error: 'workflow_validation_failed',
@@ -183,7 +221,7 @@ export async function handlePublishedAppRuntimeRoutes(runtime: CoworkRuntime, ct
       })
       return true
     }
-    const run = createAppRun(workflow, session.userId, inputs)
+    const run = createAppRun(targetWorkflow, session.userId, inputs)
     await runtime.infrastructure.postgresWorkflowAppRuns.save(run)
     await runtime.infrastructure.publishedApps.bindRuntimeRun(run.id, session.id, appId, Date.now())
     await runtime.infrastructure.jobs.enqueue({
@@ -225,10 +263,20 @@ export function isRuntimeHost(runtime: CoworkRuntime, ctx: RequestContext) {
 }
 
 async function requireOwnedApp(runtime: CoworkRuntime, appId: string, userId: string) {
-  const app = await runtime.infrastructure.publishedApps.getApp(appId)
-  if (!app) throw new HttpError(404, 'app not found')
+  const app = await requireApp(runtime, appId)
   if (app.ownerId !== userId) throw new HttpError(403, 'app access denied')
   return app
+}
+
+async function requireApp(runtime: CoworkRuntime, appId: string) {
+  const app = await runtime.infrastructure.publishedApps.getApp(appId)
+  if (!app) throw new HttpError(404, 'app not found')
+  return app
+}
+
+function publicApp(app: PublishedApp, userId: string) {
+  const { ownerId: _, ...safe } = app
+  return { ...safe, isOwner: app.ownerId === userId }
 }
 
 async function requireRuntimeSession(runtime: CoworkRuntime, token: string, appId: string) {
@@ -269,6 +317,16 @@ function runtimeHeaders(runtime: CoworkRuntime) {
   }
 }
 
+function previewHeaders() {
+  return {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'private, max-age=60',
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data: blob:; font-src https: data:; media-src https: data:; frame-ancestors 'self'",
+  }
+}
+
 function bearerToken(ctx: RequestContext) {
   const header = ctx.req.headers.authorization
   if (!header?.startsWith('Bearer ')) throw new HttpError(401, 'runtime token is required')
@@ -301,4 +359,19 @@ function safeJson(value: unknown) {
 
 function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function workflowSubgraph(workflow: WorkflowDocument, subgraphId: string): WorkflowDocument {
+  const subgraph = workflow.graph.subgraphs?.find((item) => item.id === subgraphId)
+  if (!subgraph) throw new HttpError(404, 'subgraph not found')
+  const nodeIds = new Set(subgraph.nodeIds)
+  return {
+    ...structuredClone(workflow),
+    title: subgraph.name,
+    graph: {
+      nodes: workflow.graph.nodes.filter((node) => nodeIds.has(node.id)),
+      edges: workflow.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+      subgraphs: [structuredClone(subgraph)],
+    },
+  }
 }

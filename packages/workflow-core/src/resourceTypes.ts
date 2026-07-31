@@ -1,4 +1,4 @@
-export type ResourceKind = 'text' | 'image' | 'video' | 'file'
+export type ResourceKind = 'text' | 'image' | 'video' | 'file' | 'workflow'
 export type ResourceSource = 'upload' | 'generated' | 'imported'
 export type ResourceRelation =
   | 'generated'

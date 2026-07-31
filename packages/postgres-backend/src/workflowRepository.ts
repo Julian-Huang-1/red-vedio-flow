@@ -4,8 +4,10 @@ import type { PostgresDatabase } from './database.js'
 export class PostgresWorkflowRepository {
   constructor(private readonly sql: PostgresDatabase) {}
 
-  async list() {
-    const rows = await this.sql`SELECT * FROM workflows ORDER BY updated_at DESC`
+  async list(ownerId?: string) {
+    const rows = ownerId
+      ? await this.sql`SELECT * FROM workflows WHERE owner_id = ${ownerId} ORDER BY updated_at DESC`
+      : await this.sql`SELECT * FROM workflows ORDER BY updated_at DESC`
     return rows.map(toWorkflow)
   }
 
@@ -14,13 +16,13 @@ export class PostgresWorkflowRepository {
     return rows[0] ? toWorkflow(rows[0]) : undefined
   }
 
-  async save(document: WorkflowDocument, expectedRevision?: number) {
+  async save(document: WorkflowDocument, expectedRevision?: number, ownerId?: string) {
     const rows = expectedRevision === undefined
       ? await this.sql`
           INSERT INTO workflows (
-            id, title, schema_version, revision, graph, created_at, updated_at
+            id, owner_id, title, schema_version, revision, graph, created_at, updated_at
           ) VALUES (
-            ${document.id}, ${document.title}, ${document.schemaVersion}, ${document.revision},
+            ${document.id}, ${ownerId ?? null}, ${document.title}, ${document.schemaVersion}, ${document.revision},
             ${this.sql.json(document.graph as never)}, ${document.createdAt}, ${document.updatedAt}
           )
           ON CONFLICT (id) DO UPDATE SET

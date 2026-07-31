@@ -163,19 +163,21 @@ export async function createWorkflowAppRunFromInputs(
   inputs: Record<string, unknown>,
   userId?: string,
   revision?: number,
+  subgraphId?: string,
 ) {
-  const workflow = requireWorkflow(runtime, workflowId)
-  if (revision !== undefined && workflow.revision !== revision) {
+  const sourceWorkflow = requireWorkflow(runtime, workflowId)
+  if (revision !== undefined && sourceWorkflow.revision !== revision) {
     return {
       ok: false as const,
       error: {
         error: 'workflow_revision_conflict',
         message: '绑定的工作流版本已发生变化，请重新发布应用能力',
         expectedRevision: revision,
-        currentRevision: workflow.revision,
+        currentRevision: sourceWorkflow.revision,
       },
     }
   }
+  const workflow = subgraphId ? workflowSubgraph(sourceWorkflow, subgraphId) : sourceWorkflow
   const validation = validateWorkflowForRun(workflow, inputs)
   if (!validation.valid) {
     return {
@@ -302,9 +304,22 @@ export async function startWorkflowAppRun(
   const run = runtime.backend.workflowAppRuns.get<AppRun>(runId)
   if (!run) throw new Error(`workflow run not found: ${runId}`)
   if (run.status !== 'queued' && run.status !== 'running') return
-  const workflow = runtime.backend.workflows.get(run.workflowId)
-  if (!workflow) throw new Error(`workflow not found: ${run.workflowId}`)
-  await executeRun(runtime, workflow, run)
+  await executeRun(runtime, run.graphSnapshot, run)
+}
+
+export function workflowSubgraph(workflow: WorkflowDocument, subgraphId: string): WorkflowDocument {
+  const subgraph = workflow.graph.subgraphs?.find((item) => item.id === subgraphId)
+  if (!subgraph) throw new Error(`subgraph not found: ${subgraphId}`)
+  const nodeIds = new Set(subgraph.nodeIds)
+  return {
+    ...structuredClone(workflow),
+    title: subgraph.name,
+    graph: {
+      nodes: workflow.graph.nodes.filter((node) => nodeIds.has(node.id)),
+      edges: workflow.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+      subgraphs: [structuredClone(subgraph)],
+    },
+  }
 }
 
 function executeTextNode(

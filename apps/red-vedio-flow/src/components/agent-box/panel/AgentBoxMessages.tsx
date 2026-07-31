@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { RefreshCcw, Sparkles } from 'lucide-react'
+import { ArrowDown, RefreshCcw, Sparkles } from 'lucide-react'
 import { AgentBox } from '../AgentBox'
 import { selectActiveMessageIds, useAgentBoxStore } from '../agentBoxStore'
 import { usePiAgentPromptMutation } from '../piAgentQueries'
@@ -29,7 +29,15 @@ function AgentMessageItem({ id }: { id: string }) {
   if (!message) return null
 
   if (message.role !== 'user' && message.role !== 'assistant') {
-    return <AgentMessageContent message={message} />
+    return (
+      <div
+        className="w-full min-w-0 pl-10"
+        data-agent-box-message-event=""
+        data-status={message.status}
+      >
+        <AgentMessageContent message={message} />
+      </div>
+    )
   }
 
   return (
@@ -37,7 +45,13 @@ function AgentMessageItem({ id }: { id: string }) {
       <AgentMessageContent message={message} />
       <AgentMessageAttachments attachments={attachments} resources={resources} />
       {message.status === 'streaming' ? (
-        <span className="mt-2 inline-block size-1.5 animate-pulse rounded-full bg-current opacity-60" />
+        <span
+          className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          data-agent-box-message-streaming=""
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-current" />
+          正在生成
+        </span>
       ) : null}
       {message.role === 'assistant' && (message.status === 'error' || message.status === 'stopped') ? (
         <Button
@@ -71,20 +85,33 @@ export function AgentBoxMessages() {
 
   useEffect(() => {
     if (!autoScroll) return
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    const frame = requestAnimationFrame(() => {
+      const element = scrollRef.current
+      if (element) element.scrollTop = element.scrollHeight
+    })
+    return () => cancelAnimationFrame(frame)
   }, [activeAssistantText, autoScroll, messageIds])
+
+  function scrollToBottom() {
+    setAutoScroll(true)
+    const element = scrollRef.current
+    if (element) element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
+  }
 
   return (
     <AgentBox.Messages
       ref={scrollRef}
       onScroll={(event) => {
         const element = event.currentTarget
-        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48
+        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80
         if (nearBottom !== autoScroll) setAutoScroll(nearBottom)
       }}
     >
       {!messageIds.length ? (
-        <div className="mx-auto flex max-w-xs flex-col items-center py-10 text-center">
+        <div
+          className="mx-auto flex min-h-full max-w-xs flex-1 flex-col items-center justify-center py-10 text-center"
+          data-agent-box-messages-empty=""
+        >
           <div className="grid size-11 place-items-center rounded-2xl border bg-card shadow-sm">
             <Sparkles size={19} />
           </div>
@@ -98,9 +125,11 @@ export function AgentBoxMessages() {
         <Button
           variant="secondary"
           size="sm"
-          className="sticky bottom-0 mx-auto"
-          onClick={() => setAutoScroll(true)}
+          className="sticky bottom-2 z-10 mx-auto gap-1.5 rounded-full border bg-background/95 px-3 shadow-lg backdrop-blur"
+          data-agent-box-scroll-to-bottom=""
+          onClick={scrollToBottom}
         >
+          <ArrowDown size={14} />
           回到底部
         </Button>
       ) : null}

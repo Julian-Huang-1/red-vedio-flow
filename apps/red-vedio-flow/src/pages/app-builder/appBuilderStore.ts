@@ -17,6 +17,7 @@ type AppBuilderState = {
   previewMode: PreviewMode
   sourceOpen: boolean
   reloadKey: number
+  selectedSubgraphId?: string
 }
 
 type AppBuilderActions = {
@@ -29,6 +30,7 @@ type AppBuilderActions = {
   setPreviewMode: (mode: PreviewMode) => void
   setSourceOpen: (open: boolean) => void
   reloadPreview: () => void
+  setSelectedSubgraphId: (subgraphId?: string) => void
   reset: () => void
 }
 
@@ -40,6 +42,7 @@ const initialState: AppBuilderState = {
   previewMode: 'desktop',
   sourceOpen: false,
   reloadKey: 0,
+  selectedSubgraphId: undefined,
 }
 
 export const useAppBuilderStore = create<AppBuilderState & AppBuilderActions>((set, get) => ({
@@ -135,6 +138,7 @@ export const useAppBuilderStore = create<AppBuilderState & AppBuilderActions>((s
   setPreviewMode: (previewMode) => set({ previewMode }),
   setSourceOpen: (sourceOpen) => set({ sourceOpen }),
   reloadPreview: () => set((state) => ({ reloadKey: state.reloadKey + 1 })),
+  setSelectedSubgraphId: (selectedSubgraphId) => set({ selectedSubgraphId }),
   reset: () => {
     repository.clear()
     set({ ...initialState })

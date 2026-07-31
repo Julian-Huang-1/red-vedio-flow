@@ -41,12 +41,12 @@ export function AppPreviewToolbar({
 }: AppPreviewToolbarProps) {
   return (
     <div
-      className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b px-4 py-2"
+      className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-b px-3 py-1.5"
       data-app-preview-toolbar=""
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">{title || 'App Builder'}</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="hidden text-xs text-muted-foreground sm:block">
           {version ? `内存版本 v${version}` : '尚未生成页面'}
         </p>
       </div>
@@ -55,7 +55,7 @@ export function AppPreviewToolbar({
         <Button
           type="button"
           size="sm"
-          className="mr-1 h-9 gap-1.5"
+          className="mr-1 h-8 gap-1.5"
           disabled={!hasArtifact || publishing}
           onClick={onPublish}
         >
@@ -85,7 +85,7 @@ export function AppPreviewToolbar({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-9"
+          className="size-8"
           disabled={!hasArtifact}
           aria-label="刷新预览"
           onClick={onReload}
@@ -96,7 +96,7 @@ export function AppPreviewToolbar({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-9"
+          className="size-8"
           disabled={!hasArtifact}
           aria-label="查看源码"
           onClick={onSourceOpen}

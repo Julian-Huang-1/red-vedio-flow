@@ -35,6 +35,19 @@ export async function createTextResource(input: {
   return readJsonResponse<{ resource: Resource }>(response, '创建文本资源失败')
 }
 
+export async function createWorkflowResource(input: {
+  workspaceId: string
+  name: string
+  manifest: Record<string, unknown>
+}) {
+  const response = await getWorkflowClientTransport().request('/api/resources/workflow', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return readJsonResponse<{ resource: Resource }>(response, '发布子图能力失败')
+}
+
 export async function renameResource(input: { resourceId: string; name: string }) {
   const response = await getWorkflowClientTransport().request(
     `/api/resources/${encodeURIComponent(input.resourceId)}`,

@@ -22,11 +22,29 @@ export class MemoryPublishedAppRepository implements PublishedAppRepository {
     return clone(this.apps.get(id))
   }
 
-  async listApps(ownerId: string) {
+  async listApps(ownerId?: string) {
     return [...this.apps.values()]
-      .filter((app) => app.ownerId === ownerId)
+      .filter((app) => !ownerId || app.ownerId === ownerId)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map((app) => structuredClone(app))
+  }
+
+  async deleteApp(id: string) {
+    const deleted = this.apps.delete(id)
+    if (!deleted) return false
+    for (const [releaseId, release] of this.releases) {
+      if (release.appId === id) this.releases.delete(releaseId)
+    }
+    for (const [key, capability] of this.capabilities) {
+      if (capability.appId === id) this.capabilities.delete(key)
+    }
+    for (const [tokenHash, session] of this.sessions) {
+      if (session.appId === id) this.sessions.delete(tokenHash)
+    }
+    for (const [runId, binding] of this.runBindings) {
+      if (binding.appId === id) this.runBindings.delete(runId)
+    }
+    return true
   }
 
   async saveApp(app: PublishedApp) {

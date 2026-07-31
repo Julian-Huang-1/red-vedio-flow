@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Node, NodeProps } from '@xyflow/react'
-import { Code2, GitBranch, LoaderCircle, MoreHorizontal, Play, Trash2, Ungroup } from 'lucide-react'
+import { Check, Code2, GitBranch, LoaderCircle, MoreHorizontal, Play, Trash2, Ungroup, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export type WorkflowSubgraphNodeData = {
@@ -9,6 +9,7 @@ export type WorkflowSubgraphNodeData = {
   nodeCount: number
   status: 'idle' | 'running' | 'error' | 'done'
   onRun: () => void
+  onPublish: () => Promise<void>
   onViewCode: () => void
   onRename: (name: string) => void
   onDissolve: () => void
@@ -21,6 +22,8 @@ export function WorkflowSubgraphNode({ data, selected }: NodeProps<WorkflowSubgr
   const [name, setName] = useState(data.name)
   const [editingName, setEditingName] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [published, setPublished] = useState(false)
   const running = data.status === 'running'
   return (
     <section
@@ -70,6 +73,26 @@ export function WorkflowSubgraphNode({ data, selected }: NodeProps<WorkflowSubgr
           {data.nodeCount} 个节点
         </span>
         <div className="flex-1" />
+        <Button
+          className="nodrag h-8 gap-1.5 rounded-lg border bg-white/80 px-3"
+          size="sm"
+          variant="ghost"
+          disabled={publishing}
+          onClick={() => {
+            setPublishing(true)
+            void data.onPublish()
+              .then(() => setPublished(true))
+              .catch(() => setPublished(false))
+              .finally(() => setPublishing(false))
+          }}
+        >
+          {publishing
+            ? <LoaderCircle className="size-3.5 animate-spin" />
+            : published
+              ? <Check className="size-3.5" />
+              : <Upload className="size-3.5" />}
+          {published ? '已发布' : '发布'}
+        </Button>
         <Button className="nodrag h-8 gap-1.5 rounded-lg bg-neutral-900 px-3 text-white hover:bg-neutral-800" size="sm" disabled={running} onClick={data.onRun}>
           {running ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" fill="currentColor" />}
           {running ? '运行中' : '运行'}

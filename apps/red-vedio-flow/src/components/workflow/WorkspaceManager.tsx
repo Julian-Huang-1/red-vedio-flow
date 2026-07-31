@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Library, LoaderCircle, Pencil, Plus, X } from 'lucide-react'
+import { Library, LoaderCircle, Pencil, Plus } from 'lucide-react'
 import {
   createWorkflow,
   fetchWorkflow,
   fetchWorkflows,
 } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -29,15 +28,14 @@ export function WorkspaceManager() {
   const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow)
   const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
   const setWorkflowTitle = useWorkflowStore((state) => state.setWorkflowTitle)
-  const [creating, setCreating] = useState(false)
-  const [title, setTitle] = useState('')
   const [switching, setSwitching] = useState(false)
+  const [scope, setScope] = useState<'mine' | 'all'>('mine')
   const openLibrary = useResourceLibraryStore((state) => state.openLibrary)
   const restoreWorkflowRuns = useTaskStore((state) => state.restoreWorkflowRuns)
 
   const workflowsQuery = useQuery({
-    queryKey: ['workflows'],
-    queryFn: fetchWorkflows,
+    queryKey: ['workflows', scope],
+    queryFn: () => fetchWorkflows(scope),
   })
   const workflowQuery = useQuery({
     queryKey: ['workflow', currentWorkspaceId],
@@ -53,8 +51,6 @@ export function WorkspaceManager() {
       queryClient.setQueryData(['workflow', workflow.id], workflow)
       await queryClient.invalidateQueries({ queryKey: ['workflows'] })
       openWorkspace(workflow.id)
-      setCreating(false)
-      setTitle('')
     },
   })
 
@@ -88,11 +84,6 @@ export function WorkspaceManager() {
     }
   }
 
-  function submitCreate() {
-    const nextTitle = title.trim() || `画布 ${(workflowsQuery.data?.workflows.length ?? 0) + 1}`
-    createMutation.mutate(nextTitle)
-  }
-
   async function renameCurrentWorkspace() {
     if (!currentWorkspaceId) return
     const nextTitle = window.prompt('重命名画布', workflowTitle)?.trim()
@@ -112,42 +103,16 @@ export function WorkspaceManager() {
       data-workspace-manager=""
       data-loading={loading ? '' : undefined}
     >
-      {creating ? (
-        <>
-          <Input
-            autoFocus
-            value={title}
-            className="h-7 w-40 px-2 text-xs"
-            placeholder="输入画布名称"
-            onChange={(event) => setTitle(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') submitCreate()
-              if (event.key === 'Escape') setCreating(false)
-            }}
-          />
-          <Button
-            size="icon"
-            className="size-7"
-            disabled={createMutation.isPending}
-            aria-label="创建画布"
-            onClick={submitCreate}
-          >
-            {createMutation.isPending
-              ? <LoaderCircle className="size-3.5 animate-spin" />
-              : <Check className="size-3.5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            aria-label="取消创建"
-            onClick={() => setCreating(false)}
-          >
-            <X className="size-3.5" />
-          </Button>
-        </>
-      ) : (
-        <>
+      <>
+          <Select value={scope} onValueChange={(value) => setScope(value as 'mine' | 'all')}>
+            <SelectTrigger className="h-7 w-[72px] border-0 bg-transparent px-2 text-xs shadow-none">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mine">自己</SelectItem>
+              <SelectItem value="all">全部</SelectItem>
+            </SelectContent>
+          </Select>
           <Select
             value={currentWorkspaceId}
             disabled={loading || workflows.length === 0}
@@ -181,9 +146,12 @@ export function WorkspaceManager() {
             className="size-7"
             title="新建画布"
             aria-label="新建画布"
-            onClick={() => setCreating(true)}
+            disabled={createMutation.isPending}
+            onClick={() => createMutation.mutate('未命名')}
           >
-            <Plus className="size-3.5" />
+            {createMutation.isPending
+              ? <LoaderCircle className="size-3.5 animate-spin" />
+              : <Plus className="size-3.5" />}
           </Button>
           <Button
             variant="ghost"
@@ -197,7 +165,6 @@ export function WorkspaceManager() {
           </Button>
           {loading ? <LoaderCircle className="mx-1 size-3.5 animate-spin text-muted-foreground" /> : null}
         </>
-      )}
     </div>
   )
 }

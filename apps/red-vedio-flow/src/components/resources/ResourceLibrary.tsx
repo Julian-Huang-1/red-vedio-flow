@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { File, FileText, Image, LoaderCircle, Play, Plus, Trash2, Video, X } from 'lucide-react'
+import { Check, File, FileText, Image, LoaderCircle, Play, Plus, Trash2, Video, Workflow, X } from 'lucide-react'
 import type { Resource, ResourceKind } from '@red-video-flow/workflow-core'
 import { createResourceBinding } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ const kinds: Array<{
   { value: 'video', label: '视频', icon: Video },
   { value: 'text', label: '文本', icon: FileText },
   { value: 'file', label: '文件', icon: File },
+  { value: 'workflow', label: '工作流', icon: Workflow },
 ]
 
 const scopes = [
@@ -196,7 +197,7 @@ export function ResourceLibrary({
   return (
     <aside
       className={cn(
-        'absolute right-0 z-30 flex w-[380px] flex-col border-l bg-background shadow-xl',
+        'absolute right-0 z-30 flex w-full max-w-[440px] flex-col border-l bg-background shadow-xl',
         variant === 'workflow' && 'inset-y-0',
         className,
       )}
@@ -380,10 +381,20 @@ function ResourceCard({
   return (
     <>
       <article
-        className="group overflow-hidden rounded-lg border bg-card"
+        className="group relative overflow-hidden rounded-lg border bg-card"
         data-resource-card=""
         data-kind={resource.kind}
+        data-selected={selected ? '' : undefined}
       >
+        {selected ? (
+          <span
+            className="absolute right-2 top-2 z-10 grid size-6 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm"
+            aria-label="已选择"
+            data-resource-selected-indicator=""
+          >
+            <Check className="size-3.5" strokeWidth={3} />
+          </span>
+        ) : null}
         {videoUrl ? (
           <button
             type="button"
@@ -454,6 +465,7 @@ function ResourceCard({
 
 function defaultMimeType(kind: ResourceKind) {
   if (kind === 'text') return 'text/plain'
+  if (kind === 'workflow') return 'application/vnd.red-video-flow.workflow+json'
   if (kind === 'image') return 'image/*'
   if (kind === 'video') return 'video/*'
   return 'application/octet-stream'
@@ -477,7 +489,9 @@ function ResourcePreview({ resource }: { resource: Resource }) {
       ? Image
       : resource.kind === 'video'
         ? Video
-        : File
+        : resource.kind === 'workflow'
+          ? Workflow
+          : File
   return (
     <div className="grid h-24 place-items-center bg-muted/40 text-muted-foreground">
       <Icon className="size-7" strokeWidth={1.4} />

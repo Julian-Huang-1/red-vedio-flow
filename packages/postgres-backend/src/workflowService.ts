@@ -26,15 +26,15 @@ export type PostgresPatchWorkflowInput = {
 export class PostgresWorkflowService {
   constructor(private readonly repository: PostgresWorkflowRepository) {}
 
-  list() {
-    return this.repository.list()
+  list(ownerId?: string) {
+    return this.repository.list(ownerId)
   }
 
   get(id: string) {
     return this.repository.get(id)
   }
 
-  async create(input: Partial<PostgresSaveWorkflowInput> = {}) {
+  async create(input: Partial<PostgresSaveWorkflowInput> = {}, ownerId?: string) {
     const now = Date.now()
     return this.repository.save({
       schemaVersion: 1,
@@ -44,7 +44,7 @@ export class PostgresWorkflowService {
       createdAt: now,
       updatedAt: now,
       graph: input.graph ?? { nodes: [], edges: [] },
-    })
+    }, undefined, ownerId)
   }
 
   async save(input: PostgresSaveWorkflowInput) {

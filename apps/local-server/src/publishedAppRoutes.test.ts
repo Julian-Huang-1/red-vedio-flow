@@ -31,8 +31,19 @@ describe('published app routes', () => {
               id: 'output', position: { x: 100, y: 0 },
               data: { materialType: 'text', title: 'Output', serviceRole: 'output', serviceLabel: 'result', status: 'empty', value: {}, messages: [] },
             },
+            {
+              id: 'outside', position: { x: 200, y: 0 },
+              data: { materialType: 'text', title: 'Outside', status: 'empty', value: {}, messages: [] },
+            },
           ],
           edges: [{ source: 'input', target: 'output' }],
+          subgraphs: [{
+            id: 'subgraph-video',
+            name: 'Video capability',
+            nodeIds: ['input', 'output'],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }],
         },
       }),
     })
@@ -48,8 +59,12 @@ describe('published app routes', () => {
     await jsonRequest(`${handle.url}/api/apps/${app.id}/releases`, {
       method: 'POST', body: JSON.stringify({ html: '<!doctype html><html><head></head><body>hello</body></html>' }),
     })
+    const preview = await fetch(`${handle.url}/api/apps/${app.id}/preview`)
+    expect(preview.status).toBe(200)
+    expect(preview.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(await preview.text()).toContain('<body>hello</body>')
     await jsonRequest(`${handle.url}/api/apps/${app.id}/capabilities/default`, {
-      method: 'PUT', body: JSON.stringify({ workflowId: workflow.id, workflowRevision: 1 }),
+      method: 'PUT', body: JSON.stringify({ workflowId: workflow.id, workflowRevision: 1, subgraphId: 'subgraph-video' }),
     })
     const session = await jsonRequest<{ runtimeUrl: string }>(
       `${handle.url}/api/apps/${app.id}/runtime-sessions`, { method: 'POST' },
@@ -60,7 +75,7 @@ describe('published app routes', () => {
     expect(page.headers.get('referrer-policy')).toBe('no-referrer')
     expect(await page.text()).toContain('window.RUNTIME_CONFIG=')
 
-    const started = await jsonRequest<{ run: { id: string; status: string } }>(
+    const started = await jsonRequest<{ run: { id: string; status: string; events: Array<{ nodeId?: string }> } }>(
       `${handle.url}/api/runtime/apps/${app.id}/capabilities/default/runs`,
       { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ inputs: { prompt: 'hello runtime' } }) },
     )
@@ -73,6 +88,7 @@ describe('published app routes', () => {
       )).run
     }
     expect(run.status).toBe('succeeded')
+    expect(run.events.some((event) => event.nodeId === 'outside')).toBe(false)
 
     const invalid = await fetch(`${handle.url}/api/runtime/apps/another-app/runs/${run.id}`, {
       headers: { Authorization: `Bearer ${token}` },

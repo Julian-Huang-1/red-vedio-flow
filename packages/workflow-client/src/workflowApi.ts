@@ -5,8 +5,8 @@ export type WorkflowListResponse = {
   workflows: WorkflowDocument[]
 }
 
-export async function fetchWorkflows() {
-  const response = await getWorkflowClientTransport().request('/api/workflows')
+export async function fetchWorkflows(scope: 'mine' | 'all' = 'mine') {
+  const response = await getWorkflowClientTransport().request(`/api/workflows?scope=${scope}`)
   return readJsonResponse<WorkflowListResponse>(response, '读取工作流列表失败')
 }
 

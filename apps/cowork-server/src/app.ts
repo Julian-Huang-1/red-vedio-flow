@@ -88,15 +88,18 @@ export function createRequestHandler(runtime: CoworkRuntime) {
 
 async function handleWorkflows(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {
   const workflows = runtime.infrastructure.postgresWorkflows
+  const scope = ctx.url.searchParams.get('scope') ?? 'mine'
+  if (scope !== 'mine' && scope !== 'all') {
+    throw new HttpError(400, 'scope must be mine or all')
+  }
   const api: WorkflowApi = {
-    list: () => workflows.list(),
+    list: () => workflows.list(scope === 'mine' ? userId : undefined),
     get: (id) => workflows.get(id),
-    create: (input) => workflows.create(input),
+    create: (input) => workflows.create(input, userId),
     save: (input) => workflows.save(input),
     patch: (input) => workflows.patch(input),
     delete: (id) => workflows.delete(id),
   }
-  void userId
   return handleSharedWorkflowRoutes(ctx, api)
 }
 
@@ -155,6 +158,18 @@ async function handleResources(runtime: CoworkRuntime, ctx: RequestContext) {
         id: randomUUID(),
         ...input,
         kind: 'text' as const,
+        createdAt: now,
+        updatedAt: now,
+      }
+      await repository.save(resource)
+      return resource
+    },
+    createWorkflow: async (input) => {
+      const now = Date.now()
+      const resource = {
+        id: randomUUID(),
+        ...input,
+        kind: 'workflow' as const,
         createdAt: now,
         updatedAt: now,
       }

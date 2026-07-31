@@ -30,6 +30,13 @@ export type CreateTextResourceInput = {
   source: ResourceSource
 }
 
+export type CreateWorkflowResourceInput = {
+  workspaceId: string
+  name: string
+  text: string
+  source: ResourceSource
+}
+
 export type CreateResourceBindingInput = {
   resourceId: string
   workflowId: string
@@ -43,6 +50,7 @@ export type ResourceApi = {
   list(input: ResourceQuery): Awaitable<Resource[]>
   get(id: string): Awaitable<Resource | undefined>
   createText(input: CreateTextResourceInput): Awaitable<Resource>
+  createWorkflow(input: CreateWorkflowResourceInput): Awaitable<Resource>
   rename(resource: Resource, name: string): Awaitable<Resource | undefined>
   softDelete(id: string): Awaitable<unknown>
   bindings(resourceId: string): Awaitable<ResourceBinding[]>
@@ -74,6 +82,20 @@ export async function handleResourceRoutes(
       name: typeof body.name === 'string' ? body.name : '文本素材',
       text: body.text,
       source: resourceSource(body.source) ?? 'imported',
+    })
+    sendJson(ctx.res, 201, { resource })
+    return true
+  }
+  if (ctx.pathname === '/api/resources/workflow' && ctx.req.method === 'POST') {
+    const body = await readJson(ctx.req)
+    if (typeof body.workspaceId !== 'string' || typeof body.name !== 'string' || typeof body.manifest !== 'object') {
+      throw new HttpError(400, 'workspaceId, name and manifest are required')
+    }
+    const resource = await resources.createWorkflow({
+      workspaceId: body.workspaceId,
+      name: body.name,
+      text: JSON.stringify(body.manifest),
+      source: 'imported',
     })
     sendJson(ctx.res, 201, { resource })
     return true
@@ -130,7 +152,7 @@ export async function handleResourceRoutes(
 }
 
 export function resourceKind(value: unknown): ResourceKind | undefined {
-  return value === 'text' || value === 'image' || value === 'video' || value === 'file'
+  return value === 'text' || value === 'image' || value === 'video' || value === 'file' || value === 'workflow'
     ? value
     : undefined
 }

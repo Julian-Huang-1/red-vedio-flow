@@ -34,7 +34,7 @@ export type AgentAttachment = {
 export type AgentResourceReference = {
   id: string
   resourceId: string
-  kind: 'image' | 'video' | 'text' | 'file'
+  kind: 'image' | 'video' | 'text' | 'file' | 'workflow'
   name: string
   mimeType: string
   size: number

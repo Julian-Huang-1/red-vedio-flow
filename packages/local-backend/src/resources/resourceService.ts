@@ -177,6 +177,24 @@ export class ResourceService {
     return resource
   }
 
+  createWorkflow(input: { workspaceId: string; name: string; text: string; source?: ResourceSource }) {
+    const now = Date.now()
+    const id = randomUUID()
+    this.database.db.insert(resources).values({
+      id,
+      workspaceId: input.workspaceId,
+      kind: 'workflow',
+      name: input.name,
+      textContent: input.text,
+      source: input.source ?? 'imported',
+      createdAt: now,
+      updatedAt: now,
+    }).run()
+    const resource = this.get(id)!
+    void this.mirror?.save(resource)
+    return resource
+  }
+
   rename(id: string, name: string) {
     this.database.db.update(resources)
       .set({ name: name.trim(), updatedAt: Date.now() })

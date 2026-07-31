@@ -25,6 +25,7 @@ export type AppCapability = {
   key: string
   workflowId: string
   workflowRevision: number
+  subgraphId?: string
   createdAt: number
   updatedAt: number
 }
@@ -43,7 +44,8 @@ export type RuntimeSession = {
 export interface PublishedAppRepository {
   createApp(app: PublishedApp): Promise<PublishedApp>
   getApp(id: string): Promise<PublishedApp | undefined>
-  listApps(ownerId: string): Promise<PublishedApp[]>
+  listApps(ownerId?: string): Promise<PublishedApp[]>
+  deleteApp(id: string): Promise<boolean>
   saveApp(app: PublishedApp): Promise<PublishedApp>
   createRelease(release: AppRelease): Promise<AppRelease>
   getRelease(id: string): Promise<AppRelease | undefined>
@@ -75,11 +77,16 @@ export class PostgresPublishedAppRepository implements PublishedAppRepository {
     return rows[0] ? toApp(rows[0]) : undefined
   }
 
-  async listApps(ownerId: string) {
-    const rows = await this.sql`
-      SELECT * FROM published_apps WHERE owner_id = ${ownerId} ORDER BY updated_at DESC
-    `
+  async listApps(ownerId?: string) {
+    const rows = ownerId
+      ? await this.sql`SELECT * FROM published_apps WHERE owner_id = ${ownerId} ORDER BY updated_at DESC`
+      : await this.sql`SELECT * FROM published_apps ORDER BY updated_at DESC`
     return rows.map(toApp)
+  }
+
+  async deleteApp(id: string) {
+    const rows = await this.sql`DELETE FROM published_apps WHERE id = ${id} RETURNING id`
+    return rows.length > 0
   }
 
   async saveApp(app: PublishedApp) {
@@ -120,14 +127,15 @@ export class PostgresPublishedAppRepository implements PublishedAppRepository {
   async saveCapability(capability: AppCapability) {
     await this.sql`
       INSERT INTO app_capabilities (
-        id, app_id, capability_key, workflow_id, workflow_revision, created_at, updated_at
+        id, app_id, capability_key, workflow_id, workflow_revision, subgraph_id, created_at, updated_at
       ) VALUES (
         ${capability.id}, ${capability.appId}, ${capability.key}, ${capability.workflowId},
-        ${capability.workflowRevision}, ${capability.createdAt}, ${capability.updatedAt}
+        ${capability.workflowRevision}, ${capability.subgraphId ?? null}, ${capability.createdAt}, ${capability.updatedAt}
       )
       ON CONFLICT (app_id, capability_key) DO UPDATE SET
         workflow_id = EXCLUDED.workflow_id,
         workflow_revision = EXCLUDED.workflow_revision,
+        subgraph_id = EXCLUDED.subgraph_id,
         updated_at = EXCLUDED.updated_at
     `
     return capability
@@ -215,6 +223,7 @@ function toCapability(row: Record<string, unknown>): AppCapability {
   return {
     id: String(row.id), appId: String(row.app_id), key: String(row.capability_key),
     workflowId: String(row.workflow_id), workflowRevision: Number(row.workflow_revision),
+    subgraphId: row.subgraph_id ? String(row.subgraph_id) : undefined,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
   }
 }

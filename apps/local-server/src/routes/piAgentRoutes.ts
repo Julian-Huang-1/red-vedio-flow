@@ -117,9 +117,10 @@ function parseWorkspace(value: unknown) {
   if (!value || typeof value !== 'object') return undefined
   const candidate = value as Record<string, unknown>
   if (candidate.type !== 'app-builder') return undefined
+  const capability = parseCapability(candidate.capability)
   const currentArtifact = candidate.currentArtifact
   if (!currentArtifact || typeof currentArtifact !== 'object') {
-    return { type: 'app-builder' as const }
+    return { type: 'app-builder' as const, capability }
   }
   const artifact = currentArtifact as Record<string, unknown>
   if (
@@ -131,11 +132,32 @@ function parseWorkspace(value: unknown) {
   }
   return {
     type: 'app-builder' as const,
+    capability,
     currentArtifact: {
       id: artifact.id,
       version: artifact.version,
       html: artifact.html,
     },
+  }
+}
+
+function parseCapability(value: unknown) {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'workspace.capability is invalid')
+  }
+  const capability = value as Record<string, unknown>
+  if (
+    typeof capability.key !== 'string'
+    || typeof capability.name !== 'string'
+    || !capability.inputs || typeof capability.inputs !== 'object' || Array.isArray(capability.inputs)
+    || !capability.outputs || typeof capability.outputs !== 'object' || Array.isArray(capability.outputs)
+  ) throw new HttpError(400, 'workspace.capability is invalid')
+  return capability as {
+    key: string
+    name: string
+    inputs: Record<string, { type: string; required: boolean; description?: string }>
+    outputs: Record<string, { type: string; description?: string }>
   }
 }
 

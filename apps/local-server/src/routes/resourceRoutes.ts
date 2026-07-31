@@ -14,6 +14,7 @@ export async function handleResourceRoutes(
     list: (input) => resources.list(input),
     get: (id) => resources.get(id),
     createText: (input) => resources.createText(input),
+    createWorkflow: (input) => resources.createWorkflow(input),
     rename: (resource, name) => resources.rename(resource.id, name),
     softDelete: (id) => resources.softDelete(id),
     bindings: (resourceId) => resources.bindings(resourceId),
