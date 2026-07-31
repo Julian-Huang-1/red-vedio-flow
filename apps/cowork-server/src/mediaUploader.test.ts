@@ -65,16 +65,31 @@ describe('CoworkMediaUploader', () => {
     )
   })
 
-  it('keeps images in BlobStorage without a CDN upload', async () => {
+  it('uploads images through permit and returns the CDN URL', async () => {
     const request = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          uploadTempPermits: [{
+            token: 'temporary-token',
+            fileIds: ['image-id'],
+            uploadAddr: 'upload.xiaohongshu.com/media',
+          }],
+        },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(undefined, {
+        status: 200,
+        headers: {
+          'x-ros-static-url': 'https://sns-img.xhscdn.com/image-id.jpg',
+        },
+      }))
     const uploader = new CoworkMediaUploader(request)
     await expect(uploader.upload({
       bytes: Buffer.from('image'),
       fileName: 'image.jpg',
       mimeType: 'image/jpeg',
       cookie: 'common-internal-access-token-prod=user-token',
-    })).resolves.toBeUndefined()
-    expect(request).not.toHaveBeenCalled()
+    })).resolves.toBe('https://sns-img.xhscdn.com/image-id.jpg')
+    expect(request).toHaveBeenCalledTimes(2)
   })
 
   it('accepts HTTPS upload hosts returned by the trusted permit service', async () => {

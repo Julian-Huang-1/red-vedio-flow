@@ -50,6 +50,7 @@ function WorkspaceTabs() {
 
 function RootLayout() {
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const open = useAgentBoxStore((state) => state.open)
   const unreadCount = useAgentBoxStore((state) => state.unreadCount)
   const openDrawer = useAgentBoxStore((state) => state.openDrawer)
@@ -61,10 +62,10 @@ function RootLayout() {
       <header className="relative border-b bg-card">
         <div className="flex h-16 w-full items-center justify-between px-6">
           <div className="flex items-center gap-4">
-            <Link to="/home" className="font-semibold tracking-tight">
+            {/* <Link to="/home" className="font-semibold tracking-tight">
               Y
-            </Link>
-            <WorkspaceManager />
+            </Link> */}
+            {pathname === '/workflow' ? <WorkspaceManager /> : null}
           </div>
           <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <div className="pointer-events-auto">

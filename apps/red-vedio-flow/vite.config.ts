@@ -12,6 +12,9 @@ const proxyTarget = coworkDeployment?.origin ?? localServerOrigin
 const deploymentPath = coworkDeployment?.pathname.replace(/\/+$/, '') ?? ''
 
 export default defineConfig({
+  define: {
+    __RED_VIDEO_FLOW_PUBLIC_BASE_URL__: JSON.stringify(coworkDeploymentUrl ?? ''),
+  },
   plugins: [TanStackRouterVite({ target: 'react', autoCodeSplitting: true }), react()],
   resolve: {
     alias: {

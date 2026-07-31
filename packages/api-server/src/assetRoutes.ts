@@ -60,9 +60,9 @@ export async function handleBlobAssetRoutes(
         throw error
       }
     }
-    if (publishRequired && !publicUrl) {
+    if (publishRequired && !isAbsoluteHttpUrl(publicUrl)) {
       await api.blobs.delete(blob.id).catch(() => undefined)
-      throw new Error('视频上传未返回公网 CDN URL')
+      throw new Error('图片或视频上传未返回有效的公网 CDN URL')
     }
     const asset = {
       ...api.blobs.toAssetReference(blob, kind),
@@ -113,6 +113,16 @@ export async function handleBlobAssetRoutes(
   for await (const chunk of body) res.write(chunk)
   res.end()
   return true
+}
+
+function isAbsoluteHttpUrl(value?: string) {
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 function parseRange(header: string | undefined, size: number) {

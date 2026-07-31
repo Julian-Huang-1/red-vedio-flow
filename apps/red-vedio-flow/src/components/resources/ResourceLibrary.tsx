@@ -1,9 +1,12 @@
-import { File, FileText, Image, LoaderCircle, Plus, Trash2, Video, X } from 'lucide-react'
+import { useState } from 'react'
+import { File, FileText, Image, LoaderCircle, Play, Plus, Trash2, Video, X } from 'lucide-react'
 import type { Resource, ResourceKind } from '@red-video-flow/workflow-core'
 import { createResourceBinding } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useAgentBoxStore } from '@/components/agent-box/agentBoxStore'
+import { resolveAgentResourceUrl } from '@/components/agent-box/resourceUrl'
 import { cn } from '@/lib/utils'
 import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
@@ -369,46 +372,83 @@ function ResourceCard({
   onAttach: () => void
   onDelete: () => void
 }) {
+  const [videoPreviewOpen, setVideoPreviewOpen] = useState(false)
+  const videoUrl = resource.kind === 'video'
+    ? resolveAgentResourceUrl(resource.url)
+    : undefined
+
   return (
-    <article
-      className="group overflow-hidden rounded-lg border bg-card"
-      data-resource-card=""
-      data-kind={resource.kind}
-    >
-      <ResourcePreview resource={resource} />
-      <div className="space-y-2 p-2">
-        <div>
-          <p className="truncate text-xs font-medium">{resource.name}</p>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            {resource.source === 'generated' ? '生成' : resource.source === 'upload' ? '上传' : '导入'}
-          </p>
-        </div>
-        <div className="flex items-center justify-between">
-          <Button
-            size="sm"
-            variant={selected ? 'default' : 'secondary'}
-            className="h-6 gap-1 px-2 text-[10px]"
-            disabled={!canAttach}
-            title={attachDisabledReason}
-            onClick={onAttach}
+    <>
+      <article
+        className="group overflow-hidden rounded-lg border bg-card"
+        data-resource-card=""
+        data-kind={resource.kind}
+      >
+        {videoUrl ? (
+          <button
+            type="button"
+            className="relative block w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label={`播放视频：${resource.name}`}
+            onClick={() => setVideoPreviewOpen(true)}
           >
-            {selected ? <X className="size-3" /> : <Plus className="size-3" />}
-            {selected ? '取消' : '选择'}
-          </Button>
-          {allowDelete ? (
+            <ResourcePreview resource={resource} />
+            <span className="absolute inset-0 grid place-items-center bg-black/10 transition-colors group-hover:bg-black/25">
+              <span className="grid size-9 place-items-center rounded-full bg-black/65 text-white shadow-lg">
+                <Play className="ml-0.5 size-4 fill-current" />
+              </span>
+            </span>
+          </button>
+        ) : (
+          <ResourcePreview resource={resource} />
+        )}
+        <div className="space-y-2 p-2">
+          <div>
+            <p className="truncate text-xs font-medium">{resource.name}</p>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              {resource.source === 'generated' ? '生成' : resource.source === 'upload' ? '上传' : '导入'}
+            </p>
+          </div>
+          <div className="flex items-center justify-between">
             <Button
-              size="icon"
-              variant="ghost"
-              className="size-6 text-muted-foreground hover:text-destructive"
-              aria-label="删除资源"
-              onClick={onDelete}
+              size="sm"
+              variant={selected ? 'default' : 'secondary'}
+              className="h-6 gap-1 px-2 text-[10px]"
+              disabled={!canAttach}
+              title={attachDisabledReason}
+              onClick={onAttach}
             >
-              <Trash2 className="size-3" />
+              {selected ? <X className="size-3" /> : <Plus className="size-3" />}
+              {selected ? '取消' : '选择'}
             </Button>
-          ) : <span />}
+            {allowDelete ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 text-muted-foreground hover:text-destructive"
+                aria-label="删除资源"
+                onClick={onDelete}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            ) : <span />}
+          </div>
         </div>
-      </div>
-    </article>
+      </article>
+      {videoUrl ? (
+        <Dialog open={videoPreviewOpen} onOpenChange={setVideoPreviewOpen}>
+          <DialogContent className="w-[min(960px,calc(100vw-3rem))] max-w-none border-0 bg-black p-0 shadow-2xl sm:max-w-none">
+            <DialogTitle className="sr-only">播放视频：{resource.name}</DialogTitle>
+            <video
+              className="max-h-[85vh] w-full bg-black object-contain"
+              src={videoUrl}
+              controls
+              autoPlay
+              playsInline
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </>
   )
 }
 

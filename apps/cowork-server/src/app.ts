@@ -23,6 +23,7 @@ import {
 import { coworkVisualModels } from './visualModels.js'
 import { CoworkMediaUploader } from './mediaUploader.js'
 import { handlePiAgentRoutes } from './piAgentRoutes.js'
+import type { Resource } from '@red-video-flow/workflow-core'
 
 const mediaUploader = new CoworkMediaUploader()
 
@@ -108,10 +109,10 @@ async function handleBlobs(runtime: CoworkRuntime, ctx: RequestContext, userId: 
       mimeType,
       cookie: ctx.req.headers.cookie,
     }),
-    requirePublishedAsset: ({ kind }) => kind === 'video',
+    requirePublishedAsset: ({ kind }) => kind === 'image' || kind === 'video',
     onPublishAssetError: (error) => {
       console.error(
-        '[asset upload] CDN publish failed; using persisted blob URL:',
+        '[asset upload] CDN publish failed:',
         error,
       )
     },
@@ -124,8 +125,18 @@ async function handleBlobs(runtime: CoworkRuntime, ctx: RequestContext, userId: 
 async function handleResources(runtime: CoworkRuntime, ctx: RequestContext) {
   const repository = runtime.infrastructure.postgresResources
   const api: ResourceApi = {
-    list: (input) => repository.list(input),
-    get: (id) => repository.get(id),
+    list: async (input) => {
+      const resources = await repository.list(input)
+      return Promise.all(resources.map((resource) => (
+        migrateLegacyMediaResource(runtime, resource, ctx.req.headers.cookie)
+      )))
+    },
+    get: async (id) => {
+      const resource = await repository.get(id)
+      return resource
+        ? migrateLegacyMediaResource(runtime, resource, ctx.req.headers.cookie)
+        : undefined
+    },
     createText: async (input) => {
       const now = Date.now()
       const resource = {
@@ -148,6 +159,45 @@ async function handleResources(runtime: CoworkRuntime, ctx: RequestContext) {
     bind: (input) => repository.bind(input),
   }
   return handleSharedResourceRoutes(ctx, api)
+}
+
+async function migrateLegacyMediaResource(
+  runtime: CoworkRuntime,
+  resource: Resource,
+  cookie?: string,
+) {
+  if (
+    (resource.kind !== 'image' && resource.kind !== 'video')
+    || !resource.url?.startsWith('/api/blobs/')
+  ) return resource
+
+  const blobId = decodeURIComponent(resource.url.slice('/api/blobs/'.length).split('/')[0])
+  if (!blobId) return resource
+
+  try {
+    const blob = await runtime.infrastructure.blobs.stat(blobId)
+    if (!blob) throw new Error(`blob not found: ${blobId}`)
+    const chunks: Buffer[] = []
+    for await (const chunk of await runtime.infrastructure.blobs.read(blobId)) {
+      chunks.push(Buffer.from(chunk))
+    }
+    const publicUrl = await mediaUploader.upload({
+      bytes: Buffer.concat(chunks),
+      fileName: resource.fileName || resource.name || blob.fileName,
+      mimeType: resource.mimeType || blob.contentType,
+      cookie,
+    })
+    if (!publicUrl) throw new Error('CDN upload did not return a public URL')
+    const migrated = { ...resource, url: publicUrl, updatedAt: Date.now() }
+    await runtime.infrastructure.postgresResources.save(migrated, blobId)
+    return migrated
+  } catch (error) {
+    console.error(
+      `[resource migration] failed to publish ${resource.id} to CDN:`,
+      error,
+    )
+    return resource
+  }
 }
 
 async function handleChats(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {

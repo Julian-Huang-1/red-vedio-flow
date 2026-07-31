@@ -136,7 +136,11 @@ export function internalAccessCookie(cookieHeader?: string) {
 }
 
 function isWebMedia(mimeType?: string) {
-  return Boolean(mimeType?.startsWith('video/') || mimeType?.startsWith('audio/'))
+  return Boolean(
+    mimeType?.startsWith('image/')
+    || mimeType?.startsWith('video/')
+    || mimeType?.startsWith('audio/'),
+  )
 }
 
 function parsePermit(payload: unknown): Permit {
