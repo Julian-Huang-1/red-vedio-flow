@@ -7,7 +7,7 @@ import {
 } from '@red-video-flow/workflow-client'
 
 export function useResourcesQuery(input: {
-  workspaceId: string
+  workspaceId?: string
   kind?: ResourceKind
   source?: ResourceSource
   query?: string
@@ -15,7 +15,6 @@ export function useResourcesQuery(input: {
   return useQuery({
     queryKey: ['resources', input],
     queryFn: () => fetchResources(input),
-    enabled: Boolean(input.workspaceId),
   })
 }
 

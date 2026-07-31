@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Bug, Check, Copy, FileText, Image, LoaderCircle, Pencil, Upload, Video } from 'lucide-react'
 import { useTaskStore } from '@/stores/taskStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
+import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 import { createResourceBinding, uploadAsset } from '@red-video-flow/workflow-client'
 import { queryClient } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
@@ -42,7 +43,10 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const updateComposer = useWorkflowStore((state) => state.updateComposer)
   const addAttachment = useWorkflowStore((state) => state.addAttachment)
   const appendResult = useWorkflowStore((state) => state.appendResult)
+  const setLatestRun = useWorkflowStore((state) => state.setLatestRun)
+  const setNodeStatus = useWorkflowStore((state) => state.setNodeStatus)
   const workflowId = useWorkflowStore((state) => state.workflowId)
+  const setResourceAddTarget = useResourceLibraryStore((state) => state.setAddTarget)
   const submitNode = useTaskStore((state) => state.submitNode)
   const cancelRun = useTaskStore((state) => state.cancelRun)
   const runStatus = useTaskStore((state) => (
@@ -122,6 +126,8 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
         resultId,
         relation: 'node-content',
       })
+      setLatestRun(id, undefined)
+      setNodeStatus(id, 'done')
       await queryClient.invalidateQueries({ queryKey: ['resources'] })
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : String(error))
@@ -166,6 +172,9 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
       <div
         className="relative mx-auto w-[360px]"
         data-workflow-node-card=""
+        onPointerDownCapture={() => {
+          setResourceAddTarget({ nodeId: id, type: 'node-result' })
+        }}
       >
         <Handle
           type="target"
@@ -304,7 +313,11 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
               result={currentResult}
               streamingText={streamingText}
               partialImage={partialImage}
-              error={uploadError ?? runError ?? workflowNodeState?.error}
+              error={uploadError ?? (
+                data.status === 'error'
+                  ? runError ?? workflowNodeState?.error
+                  : undefined
+              )}
             />
           )}
         </div>
@@ -343,6 +356,16 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
               })
             }
             await queryClient.invalidateQueries({ queryKey: ['resources'] })
+          }}
+          onAttachmentRemove={(attachmentId) => {
+            updateComposer(id, {
+              attachments: data.composer.attachments.filter(
+                (attachment) => attachment.id !== attachmentId,
+              ),
+            })
+          }}
+          onFocusTarget={() => {
+            setResourceAddTarget({ nodeId: id, type: 'composer-attachment' })
           }}
           onModelChange={(model, generationConfig) => {
             updateComposer(id, { model, generationConfig })

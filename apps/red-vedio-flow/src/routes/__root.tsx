@@ -4,7 +4,8 @@ import {
   Outlet,
   useRouterState,
 } from '@tanstack/react-router'
-import { Sparkles } from 'lucide-react'
+import { KeyRound, Sparkles } from 'lucide-react'
+import { useState } from 'react'
 import {
   AgentBoxDrawer,
   AgentBoxPanel,
@@ -13,6 +14,7 @@ import {
 import { WorkspaceManager } from '@/components/workflow'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { ModelSettingsDialog } from '@/components/model-settings'
 
 const WORKSPACE_TABS = [
   { label: '画布', to: '/workflow' },
@@ -46,6 +48,7 @@ function WorkspaceTabs() {
 }
 
 function RootLayout() {
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
   const open = useAgentBoxStore((state) => state.open)
   const unreadCount = useAgentBoxStore((state) => state.unreadCount)
   const openDrawer = useAgentBoxStore((state) => state.openDrawer)
@@ -66,15 +69,25 @@ function RootLayout() {
               <WorkspaceTabs />
             </div>
           </div>
-          <Button className="relative" onClick={openDrawer}>
-            <Sparkles size={16} />
-            打开 Agent
-            {unreadCount ? (
-              <span className="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-                {unreadCount}
-              </span>
-            ) : null}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setModelSettingsOpen(true)}
+            >
+              <KeyRound size={16} />
+              模型设置
+            </Button>
+            <Button className="relative" onClick={openDrawer}>
+              <Sparkles size={16} />
+              打开 Agent
+              {unreadCount ? (
+                <span className="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
+                  {unreadCount}
+                </span>
+              ) : null}
+            </Button>
+          </div>
         </div>
       </header>
       <Outlet />
@@ -87,6 +100,10 @@ function RootLayout() {
       >
         <AgentBoxPanel />
       </AgentBoxDrawer>
+      <ModelSettingsDialog
+        open={modelSettingsOpen}
+        onOpenChange={setModelSettingsOpen}
+      />
     </div>
   )
 }

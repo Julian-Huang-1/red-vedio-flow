@@ -17,10 +17,6 @@ export async function handleResourceRoutes(runtime: LocalServerRuntime, ctx: Req
 
   if (pathname === '/api/resources' && req.method === 'GET') {
     const workspaceId = url.searchParams.get('workspaceId')?.trim()
-    if (!workspaceId) {
-      sendJson(res, 400, { error: 'workspaceId is required' })
-      return true
-    }
     sendJson(res, 200, {
       resources: resources.list({
         workspaceId,
@@ -116,6 +112,7 @@ function resourceSource(value: unknown): ResourceSource | undefined {
 function resourceRelation(value: unknown): ResourceRelation | undefined {
   return value === 'generated'
     || value === 'attachment'
+    || value === 'node-content'
     || value === 'upstream-input'
     || value === 'last-frame'
     || value === 'cover'

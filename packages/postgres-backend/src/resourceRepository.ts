@@ -12,7 +12,7 @@ export class PostgresResourceRepository {
   constructor(private readonly sql: PostgresDatabase) {}
 
   async list(input: {
-    workspaceId: string
+    workspaceId?: string
     kind?: ResourceKind
     source?: ResourceSource
     query?: string
@@ -20,7 +20,7 @@ export class PostgresResourceRepository {
     const pattern = input.query?.trim() ? `%${input.query.trim()}%` : null
     const rows = await this.sql`
       SELECT * FROM resources
-      WHERE workspace_id = ${input.workspaceId}
+      WHERE (${input.workspaceId ?? null}::text IS NULL OR workspace_id = ${input.workspaceId ?? null})
         AND deleted_at IS NULL
         AND (${input.kind ?? null}::text IS NULL OR kind = ${input.kind ?? null})
         AND (${input.source ?? null}::text IS NULL OR source = ${input.source ?? null})

@@ -45,15 +45,13 @@ export class ResourceService {
   }
 
   list(input: {
-    workspaceId: string
+    workspaceId?: string
     kind?: ResourceKind
     source?: ResourceSource
     query?: string
   }) {
-    const conditions = [
-      eq(resources.workspaceId, input.workspaceId),
-      isNull(resources.deletedAt),
-    ]
+    const conditions = [isNull(resources.deletedAt)]
+    if (input.workspaceId) conditions.push(eq(resources.workspaceId, input.workspaceId))
     if (input.kind) conditions.push(eq(resources.kind, input.kind))
     if (input.source) conditions.push(eq(resources.source, input.source))
     if (input.query?.trim()) {

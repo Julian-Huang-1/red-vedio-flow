@@ -1,4 +1,4 @@
-import { File, Image, LoaderCircle, Plus, Trash2, Video, X } from 'lucide-react'
+import { File, FileText, Image, LoaderCircle, Plus, Trash2, Video, X } from 'lucide-react'
 import type { Resource, ResourceKind } from '@red-video-flow/workflow-core'
 import { createResourceBinding } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
@@ -10,40 +10,134 @@ import {
   useResourcesQuery,
 } from './resourceQueries'
 
-const kinds: Array<{ value?: ResourceKind; label: string }> = [
+const kinds: Array<{
+  value?: ResourceKind
+  label: string
+  icon?: typeof Image
+}> = [
   { label: '全部' },
-  { value: 'image', label: '图片' },
-  { value: 'video', label: '视频' },
-  { value: 'text', label: '文本' },
-  { value: 'file', label: '文件' },
+  { value: 'image', label: '图片', icon: Image },
+  { value: 'video', label: '视频', icon: Video },
+  { value: 'text', label: '文本', icon: FileText },
+  { value: 'file', label: '文件', icon: File },
 ]
+
+const scopes = [
+  { value: 'all', label: '全部' },
+  { value: 'workspace', label: '当前工作区' },
+] as const
 
 export function ResourceLibrary() {
   const open = useResourceLibraryStore((state) => state.open)
   const closeLibrary = useResourceLibraryStore((state) => state.closeLibrary)
+  const scope = useResourceLibraryStore((state) => state.scope)
+  const setScope = useResourceLibraryStore((state) => state.setScope)
   const kind = useResourceLibraryStore((state) => state.kind)
   const setKind = useResourceLibraryStore((state) => state.setKind)
   const query = useResourceLibraryStore((state) => state.query)
   const setQuery = useResourceLibraryStore((state) => state.setQuery)
+  const addTarget = useResourceLibraryStore((state) => state.addTarget)
   const workflowId = useWorkflowStore((state) => state.workflowId)
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId)
   const addAttachment = useWorkflowStore((state) => state.addAttachment)
   const updateComposer = useWorkflowStore((state) => state.updateComposer)
-  const resourcesQuery = useResourcesQuery({ workspaceId: workflowId, kind, query })
+  const appendResult = useWorkflowStore((state) => state.appendResult)
+  const setLatestRun = useWorkflowStore((state) => state.setLatestRun)
+  const setNodeStatus = useWorkflowStore((state) => state.setNodeStatus)
+  const resourcesQuery = useResourcesQuery({
+    workspaceId: scope === 'workspace' ? workflowId : undefined,
+    kind,
+    query,
+  })
   const deleteMutation = useDeleteResourceMutation(workflowId)
 
   if (!open) return null
 
-  async function addToComposer(resource: Resource) {
+  const target = selectedNodeId && addTarget?.nodeId === selectedNodeId
+    ? addTarget
+    : selectedNodeId
+      ? { nodeId: selectedNodeId, type: 'node-result' as const }
+      : undefined
+  const targetNode = target
+    ? useWorkflowStore.getState().nodes.find((node) => node.id === target.nodeId)
+    : undefined
+
+  async function addResource(resource: Resource) {
+    if (!target || !targetNode) return
+    if (target.type === 'node-result') {
+      if (!canUseAsNodeResult(resource, targetNode.data.kind)) return
+      const timestamp = Date.now()
+      const resultId = `resource-result-${resource.id}-${timestamp}`
+      const runId = `resource-${resource.id}-${timestamp}`
+      if (resource.kind === 'text') {
+        appendResult(target.nodeId, {
+          id: resultId,
+          runId,
+          type: 'text',
+          text: resource.text ?? '',
+          resourceId: resource.id,
+          provider: { providerId: 'resource-library' },
+          createdAt: timestamp,
+        })
+      } else if (resource.kind === 'image') {
+        appendResult(target.nodeId, {
+          id: resultId,
+          runId,
+          type: 'image',
+          images: [{
+            id: resource.id,
+            kind: 'image',
+            url: resource.url!,
+            name: resource.name,
+            mimeType: resource.mimeType,
+            width: resource.width,
+            height: resource.height,
+          }],
+          provider: { providerId: 'resource-library' },
+          createdAt: timestamp,
+        })
+      } else if (resource.kind === 'video') {
+        appendResult(target.nodeId, {
+          id: resultId,
+          runId,
+          type: 'video',
+          video: {
+            id: resource.id,
+            kind: 'video',
+            url: resource.url!,
+            name: resource.name,
+            mimeType: resource.mimeType,
+            width: resource.width,
+            height: resource.height,
+            duration: resource.duration,
+          },
+          provider: { providerId: 'resource-library' },
+          createdAt: timestamp,
+        })
+      }
+      setLatestRun(target.nodeId, undefined)
+      setNodeStatus(target.nodeId, 'done')
+      await createResourceBinding({
+        resourceId: resource.id,
+        workflowId,
+        nodeId: target.nodeId,
+        runId,
+        resultId,
+        relation: 'node-content',
+      })
+      return
+    }
+
+    const nodeId = target.nodeId
     if (!selectedNodeId) return
     if (resource.kind === 'text' && resource.text) {
-      const node = useWorkflowStore.getState().nodes.find((item) => item.id === selectedNodeId)
+      const node = useWorkflowStore.getState().nodes.find((item) => item.id === nodeId)
       const previous = node?.data.composer.prompt.trim()
-      updateComposer(selectedNodeId, {
+      updateComposer(nodeId, {
         prompt: previous ? `${previous}\n\n${resource.text}` : resource.text,
       })
     } else if (resource.url) {
-      addAttachment(selectedNodeId, {
+      addAttachment(nodeId, {
         id: resource.id,
         kind: resource.kind === 'image' || resource.kind === 'video' ? resource.kind : 'file',
         url: resource.url,
@@ -57,7 +151,7 @@ export function ResourceLibrary() {
     await createResourceBinding({
       resourceId: resource.id,
       workflowId,
-      nodeId: selectedNodeId,
+      nodeId,
       relation: 'attachment',
     })
   }
@@ -84,18 +178,73 @@ export function ResourceLibrary() {
           placeholder="搜索资源"
           onChange={(event) => setQuery(event.target.value)}
         />
-        <div className="flex flex-wrap gap-1">
-          {kinds.map((item) => (
-            <Button
-              key={item.value ?? 'all'}
-              variant={kind === item.value ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              onClick={() => setKind(item.value)}
-            >
-              {item.label}
-            </Button>
-          ))}
+        <div className="space-y-1.5">
+          <p className="px-1 text-[11px] font-medium text-muted-foreground">
+            资源范围
+          </p>
+          <div
+            className="flex items-end gap-5 border-b px-1"
+            role="tablist"
+            aria-label="资源范围"
+          >
+            {scopes.map((item) => {
+              const selected = scope === item.value
+              return (
+                <Button
+                  key={item.value}
+                  type="button"
+                  role="tab"
+                  variant="ghost"
+                  size="sm"
+                  className={`relative h-9 rounded-none px-1 text-sm hover:bg-transparent ${
+                    selected
+                      ? 'font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground'
+                      : 'font-normal text-muted-foreground hover:text-foreground'
+                  }`}
+                  aria-selected={selected}
+                  onClick={() => setScope(item.value)}
+                >
+                  {item.label}
+                </Button>
+              )
+            })}
+          </div>
+        </div>
+        <div
+          className="flex items-center gap-1"
+          role="group"
+          aria-label="资源类型"
+        >
+          {kinds.map((item) => {
+            const Icon = item.icon
+            const selected = kind === item.value
+            return (
+              <div key={item.value ?? 'all'} className="group/filter relative">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size={Icon ? 'icon' : 'sm'}
+                  className={Icon
+                    ? `size-8 rounded-md ${selected ? 'bg-muted text-foreground hover:bg-muted' : 'text-muted-foreground'}`
+                    : `h-8 rounded-md px-3 text-xs ${selected ? 'bg-muted text-foreground hover:bg-muted' : 'text-muted-foreground'}`}
+                  aria-label={item.label}
+                  aria-pressed={selected}
+                  title={item.label}
+                  onClick={() => setKind(item.value)}
+                >
+                  {Icon ? <Icon className="size-4" /> : item.label}
+                </Button>
+                {Icon ? (
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute left-1/2 top-full z-40 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[10px] text-background opacity-0 shadow-sm transition-opacity group-hover/filter:opacity-100 group-focus-within/filter:opacity-100"
+                  >
+                    {item.label}
+                  </span>
+                ) : null}
+              </div>
+            )
+          })}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -109,8 +258,13 @@ export function ResourceLibrary() {
               <ResourceCard
                 key={resource.id}
                 resource={resource}
-                canAttach={Boolean(selectedNodeId)}
-                onAttach={() => void addToComposer(resource)}
+                canAttach={canAddResource(resource, targetNode?.data.kind, target?.type)}
+                attachDisabledReason={getAddDisabledReason(
+                  resource,
+                  targetNode?.data.kind,
+                  target?.type,
+                )}
+                onAttach={() => void addResource(resource)}
                 onDelete={() => deleteMutation.mutate(resource.id)}
               />
             ))}
@@ -128,14 +282,50 @@ export function ResourceLibrary() {
   )
 }
 
+function canUseAsNodeResult(
+  resource: Resource,
+  nodeKind: 'text' | 'image' | 'video',
+) {
+  if (resource.kind !== nodeKind) return false
+  return resource.kind === 'text' ? resource.text !== undefined : Boolean(resource.url)
+}
+
+function canAddResource(
+  resource: Resource,
+  nodeKind?: 'text' | 'image' | 'video',
+  targetType?: 'node-result' | 'composer-attachment',
+) {
+  if (!nodeKind || !targetType) return false
+  if (targetType === 'node-result') return canUseAsNodeResult(resource, nodeKind)
+  return resource.kind === 'text' ? Boolean(resource.text) : Boolean(resource.url)
+}
+
+function getAddDisabledReason(
+  resource: Resource,
+  nodeKind?: 'text' | 'image' | 'video',
+  targetType?: 'node-result' | 'composer-attachment',
+) {
+  if (!nodeKind || !targetType) return '请先选择节点或 Composer'
+  if (targetType === 'node-result' && resource.kind !== nodeKind) {
+    const labels = { text: '文本', image: '图片', video: '视频' }
+    return `只能将${labels[nodeKind]}资源加入该节点的当前结果`
+  }
+  if (resource.kind === 'text' ? resource.text === undefined : !resource.url) {
+    return '该资源没有可用内容'
+  }
+  return undefined
+}
+
 function ResourceCard({
   resource,
   canAttach,
+  attachDisabledReason,
   onAttach,
   onDelete,
 }: {
   resource: Resource
   canAttach: boolean
+  attachDisabledReason?: string
   onAttach: () => void
   onDelete: () => void
 }) {
@@ -159,6 +349,7 @@ function ResourceCard({
             variant="secondary"
             className="h-6 gap-1 px-2 text-[10px]"
             disabled={!canAttach}
+            title={attachDisabledReason}
             onClick={onAttach}
           >
             <Plus className="size-3" />

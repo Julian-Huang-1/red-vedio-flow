@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Paperclip, SlidersHorizontal, Square } from 'lucide-react'
+import { ArrowUp, Paperclip, SlidersHorizontal, Square, X } from 'lucide-react'
 import type {
   AssetReference,
   GenerationConfig,
@@ -20,6 +20,8 @@ type NodeComposerProps = {
   placeholder: string
   onValueChange: (value: string) => void
   onFilesSelected: (files: File[]) => Promise<void>
+  onAttachmentRemove: (attachmentId: string) => void
+  onFocusTarget: () => void
   onModelChange: (model: ModelSelection, config: GenerationConfig) => void
   onGenerationConfigChange: (config: GenerationConfig) => void
   onSubmit: () => void
@@ -36,6 +38,8 @@ export function NodeComposer({
   placeholder,
   onValueChange,
   onFilesSelected,
+  onAttachmentRemove,
+  onFocusTarget,
   onModelChange,
   onGenerationConfigChange,
   onSubmit,
@@ -63,15 +67,27 @@ export function NodeComposer({
     <div
       className="nodrag nowheel mt-2 w-[520px] rounded-xl border bg-background px-4 pb-3 pt-3 shadow-sm focus-within:border-foreground/30 focus-within:ring-1 focus-within:ring-ring/20"
       data-workflow-node-composer=""
+      onPointerDownCapture={onFocusTarget}
     >
       {attachments.length ? (
         <div className="mb-2 flex flex-wrap gap-1.5" data-workflow-composer-attachments="">
           {attachments.map((attachment) => (
             <span
               key={attachment.id}
-              className="max-w-44 truncate rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground"
+              className="group flex max-w-48 items-center gap-1 rounded-md bg-muted py-1 pl-2 pr-1 text-[11px] text-muted-foreground"
             >
-              {attachment.name ?? attachment.kind}
+              <span className="min-w-0 truncate">
+                {attachment.name ?? attachment.kind}
+              </span>
+              <button
+                type="button"
+                className="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground/70 hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label={`删除附件 ${attachment.name ?? attachment.kind}`}
+                title="删除附件"
+                onClick={() => onAttachmentRemove(attachment.id)}
+              >
+                <X size={11} />
+              </button>
             </span>
           ))}
         </div>

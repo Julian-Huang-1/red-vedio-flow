@@ -8,12 +8,13 @@ import type {
 import { getWorkflowClientTransport, readJsonResponse } from './transport'
 
 export async function fetchResources(input: {
-  workspaceId: string
+  workspaceId?: string
   kind?: ResourceKind
   source?: ResourceSource
   query?: string
 }) {
-  const params = new URLSearchParams({ workspaceId: input.workspaceId })
+  const params = new URLSearchParams()
+  if (input.workspaceId) params.set('workspaceId', input.workspaceId)
   if (input.kind) params.set('kind', input.kind)
   if (input.source) params.set('source', input.source)
   if (input.query) params.set('q', input.query)
