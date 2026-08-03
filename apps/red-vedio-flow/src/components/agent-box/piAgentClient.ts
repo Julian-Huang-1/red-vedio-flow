@@ -217,8 +217,10 @@ export async function streamPiAgentPrompt(
 
 async function serializeResource(resource: AgentResourceReference) {
   let blob: Blob
-  if (resource.kind === 'text') {
-    blob = new Blob([resource.text ?? ''], { type: resource.mimeType })
+  if (resource.kind === 'text' || resource.kind === 'workflow') {
+    blob = new Blob([resource.text ?? ''], {
+      type: resource.kind === 'workflow' ? 'application/json' : resource.mimeType,
+    })
   } else {
     if (!resource.url) throw new Error(`资源内容不可用：${resource.name}`)
     const response = await fetch(resolveAgentResourceUrl(resource.url))

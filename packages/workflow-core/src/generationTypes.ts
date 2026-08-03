@@ -1,4 +1,4 @@
-export type AssetKind = 'image' | 'video' | 'file'
+export type AssetKind = 'image' | 'video' | 'audio' | 'file'
 
 export type AssetReference = {
   id: string
@@ -108,7 +108,12 @@ export type VideoNodeResult = NodeResultBase & {
   lastFrame?: AssetReference
 }
 
-export type NodeResult = TextNodeResult | ImageNodeResult | VideoNodeResult
+export type AudioNodeResult = NodeResultBase & {
+  type: 'audio'
+  audio: AssetReference
+}
+
+export type NodeResult = TextNodeResult | ImageNodeResult | VideoNodeResult | AudioNodeResult
 
 export type UpstreamResultReference = {
   edgeId: string
@@ -244,7 +249,7 @@ export type ModelDefinition = {
 }
 
 export function createDefaultComposer(
-  materialType: 'text' | 'image' | 'video',
+  materialType: 'text' | 'image' | 'video' | 'audio',
   now = Date.now(),
 ): NodeComposerData {
   if (materialType === 'image') {

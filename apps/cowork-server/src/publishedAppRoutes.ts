@@ -24,8 +24,7 @@ export async function handlePublishedAppManagementRoutes(
   const { req, res, pathname } = ctx
 
   if (pathname === '/api/apps' && req.method === 'GET') {
-    const scope = listScope(ctx)
-    const apps = await repository.listApps(scope === 'mine' ? userId : undefined)
+    const apps = await repository.listApps(userId)
     sendJson(res, 200, { apps: apps.map((app) => publicApp(app, userId)) })
     return true
   }
@@ -94,7 +93,7 @@ export async function handlePublishedAppManagementRoutes(
 
   const previewMatch = pathname.match(/^\/api\/apps\/([^/]+)\/preview$/)
   if (previewMatch && req.method === 'GET') {
-    const app = await requireApp(runtime, decodeURIComponent(previewMatch[1]))
+    const app = await requireOwnedApp(runtime, decodeURIComponent(previewMatch[1]), userId)
     if (!app.currentReleaseId) throw new HttpError(404, 'app has no active release')
     const release = await repository.getRelease(app.currentReleaseId)
     if (!release || release.appId !== app.id) throw new HttpError(404, 'release not found')
@@ -112,7 +111,7 @@ export async function handlePublishedAppManagementRoutes(
     const body = await readJson(req)
     const workflowId = stringValue(body.workflowId)
     if (!workflowId) throw new HttpError(400, 'workflowId is required')
-    const workflow = await runtime.infrastructure.postgresWorkflows.get(workflowId)
+    const workflow = await runtime.infrastructure.postgresWorkflows.get(workflowId, userId)
     if (!workflow) throw new HttpError(404, 'workflow not found')
     const requestedRevision = typeof body.workflowRevision === 'number'
       ? body.workflowRevision
@@ -143,7 +142,7 @@ export async function handlePublishedAppManagementRoutes(
   const sessionMatch = pathname.match(/^\/api\/apps\/([^/]+)\/runtime-sessions$/)
   if (sessionMatch && req.method === 'POST') {
     const appId = decodeURIComponent(sessionMatch[1])
-    const app = await requireApp(runtime, appId)
+    const app = await requireOwnedApp(runtime, appId, userId)
     if (!app.currentReleaseId) throw new HttpError(409, 'app has no active release')
     const token = `rt_${randomBytes(32).toString('base64url')}`
     const now = Date.now()
@@ -167,14 +166,6 @@ export async function handlePublishedAppManagementRoutes(
     return true
   }
   return false
-}
-
-function listScope(ctx: RequestContext) {
-  const scope = ctx.url.searchParams.get('scope') ?? 'mine'
-  if (scope !== 'mine' && scope !== 'all') {
-    throw new HttpError(400, 'scope must be mine or all')
-  }
-  return scope
 }
 
 export async function handlePublishedAppRuntimeRoutes(runtime: CoworkRuntime, ctx: RequestContext) {
@@ -202,7 +193,11 @@ export async function handlePublishedAppRuntimeRoutes(runtime: CoworkRuntime, ct
       decodeURIComponent(startMatch[2]),
     )
     if (!capability) throw new HttpError(404, 'capability not found')
-    const workflow = await runtime.infrastructure.postgresWorkflows.get(capability.workflowId)
+    const app = await requireApp(runtime, appId)
+    const workflow = await runtime.infrastructure.postgresWorkflows.get(
+      capability.workflowId,
+      app.ownerId,
+    )
     if (!workflow) throw new HttpError(404, 'workflow not found')
     if (workflow.revision !== capability.workflowRevision) {
       throw new HttpError(409, 'bound workflow revision is no longer available')
@@ -212,6 +207,14 @@ export async function handlePublishedAppRuntimeRoutes(runtime: CoworkRuntime, ct
     const targetWorkflow = capability.subgraphId
       ? workflowSubgraph(workflow, capability.subgraphId)
       : workflow
+    const subgraphCapability = targetWorkflow.graph.subgraphs?.[0]?.capability
+    if (subgraphCapability) {
+      const known = new Set(subgraphCapability.inputs.map((item) => item.label))
+      const unknown = Object.keys(inputs).filter((key) => !known.has(key))
+      if (unknown.length) throw new HttpError(422, `未知输入：${unknown.join(', ')}`)
+      const missing = subgraphCapability.inputs.filter((item) => item.required && !(item.label in inputs))
+      if (missing.length) throw new HttpError(422, `缺少必填输入：${missing.map((item) => item.label).join(', ')}`)
+    }
     const validation = validateWorkflowForRun(targetWorkflow, inputs)
     if (!validation.valid) {
       sendJson(ctx.res, 422, {
@@ -264,7 +267,7 @@ export function isRuntimeHost(runtime: CoworkRuntime, ctx: RequestContext) {
 
 async function requireOwnedApp(runtime: CoworkRuntime, appId: string, userId: string) {
   const app = await requireApp(runtime, appId)
-  if (app.ownerId !== userId) throw new HttpError(403, 'app access denied')
+  if (app.ownerId !== userId) throw new HttpError(404, 'app not found')
   return app
 }
 
@@ -301,7 +304,7 @@ function runtimePublicRun(run: CoworkAppRun) {
 }
 
 function injectRuntimeConfig(html: string, appId: string, token: string) {
-  const script = `<script>window.RUNTIME_CONFIG=${safeJson({ appId, token })};</script>`
+  const script = `<script>window.RUNTIME_CONFIG=${safeJson({ appId, token })};history.replaceState(null,'',location.pathname);</script>`
   return /<head(?:\s[^>]*)?>/i.test(html)
     ? html.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${script}`)
     : `${script}${html}`
@@ -365,11 +368,37 @@ function workflowSubgraph(workflow: WorkflowDocument, subgraphId: string): Workf
   const subgraph = workflow.graph.subgraphs?.find((item) => item.id === subgraphId)
   if (!subgraph) throw new HttpError(404, 'subgraph not found')
   const nodeIds = new Set(subgraph.nodeIds)
+  const capability = subgraph.capability
   return {
     ...structuredClone(workflow),
     title: subgraph.name,
     graph: {
-      nodes: workflow.graph.nodes.filter((node) => nodeIds.has(node.id)),
+      nodes: workflow.graph.nodes.filter((node) => nodeIds.has(node.id)).map((source) => {
+        const node = structuredClone(source)
+        const nodeInput = capability?.inputs.find((item) => (
+          item.target.nodeId === node.id && item.target.kind === 'node'
+        ))
+        if (nodeInput) {
+          node.data.executionMode = 'input'
+          node.data.serviceRole = 'input'
+          node.data.serviceLabel = nodeInput.label
+          node.data.workflowInput = {
+            key: nodeInput.label,
+            title: nodeInput.label,
+            valueType: nodeInput.valueType,
+            required: nodeInput.required ?? false,
+          }
+          return node
+        }
+        if (node.data.composer) {
+          node.data.results = []
+          node.data.currentResultId = undefined
+          node.data.latestRunId = undefined
+          node.data.status = 'ready'
+          node.data.composer = { ...node.data.composer, upstreamResults: [] }
+        }
+        return node
+      }),
       edges: workflow.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
       subgraphs: [structuredClone(subgraph)],
     },

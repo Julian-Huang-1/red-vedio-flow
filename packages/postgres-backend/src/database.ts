@@ -166,6 +166,7 @@ export async function migratePostgres(sql: PostgresDatabase) {
     await tx`
       CREATE TABLE IF NOT EXISTS resources (
         id uuid PRIMARY KEY,
+        owner_id uuid REFERENCES app_users(id) ON DELETE CASCADE,
         workspace_id text NOT NULL,
         kind text NOT NULL,
         name text NOT NULL,
@@ -188,6 +189,8 @@ export async function migratePostgres(sql: PostgresDatabase) {
         deleted_at bigint
       )
     `
+    await tx`ALTER TABLE resources ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES app_users(id) ON DELETE CASCADE`
+    await tx`CREATE INDEX IF NOT EXISTS idx_resources_owner_updated ON resources(owner_id, updated_at DESC)`
     await tx`
       CREATE INDEX IF NOT EXISTS idx_resources_workspace
       ON resources(workspace_id, updated_at DESC)

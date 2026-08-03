@@ -17,6 +17,7 @@ describe('executeWorkflowNodeRun client', () => {
       start(controller) {
         controller.enqueue(encoder.encode([
           `data: ${JSON.stringify({ type: 'run', status: 'running', runId: 'run-1' })}`,
+          `data: ${JSON.stringify({ type: 'provider-task', runId: 'run-1', taskId: 'task-1' })}`,
           `data: ${JSON.stringify({ type: 'text_delta', runId: 'run-1', delta: 'hello' })}`,
           `data: ${JSON.stringify({ type: 'done', runId: 'run-1', resultIds: ['result-1'] })}`,
           '',
@@ -48,7 +49,7 @@ describe('executeWorkflowNodeRun client', () => {
       onEvent: (event) => events.push(event.type),
     })
 
-    expect(events).toEqual(['run', 'text_delta', 'done'])
+    expect(events).toEqual(['run', 'provider-task', 'text_delta', 'done'])
     expect(result.resultIds).toEqual(['result-1'])
   })
 })

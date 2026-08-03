@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
+import { VoiceInputButton } from '@/components/voice-input'
 
 function PendingAttachments() {
   const attachments = useAgentBoxStore((state) => state.pendingAttachments)
@@ -152,6 +153,17 @@ export function AgentBoxComposer() {
             >
               <Paperclip size={16} />
             </Button>
+            <VoiceInputButton
+              disabled={isRunning}
+              onTranscript={(text) => {
+                const normalized = text.trim()
+                if (!normalized) return
+                const current = useAgentBoxStore.getState().draft
+                setDraft(!current || /\s$/.test(current)
+                  ? `${current}${normalized}`
+                  : `${current} ${normalized}`)
+              }}
+            />
             {selectedAgentId === 'app-builder-agent' ? (
               <Button
                 type="button"

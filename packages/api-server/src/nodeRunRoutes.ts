@@ -29,6 +29,9 @@ export async function handleDurableNodeRunRoutes(
     ) {
       throw new HttpError(400, 'workflowId, nodeId and input are required')
     }
+    if (!await runtime.infrastructure.postgresWorkflows.get(body.workflowId, userId)) {
+      throw new HttpError(404, 'workflow not found')
+    }
     const run = await createNodeRun(runtime, {
       id: typeof body.runId === 'string' ? body.runId : undefined,
       userId,
@@ -40,7 +43,7 @@ export async function handleDurableNodeRunRoutes(
       id: `execute-node:${run.id}`,
       type: 'execute-node',
       payload: { runId: run.id },
-      maxAttempts: 1,
+      maxAttempts: 3,
     })
     await streamDurableRunEvents(runtime, ctx, run.id)
     return true
@@ -48,6 +51,9 @@ export async function handleDurableNodeRunRoutes(
   if (pathname === '/api/workflow-node-runs' && req.method === 'GET') {
     const workflowId = ctx.url.searchParams.get('workflowId')
     if (!workflowId) throw new HttpError(400, 'workflowId is required')
+    if (!await runtime.infrastructure.postgresWorkflows.get(workflowId, userId)) {
+      throw new HttpError(404, 'workflow not found')
+    }
     const runs = await runtime.infrastructure.workflowRuns.listByWorkflow(workflowId)
     sendJson(res, 200, {
       runs: runs

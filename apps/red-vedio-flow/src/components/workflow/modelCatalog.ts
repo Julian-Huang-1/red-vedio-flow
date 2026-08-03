@@ -51,6 +51,7 @@ export function getComposerModels(
   visualModels: VisualModel[] = [],
 ) {
   if (kind === 'text') return textModels
+  if (kind === 'audio') return []
   return visualModels
     .filter((model) => supportsKind(model, kind))
     .map((model) => visualModelDefinition(model, kind))

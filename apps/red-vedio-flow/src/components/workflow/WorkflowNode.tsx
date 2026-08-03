@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Bug, Check, Copy, FileText, Image, LoaderCircle, Pencil, TriangleAlert, Upload, Video, ZoomIn } from 'lucide-react'
+import { AudioLines, Bug, Check, Copy, FileText, Image, LoaderCircle, Pencil, TriangleAlert, Upload, Video, ZoomIn } from 'lucide-react'
 import { useTaskStore } from '@/stores/taskStore'
 import { useWorkflowStore } from '@/stores/workflowStore'
 import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { NodeComposer } from './NodeComposer'
+import { CapabilityLabelButton } from './CapabilityLabelButton'
 import { NodeDebugDrawer } from './NodeDebugDrawer'
 import type { WorkflowFlowNode, WorkflowNodeKind } from './workflowTypes'
 
@@ -30,13 +31,16 @@ const nodePresentation = {
     icon: Video,
     label: 'VIDEO',
   },
+  audio: {
+    icon: AudioLines,
+    label: 'AUDIO',
+  },
 } satisfies Record<WorkflowNodeKind, {
   icon: typeof FileText
   label: string
 }>
 
 export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>) {
-  const [copied, setCopied] = useState(false)
   const [uploadingContent, setUploadingContent] = useState(false)
   const [uploadError, setUploadError] = useState<string>()
   const [editingText, setEditingText] = useState(false)
@@ -51,7 +55,16 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
   const appendResult = useWorkflowStore((state) => state.appendResult)
   const setLatestRun = useWorkflowStore((state) => state.setLatestRun)
   const setNodeStatus = useWorkflowStore((state) => state.setNodeStatus)
+  const duplicateNode = useWorkflowStore((state) => state.duplicateNode)
   const workflowId = useWorkflowStore((state) => state.workflowId)
+  const capabilitySubgraph = useWorkflowStore((state) => (
+    state.subgraphs.find((subgraph) => subgraph.nodeIds.includes(id))
+  ))
+  const toggleCapabilityLabel = useWorkflowStore((state) => state.toggleSubgraphCapabilityLabel)
+  const nodeInputLabel = capabilitySubgraph?.capability?.inputs.some((item) => item.target.nodeId === id && item.target.kind === 'node') ?? false
+  const nodeOutputLabel = capabilitySubgraph?.capability?.outputs.some((item) => item.target.nodeId === id && item.target.kind === 'node') ?? false
+  const composerInputLabel = capabilitySubgraph?.capability?.inputs.some((item) => item.target.nodeId === id && item.target.kind === 'composer') ?? false
+  const composerOutputLabel = capabilitySubgraph?.capability?.outputs.some((item) => item.target.nodeId === id && item.target.kind === 'composer') ?? false
   const setResourceAddTarget = useResourceLibraryStore((state) => state.setAddTarget)
   const submitNode = useTaskStore((state) => state.submitNode)
   const cancelRun = useTaskStore((state) => state.cancelRun)
@@ -74,7 +87,6 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           alt: currentResult.images[0].name ?? '节点图片',
         }
       : undefined
-  const copyableContent = getCopyableContent(currentResult, streamingText)
   const statusTag = getNodeStatusTag({
     dataStatus: data.status,
     executionMode: data.executionMode,
@@ -83,21 +95,15 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
     workflowStatus: workflowNodeState?.status,
   })
 
-  useEffect(() => {
-    if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 1_500)
-    return () => window.clearTimeout(timer)
-  }, [copied])
-
   const submit = () => {
     if (!data.composer.prompt.trim()) return
     void submitNode(id)
   }
 
   const uploadNodeContent = async (file: File) => {
-    const expectedType = data.kind === 'image' ? 'image/' : 'video/'
+    const expectedType = data.kind === 'image' ? 'image/' : data.kind === 'video' ? 'video/' : 'audio/'
     if (!file.type.startsWith(expectedType)) {
-      setUploadError(data.kind === 'image' ? '请选择图片文件' : '请选择视频文件')
+      setUploadError(data.kind === 'image' ? '请选择图片文件' : data.kind === 'video' ? '请选择视频文件' : '请选择音频文件')
       return
     }
     setUploadingContent(true)
@@ -122,12 +128,21 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           provider: { providerId: 'upload' },
           createdAt: Date.now(),
         })
-      } else {
+      } else if (data.kind === 'video') {
         appendResult(id, {
           id: resultId,
           runId,
           type: 'video',
           video: { ...reference, kind: 'video' },
+          provider: { providerId: 'upload' },
+          createdAt: Date.now(),
+        })
+      } else {
+        appendResult(id, {
+          id: resultId,
+          runId,
+          type: 'audio',
+          audio: { ...reference, kind: 'audio' },
           provider: { providerId: 'upload' },
           createdAt: Date.now(),
         })
@@ -210,13 +225,13 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             >
               {statusTag.label}
             </span>
-            {data.kind === 'image' || data.kind === 'video' ? (
+            {data.kind === 'image' || data.kind === 'video' || data.kind === 'audio' ? (
               <>
                 <input
                   ref={contentFileInputRef}
                   type="file"
                   className="hidden"
-                  accept={data.kind === 'image' ? 'image/*' : 'video/*'}
+                  accept={data.kind === 'image' ? 'image/*' : data.kind === 'video' ? 'video/*' : 'audio/*'}
                   onChange={(event) => {
                     const file = event.target.files?.[0]
                     if (file) void uploadNodeContent(file)
@@ -228,8 +243,8 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
                   variant="ghost"
                   size="icon"
                   className="nodrag nopan size-7 text-muted-foreground hover:text-foreground"
-                  aria-label={data.kind === 'image' ? '上传并覆盖节点图片' : '上传并覆盖节点视频'}
-                  title={data.kind === 'image' ? '上传图片到节点' : '上传视频到节点'}
+                  aria-label={data.kind === 'image' ? '上传并覆盖节点图片' : data.kind === 'video' ? '上传并覆盖节点视频' : '上传并覆盖节点音频'}
+                  title={data.kind === 'image' ? '上传图片到节点' : data.kind === 'video' ? '上传视频到节点' : '上传音频到节点'}
                   disabled={uploadingContent}
                   data-workflow-node-upload=""
                   onPointerDown={(event) => event.stopPropagation()}
@@ -302,24 +317,37 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
             >
               <Bug className="size-3.5" />
             </Button>
+            {capabilitySubgraph ? (
+              <>
+                <CapabilityLabelButton
+                  direction="input"
+                  target="node"
+                  active={nodeInputLabel}
+                  onClick={() => toggleCapabilityLabel(capabilitySubgraph.id, id, 'node', 'input', data.kind)}
+                />
+                <CapabilityLabelButton
+                  direction="output"
+                  target="node"
+                  active={nodeOutputLabel}
+                  onClick={() => toggleCapabilityLabel(capabilitySubgraph.id, id, 'node', 'output', data.kind)}
+                />
+              </>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="nodrag nopan -mr-1 size-7 text-muted-foreground hover:text-foreground"
-              aria-label="复制节点内容"
-              title={copyableContent ? '复制节点内容' : '暂无可复制内容'}
-              disabled={!copyableContent}
+              aria-label="复制卡片"
+              title="复制完整卡片"
               data-workflow-node-copy=""
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={async (event) => {
+              onClick={(event) => {
                 event.stopPropagation()
-                if (!copyableContent) return
-                await navigator.clipboard.writeText(copyableContent)
-                setCopied(true)
+                duplicateNode(id)
               }}
             >
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              <Copy className="size-3.5" />
             </Button>
           </header>
           {data.kind === 'text' && editingText ? (
@@ -377,7 +405,7 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
         />
       </div>
 
-      {selected && data.executionMode !== 'input' ? (
+      {selected && data.executionMode !== 'input' && data.kind !== 'audio' ? (
         <NodeComposer
           value={data.composer.prompt}
           attachments={data.composer.attachments}
@@ -427,6 +455,13 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
           onCancel={() => {
             if (data.latestRunId) cancelRun(data.latestRunId)
           }}
+          capabilityLabels={capabilitySubgraph ? {
+            input: composerInputLabel,
+            output: composerOutputLabel,
+          } : undefined}
+          onCapabilityLabelToggle={(direction) => {
+            if (capabilitySubgraph) toggleCapabilityLabel(capabilitySubgraph.id, id, 'composer', direction, data.kind)
+          }}
         />
       ) : selected && data.workflowInput ? (
         <div className="nodrag mt-2 w-[520px] rounded-xl border bg-background px-4 py-3 text-xs text-muted-foreground shadow-sm">
@@ -459,17 +494,6 @@ export function WorkflowNode({ id, data, selected }: NodeProps<WorkflowFlowNode>
       ) : null}
     </article>
   )
-}
-
-function getCopyableContent(
-  result: WorkflowFlowNode['data']['results'][number] | undefined,
-  streamingText: string,
-) {
-  if (streamingText) return streamingText
-  if (result?.type === 'text') return result.text
-  if (result?.type === 'image') return result.images[0]?.url
-  if (result?.type === 'video') return result.video.url
-  return undefined
 }
 
 function getNodeStatusTag({
@@ -589,6 +613,13 @@ function NodePreview({
       <video className="h-[220px] w-full bg-black object-contain" src={result.video.url} controls />
     )
   }
+  if (result?.type === 'audio') {
+    return (
+      <div className="flex h-[220px] items-center bg-muted/30 px-5">
+        <audio className="w-full" src={result.audio.url} controls preload="metadata" />
+      </div>
+    )
+  }
   if (kind === 'text') {
     return (
       <div className="flex h-[220px] items-center px-5 text-sm leading-6 text-muted-foreground">
@@ -597,12 +628,12 @@ function NodePreview({
     )
   }
 
-  const Icon = kind === 'image' ? Image : Video
+  const Icon = kind === 'image' ? Image : kind === 'video' ? Video : AudioLines
   return (
     <div className="grid h-[220px] place-items-center bg-muted/30 text-muted-foreground">
       <div className="flex flex-col items-center gap-1.5 text-[11px]">
         <Icon size={26} strokeWidth={1.4} />
-        {kind === 'image' ? '等待生成图片' : '等待生成视频'}
+        {kind === 'image' ? '等待生成图片' : kind === 'video' ? '等待生成视频' : '请上传音频'}
       </div>
     </div>
   )

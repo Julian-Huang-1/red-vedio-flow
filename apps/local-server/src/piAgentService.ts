@@ -788,7 +788,33 @@ Runtime HTTP contract:
 - Poll: GET /api/runtime/apps/{appId}/runs/{runId} with the same Authorization header.
 - A run succeeds when status is "succeeded". Read media/text values from run.outputs using the output keys above.
 - Handle queued, running, succeeded, failed, and cancelled states in the UI.
-- Never embed workflowId or subgraphId in generated HTML.`
+- Never embed workflowId or subgraphId in generated HTML.
+
+Use this JavaScript as the request template in the generated app:
+\`\`\`js
+const { appId, token } = window.RUNTIME_CONFIG
+
+const response = await fetch(
+  \`/api/runtime/apps/\${encodeURIComponent(appId)}/capabilities/${capability.key}/runs\`,
+  {
+    method: 'POST',
+    headers: {
+      Authorization: \`Bearer \${token}\`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      inputs: {
+        input_1: {
+          url: imageDataUrl,
+          mimeType: 'image/jpeg',
+          fileName: 'input.jpg',
+        },
+      },
+    }),
+  },
+)
+\`\`\`
+Replace input_1 and its example value with the actual labels and types from the input contract. Media inputs must be objects shaped as { url, mimeType?, fileName? }, never bare URL or data-URI strings.`
 }
 
 const APP_BUILDER_INSTRUCTIONS = `You are operating in App Builder mode.

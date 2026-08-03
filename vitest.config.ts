@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   resolve: {
     alias: {
+      '@': fileURLToPath(new URL('./apps/red-vedio-flow/src', import.meta.url)),
       '@red-video-flow/api-server': fileURLToPath(new URL('./packages/api-server/src/index.ts', import.meta.url)),
       '@red-video-flow/local-backend': fileURLToPath(new URL('./packages/local-backend/src/index.ts', import.meta.url)),
       '@red-video-flow/plugin-contract': fileURLToPath(new URL('./packages/plugin-contract/src/index.ts', import.meta.url)),

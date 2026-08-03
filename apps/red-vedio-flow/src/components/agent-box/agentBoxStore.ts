@@ -17,7 +17,7 @@ import {
   type PiAgentSessionSummaryDto,
 } from './piAgentClient'
 import { useAppBuilderStore } from '../../pages/app-builder/appBuilderStore'
-import { useWorkflowStore } from '@/stores/workflowStore'
+import { useWorkflowStore } from '../../stores/workflowStore'
 import { resolveAgentResourceUrl } from './resourceUrl'
 
 const agents: AgentOption[] = [
@@ -63,7 +63,100 @@ function appendResourcesToPrompt(prompt: string, resources: AgentResourceReferen
     url: resolveAgentResourceUrl(resource.url),
     thumbnailUrl: resolveAgentResourceUrl(resource.thumbnailUrl),
   }))
-  return `${prompt}\n\n用户选择的资源对象：\n${JSON.stringify(resourcesWithAbsoluteUrls, null, 2)}`
+  const hasWorkflowCapability = resources.some((resource) => resource.kind === 'workflow')
+  const workflowInstructions = hasWorkflowCapability
+    ? `\n\n子图能力调用约束（必须严格遵守）：
+- 只能使用资源对象 runtime 中声明的接口，不得自行缩写或猜测路径。
+- 启动路径必须是 /api/runtime/apps/{appId}/capabilities/{capabilityKey}/runs；注意 runs 是复数。
+- 禁止使用 /api/capabilities/{capabilityKey}/run、/api/capabilities/{capabilityKey}/runs 等路径。
+- appId 和 token 必须在浏览器运行时从 window.RUNTIME_CONFIG 读取，不得写死。
+- 图片、视频、音频和文件输入必须传对象 { url, mimeType?, fileName? }，不能直接传 URL 或 data URI 字符串。
+
+生成应用时以这段代码为调用模板：
+\`\`\`js
+const { appId, token } = window.RUNTIME_CONFIG
+
+const response = await fetch(
+  \`/api/runtime/apps/\${encodeURIComponent(appId)}/capabilities/default/runs\`,
+  {
+    method: 'POST',
+    headers: {
+      Authorization: \`Bearer \${token}\`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      inputs: {
+        input_1: {
+          url: imageDataUrl,
+          mimeType: 'image/jpeg',
+          fileName: 'input.jpg',
+        },
+      },
+    }),
+  },
+)
+\`\`\`
+请根据资源 inputs 中的真实 label 和 type 替换示例中的 input_1 及输入值。`
+    : ''
+  return `${prompt}${workflowInstructions}\n\n用户选择的资源对象：\n${JSON.stringify(resourcesWithAbsoluteUrls, null, 2)}`
+}
+
+function publicAgentResource(resource: AgentResourceReference): AgentResourceReference {
+  if (resource.kind !== 'workflow') return resource
+  try {
+    const manifest = JSON.parse(resource.text ?? '{}') as {
+      name?: string
+      inputs?: Array<{ label?: string; valueType?: string; required?: boolean }>
+      outputs?: Array<{ label?: string; valueType?: string }>
+    }
+    return {
+      ...resource,
+      mimeType: 'application/json',
+      text: JSON.stringify({
+        capabilityKey: 'default',
+        name: manifest.name ?? resource.name,
+        runtime: {
+          config: {
+            appId: 'window.RUNTIME_CONFIG.appId',
+            token: 'window.RUNTIME_CONFIG.token',
+          },
+          start: {
+            method: 'POST',
+            pathTemplate: '/api/runtime/apps/{appId}/capabilities/{capabilityKey}/runs',
+            headers: {
+              Authorization: 'Bearer {token}',
+              'Content-Type': 'application/json',
+            },
+            body: { inputs: '{ [inputLabel]: inputValue }' },
+          },
+          status: {
+            method: 'GET',
+            pathTemplate: '/api/runtime/apps/{appId}/runs/{runId}',
+            headers: { Authorization: 'Bearer {token}' },
+            terminalStatuses: ['succeeded', 'failed', 'cancelled'],
+          },
+          inputValueShapes: {
+            text: 'string',
+            image: '{ url: string, mimeType?: string, fileName?: string }',
+            video: '{ url: string, mimeType?: string, fileName?: string }',
+            audio: '{ url: string, mimeType?: string, fileName?: string }',
+            file: '{ url: string, mimeType?: string, fileName?: string }',
+          },
+        },
+        inputs: (manifest.inputs ?? []).map((item) => ({
+          label: item.label,
+          type: item.valueType,
+          required: item.required ?? false,
+        })),
+        outputs: (manifest.outputs ?? []).map((item) => ({
+          label: item.label,
+          type: item.valueType,
+        })),
+      }, null, 2),
+    }
+  } catch {
+    return { ...resource, mimeType: 'application/json', text: '{}' }
+  }
 }
 
 type AgentBoxState = {
@@ -259,32 +352,21 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       const selectedSubgraphId = useAppBuilderStore.getState().selectedSubgraphId
       const workflow = useWorkflowStore.getState()
       const subgraph = workflow.subgraphs.find((item) => item.id === selectedSubgraphId)
-      const capabilityNodes = subgraph
-        ? workflow.nodes.filter((node) => subgraph.nodeIds.includes(node.id))
-        : []
       const capability = subgraph ? {
         key: 'default',
         name: subgraph.name,
-        inputs: Object.fromEntries(capabilityNodes
-          .filter((node) => node.data.serviceRole === 'input' || node.data.workflowInput)
-          .map((node) => {
-            const input = node.data.workflowInput
-            const key = input?.key || node.data.serviceLabel || node.id
-            return [key, {
-              type: String(input?.valueType || node.data.materialType),
-              required: input?.required ?? true,
-              description: input?.description,
-            }]
-          })),
-        outputs: Object.fromEntries(capabilityNodes
-          .filter((node) => node.data.serviceRole === 'output')
-          .map((node) => [node.data.serviceLabel || node.id, {
-            type: String(node.data.materialType),
-          }])),
+        inputs: Object.fromEntries((subgraph.capability?.inputs ?? []).map((input) => [input.label, {
+          type: String(input.valueType),
+          required: input.required ?? false,
+        }])),
+        outputs: Object.fromEntries((subgraph.capability?.outputs ?? []).map((output) => [output.label, {
+          type: String(output.valueType),
+        }])),
       } : undefined
+      const safeResources = resources.map(publicAgentResource)
       const attachmentResources = appBuilder
-        ? resources.filter((resource) => resource.kind !== 'video')
-        : resources
+        ? safeResources.filter((resource) => resource.kind !== 'video')
+        : safeResources
       const contexts = state.contextIds
         .map((id) => state.contextsById[id])
         .filter(Boolean)
@@ -292,7 +374,7 @@ export const useAgentBoxStore = create<AgentBoxStore>((set, get) => {
       await runner(
         sessionId,
         {
-          message: appBuilder ? appendResourcesToPrompt(prompt, resources) : prompt,
+          message: appBuilder ? appendResourcesToPrompt(prompt, safeResources) : prompt,
           modelId: state.selectedModelId,
           agentId: state.selectedAgentId,
           contexts,

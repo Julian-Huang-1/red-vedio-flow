@@ -14,11 +14,13 @@ import {
   useAgentBoxStore,
 } from '@/components/agent-box'
 import { Button } from '@/components/ui/button'
+import { useWorkflowStore } from '@/stores/workflowStore'
 import { AppPreview } from './AppPreview'
 import { AppPreviewToolbar } from './AppPreviewToolbar'
 import { AppSourceDialog } from './AppSourceDialog'
 import { useAppBuilderStore } from './appBuilderStore'
 import {
+  bindDefaultCapability,
   createPublishedApp,
   publishedAppUrl,
   publishAppRelease,
@@ -59,6 +61,15 @@ export function AppBuilderPage() {
         const created = await createPublishedApp(artifact.title)
         appId = created.app.id
         window.localStorage.setItem(storageKey, appId)
+      }
+      const capabilityBinding = selectedCapabilityBinding(activeSessionId)
+      if (capabilityBinding) {
+        await bindDefaultCapability(
+          appId,
+          capabilityBinding.workflowId,
+          capabilityBinding.workflowRevision,
+          capabilityBinding.subgraphId,
+        )
       }
       const result = await publishAppRelease(appId, {
         title: artifact.title,
@@ -207,4 +218,42 @@ export function AppBuilderPage() {
       />
     </main>
   )
+}
+
+type CapabilityBinding = {
+  workflowId: string
+  workflowRevision: number
+  subgraphId: string
+}
+
+function selectedCapabilityBinding(sessionId?: string): CapabilityBinding | undefined {
+  const agent = useAgentBoxStore.getState()
+  const session = sessionId ? agent.sessionsById[sessionId] : undefined
+  for (const messageId of [...(session?.messageIds ?? [])].reverse()) {
+    const resourceIds = agent.messagesById[messageId]?.resourceIds ?? []
+    for (const resourceId of [...resourceIds].reverse()) {
+      const resource = agent.resourcesById[resourceId]
+      if (resource?.kind !== 'workflow') continue
+      try {
+        const manifest = JSON.parse(resource.text ?? '{}') as Partial<CapabilityBinding>
+        if (
+          typeof manifest.workflowId === 'string'
+          && typeof manifest.workflowRevision === 'number'
+          && typeof manifest.subgraphId === 'string'
+        ) return manifest as CapabilityBinding
+      } catch {
+        // Ignore malformed historical resources and try the current canvas selection.
+      }
+    }
+  }
+
+  const selectedSubgraphId = useAppBuilderStore.getState().selectedSubgraphId
+  if (!selectedSubgraphId) return undefined
+  const workflow = useWorkflowStore.getState()
+  if (!workflow.subgraphs.some((subgraph) => subgraph.id === selectedSubgraphId)) return undefined
+  return {
+    workflowId: workflow.workflowId,
+    workflowRevision: workflow.revision,
+    subgraphId: selectedSubgraphId,
+  }
 }

@@ -31,10 +31,9 @@ import {
 export function HomePage() {
   const queryClient = useQueryClient()
   const [copiedAppId, setCopiedAppId] = useState<string>()
-  const [filter, setFilter] = useState<'mine' | 'all'>('mine')
   const appsQuery = useQuery({
-    queryKey: ['published-apps', filter],
-    queryFn: () => fetchPublishedApps(filter),
+    queryKey: ['published-apps', 'mine'],
+    queryFn: () => fetchPublishedApps(),
   })
   const apps = appsQuery.data?.apps ?? []
   const deleteMutation = useMutation({
@@ -62,25 +61,6 @@ export function HomePage() {
           </div>
         </div>
 
-        <div className="mt-5 flex w-fit rounded-lg bg-muted p-1" aria-label="应用筛选">
-          <Button
-            variant={filter === 'mine' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-3"
-            onClick={() => setFilter('mine')}
-          >
-            自己
-          </Button>
-          <Button
-            variant={filter === 'all' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-3"
-            onClick={() => setFilter('all')}
-          >
-            全部
-          </Button>
-        </div>
-
         {appsQuery.isPending ? (
           <div className="grid min-h-72 place-items-center">
             <LoaderCircle className="size-6 animate-spin text-muted-foreground" />
@@ -102,16 +82,12 @@ export function HomePage() {
                 <AppWindow className="size-7 text-muted-foreground" />
               </div>
               <h2 className="mt-4 font-semibold">
-                {filter === 'mine' ? '你还没有发布应用' : '还没有发布应用'}
+                你还没有发布应用
               </h2>
-              {filter === 'mine' && (
-                <>
-                  <p className="mt-1 text-sm text-muted-foreground">使用 App Builder 生成页面并完成第一次发布。</p>
-                  <Button className="mt-5" asChild>
-                    <Link to="/app-builder"><Plus size={16} />创建应用</Link>
-                  </Button>
-                </>
-              )}
+              <p className="mt-1 text-sm text-muted-foreground">使用 App Builder 生成页面并完成第一次发布。</p>
+              <Button className="mt-5" asChild>
+                <Link to="/app-builder"><Plus size={16} />创建应用</Link>
+              </Button>
             </CardContent>
           </Card>
         ) : (

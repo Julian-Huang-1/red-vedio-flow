@@ -178,6 +178,18 @@ export async function createWorkflowAppRunFromInputs(
     }
   }
   const workflow = subgraphId ? workflowSubgraph(sourceWorkflow, subgraphId) : sourceWorkflow
+  const capability = workflow.graph.subgraphs?.[0]?.capability
+  if (capability) {
+    const known = new Set(capability.inputs.map((item) => item.label))
+    const unknown = Object.keys(inputs).filter((key) => !known.has(key))
+    if (unknown.length) {
+      return { ok: false as const, error: { error: 'capability_input_unknown', message: `未知输入：${unknown.join(', ')}` } }
+    }
+    const missing = capability.inputs.filter((item) => item.required && !(item.label in inputs))
+    if (missing.length) {
+      return { ok: false as const, error: { error: 'capability_input_required', message: `缺少必填输入：${missing.map((item) => item.label).join(', ')}` } }
+    }
+  }
   const validation = validateWorkflowForRun(workflow, inputs)
   if (!validation.valid) {
     return {
@@ -211,6 +223,17 @@ async function executeRun(
   run: AppRun,
 ) {
   try {
+    const capability = workflow.graph.subgraphs?.[0]?.capability
+    if (capability) {
+      for (const binding of capability.inputs.filter((item) => item.target.kind === 'composer')) {
+        const raw = run.inputs[binding.label]
+        if (raw === undefined) continue
+        if (typeof raw !== 'string') throw new Error(`${binding.label} must be text`)
+        const target = workflow.graph.nodes.find((node) => node.id === binding.target.nodeId)
+        if (!target?.data.composer) throw new Error(`composer input target not found: ${binding.label}`)
+        target.data.composer = { ...target.data.composer, prompt: raw, updatedAt: Date.now() }
+      }
+    }
     const inputSchema = collectWorkflowInputSchema(workflow)
     const values = new Map(workflow.graph.nodes.map((node) => [node.id, { ...node.data.value }]))
     const nodeResults = new Map<string, NodeResult[]>()
@@ -220,7 +243,10 @@ async function executeRun(
       if (rawInput === undefined && field.required) throw new Error(`missing required input: ${field.key}`)
       if (rawInput !== undefined) {
         validateWorkflowInput(field, rawInput)
-        values.set(field.nodeId, inputValue(field.valueType, rawInput))
+        const value = inputValue(field.valueType, rawInput)
+        values.set(field.nodeId, value)
+        const inputNode = workflow.graph.nodes.find((node) => node.id === field.nodeId)
+        if (inputNode) nodeResults.set(field.nodeId, [capabilityInputResult(run.id, field.key, inputNode, value)])
       }
     }
 
@@ -273,12 +299,18 @@ async function executeRun(
       })
     }
 
-    run.outputs = Object.fromEntries(outputNodes(workflow).map((node) => {
-      const label = node.data.serviceLabel?.trim() || node.id
-      const value = values.get(node.id)
-      if (!value || !hasValue(value)) throw new Error(`output has no value: ${label}`)
-      return [label, value]
-    }))
+    run.outputs = capability?.outputs.length
+      ? Object.fromEntries(capability.outputs.map((binding) => {
+          const value = values.get(binding.target.nodeId)
+          if (!value || !hasValue(value)) throw new Error(`output has no value: ${binding.label}`)
+          return [binding.label, value]
+        }))
+      : Object.fromEntries(outputNodes(workflow).map((node) => {
+          const label = node.data.serviceLabel?.trim() || node.id
+          const value = values.get(node.id)
+          if (!value || !hasValue(value)) throw new Error(`output has no value: ${label}`)
+          return [label, value]
+        }))
     run.status = 'succeeded'
     addEvent(runtime, run, 'completed', undefined, 'Workflow 运行完成')
   } catch (error) {
@@ -311,15 +343,66 @@ export function workflowSubgraph(workflow: WorkflowDocument, subgraphId: string)
   const subgraph = workflow.graph.subgraphs?.find((item) => item.id === subgraphId)
   if (!subgraph) throw new Error(`subgraph not found: ${subgraphId}`)
   const nodeIds = new Set(subgraph.nodeIds)
+  const capability = subgraph.capability
+  const nodes = workflow.graph.nodes.filter((node) => nodeIds.has(node.id)).map((source) => {
+    const node = structuredClone(source)
+    const nodeInput = capability?.inputs.find((item) => item.target.nodeId === node.id && item.target.kind === 'node')
+    if (nodeInput) {
+      node.data.executionMode = 'input'
+      node.data.serviceRole = 'input'
+      node.data.serviceLabel = nodeInput.label
+      node.data.workflowInput = {
+        key: nodeInput.label,
+        title: nodeInput.label,
+        valueType: nodeInput.valueType,
+        required: nodeInput.required ?? false,
+      }
+      return node
+    }
+    if (node.data.composer) {
+      node.data.results = []
+      node.data.currentResultId = undefined
+      node.data.latestRunId = undefined
+      node.data.status = 'ready'
+      node.data.composer = { ...node.data.composer, upstreamResults: [] }
+    }
+    return node
+  })
   return {
     ...structuredClone(workflow),
     title: subgraph.name,
     graph: {
-      nodes: workflow.graph.nodes.filter((node) => nodeIds.has(node.id)),
+      nodes,
       edges: workflow.graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
       subgraphs: [structuredClone(subgraph)],
     },
   }
+}
+
+function capabilityInputResult(
+  runId: string,
+  label: string,
+  node: MaterialNode,
+  value: MaterialValue,
+): NodeResult {
+  const base = {
+    id: `${runId}:input:${label}`,
+    runId,
+    createdAt: Date.now(),
+    provider: { providerId: 'capability-input' },
+  }
+  if (node.data.materialType === 'text') return { ...base, type: 'text', text: value.text ?? '' }
+  const asset: AssetReference = {
+    id: `${runId}:input-asset:${label}`,
+    kind: node.data.materialType,
+    url: value.url ?? value.localPath!,
+    name: value.fileName,
+    mimeType: value.mimeType,
+    duration: value.duration,
+  }
+  return node.data.materialType === 'image'
+    ? { ...base, type: 'image', images: [asset] }
+    : { ...base, type: 'video', video: asset }
 }
 
 function executeTextNode(
@@ -770,10 +853,11 @@ function resultValue(result: NodeResult | undefined): MaterialValue | undefined 
       mimeType: image.mimeType,
     } : undefined
   }
+  const asset = result.type === 'video' ? result.video : result.audio
   return {
-    url: result.video.url,
-    fileName: result.video.name,
-    mimeType: result.video.mimeType,
-    duration: result.video.duration,
+    url: asset.url,
+    fileName: asset.name,
+    mimeType: asset.mimeType,
+    duration: asset.duration,
   }
 }

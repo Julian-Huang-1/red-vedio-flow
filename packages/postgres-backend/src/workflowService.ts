@@ -30,8 +30,8 @@ export class PostgresWorkflowService {
     return this.repository.list(ownerId)
   }
 
-  get(id: string) {
-    return this.repository.get(id)
+  get(id: string, ownerId?: string) {
+    return this.repository.get(id, ownerId)
   }
 
   async create(input: Partial<PostgresSaveWorkflowInput> = {}, ownerId?: string) {
@@ -47,8 +47,8 @@ export class PostgresWorkflowService {
     }, undefined, ownerId)
   }
 
-  async save(input: PostgresSaveWorkflowInput) {
-    const existing = await this.repository.get(input.id)
+  async save(input: PostgresSaveWorkflowInput, ownerId?: string) {
+    const existing = await this.repository.get(input.id, ownerId)
     if (existing && input.baseRevision !== undefined) {
       assertRevision(input.baseRevision, existing.revision)
     }
@@ -67,14 +67,14 @@ export class PostgresWorkflowService {
       graph: input.graph,
     }
     try {
-      return await this.repository.save(document, existing?.revision)
+      return await this.repository.save(document, existing?.revision, ownerId)
     } catch (error) {
       throw await normalizeConflict(this.repository, input.id, error)
     }
   }
 
-  async patch(input: PostgresPatchWorkflowInput) {
-    const existing = await this.repository.get(input.id)
+  async patch(input: PostgresPatchWorkflowInput, ownerId?: string) {
+    const existing = await this.repository.get(input.id, ownerId)
     if (!existing) throw new WorkflowPatchError(`workflow not found: ${input.id}`)
     assertRevision(input.baseRevision, existing.revision)
     const document: WorkflowDocument = {
@@ -83,14 +83,14 @@ export class PostgresWorkflowService {
       updatedAt: Date.now(),
     }
     try {
-      return await this.repository.save(document, existing.revision)
+      return await this.repository.save(document, existing.revision, ownerId)
     } catch (error) {
       throw await normalizeConflict(this.repository, input.id, error)
     }
   }
 
-  delete(id: string) {
-    return this.repository.delete(id)
+  delete(id: string, ownerId?: string) {
+    return this.repository.delete(id, ownerId)
   }
 }
 

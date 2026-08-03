@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Node, NodeProps } from '@xyflow/react'
-import { Check, Code2, GitBranch, LoaderCircle, MoreHorizontal, Play, Trash2, Ungroup, Upload } from 'lucide-react'
+import { Check, Code2, Copy, GitBranch, LoaderCircle, MoreHorizontal, Play, Trash2, Ungroup, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export type WorkflowSubgraphNodeData = {
@@ -11,6 +11,7 @@ export type WorkflowSubgraphNodeData = {
   onRun: () => void
   onPublish: () => Promise<void>
   onViewCode: () => void
+  onDuplicate: () => void
   onRename: (name: string) => void
   onDissolve: () => void
   onDelete: () => void
@@ -74,6 +75,17 @@ export function WorkflowSubgraphNode({ data, selected }: NodeProps<WorkflowSubgr
         </span>
         <div className="flex-1" />
         <Button
+          className="nodrag size-8 rounded-lg border bg-white/80"
+          size="icon"
+          variant="ghost"
+          title="复制子图"
+          aria-label="复制子图"
+          data-workflow-subgraph-duplicate=""
+          onClick={data.onDuplicate}
+        >
+          <Copy className="size-4" />
+        </Button>
+        <Button
           className="nodrag h-8 gap-1.5 rounded-lg border bg-white/80 px-3"
           size="sm"
           variant="ghost"
@@ -82,7 +94,10 @@ export function WorkflowSubgraphNode({ data, selected }: NodeProps<WorkflowSubgr
             setPublishing(true)
             void data.onPublish()
               .then(() => setPublished(true))
-              .catch(() => setPublished(false))
+              .catch((error) => {
+                setPublished(false)
+                window.alert(error instanceof Error ? error.message : '发布子图能力失败')
+              })
               .finally(() => setPublishing(false))
           }}
         >

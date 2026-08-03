@@ -12,6 +12,7 @@ export class PostgresResourceRepository {
   constructor(private readonly sql: PostgresDatabase) {}
 
   async list(input: {
+    ownerId?: string
     workspaceId?: string
     kind?: ResourceKind
     source?: ResourceSource
@@ -20,7 +21,8 @@ export class PostgresResourceRepository {
     const pattern = input.query?.trim() ? `%${input.query.trim()}%` : null
     const rows = await this.sql`
       SELECT * FROM resources
-      WHERE (${input.workspaceId ?? null}::text IS NULL OR workspace_id = ${input.workspaceId ?? null})
+      WHERE (${input.ownerId ?? null}::uuid IS NULL OR owner_id = ${input.ownerId ?? null})
+        AND (${input.workspaceId ?? null}::text IS NULL OR workspace_id = ${input.workspaceId ?? null})
         AND deleted_at IS NULL
         AND (${input.kind ?? null}::text IS NULL OR kind = ${input.kind ?? null})
         AND (${input.source ?? null}::text IS NULL OR source = ${input.source ?? null})
@@ -34,14 +36,27 @@ export class PostgresResourceRepository {
     return rows.map(toResource)
   }
 
-  async get(id: string) {
+  async get(id: string, ownerId?: string) {
     const rows = await this.sql`
       SELECT * FROM resources
-      WHERE (id = ${id} OR blob_id = ${id}) AND deleted_at IS NULL
+      WHERE (id = ${id} OR blob_id = ${id})
+        AND (${ownerId ?? null}::uuid IS NULL OR owner_id = ${ownerId ?? null})
+        AND deleted_at IS NULL
       ORDER BY CASE WHEN id = ${id} THEN 0 ELSE 1 END
       LIMIT 1
     `
     return rows[0] ? toResource(rows[0]) : undefined
+  }
+
+  async blobId(id: string, ownerId?: string) {
+    const rows = await this.sql`
+      SELECT blob_id FROM resources
+      WHERE id = ${id}
+        AND (${ownerId ?? null}::uuid IS NULL OR owner_id = ${ownerId ?? null})
+        AND deleted_at IS NULL
+      LIMIT 1
+    `
+    return rows[0]?.blob_id ? String(rows[0].blob_id) : undefined
   }
 
   async listAll() {
@@ -49,15 +64,15 @@ export class PostgresResourceRepository {
     return rows.map(toResource)
   }
 
-  async save(resource: Resource, blobId?: string) {
+  async save(resource: Resource, blobId?: string, ownerId?: string) {
     await this.sql`
       INSERT INTO resources (
-        id, workspace_id, kind, name, mime_type, text_content, blob_id, url,
+        id, owner_id, workspace_id, kind, name, mime_type, text_content, blob_id, url,
         file_name, metadata, source, source_node_id, source_run_id,
         source_result_id, provider_id, model_id, prompt, generation_config,
         created_at, updated_at, deleted_at
       ) VALUES (
-        ${resource.id}, ${resource.workspaceId}, ${resource.kind}, ${resource.name},
+        ${resource.id}, ${ownerId ?? null}, ${resource.workspaceId}, ${resource.kind}, ${resource.name},
         ${resource.mimeType ?? null}, ${resource.text ?? null}, ${blobId ?? null},
         ${resource.url ?? null}, ${resource.fileName ?? null},
         ${this.sql.json(metadata(resource) as never)}, ${resource.source},
@@ -85,14 +100,16 @@ export class PostgresResourceRepository {
         generation_config = EXCLUDED.generation_config,
         updated_at = EXCLUDED.updated_at,
         deleted_at = EXCLUDED.deleted_at
+      WHERE ${ownerId ?? null}::uuid IS NULL OR resources.owner_id = ${ownerId ?? null}
     `
     return resource
   }
 
-  async softDelete(id: string) {
+  async softDelete(id: string, ownerId?: string) {
     const now = Date.now()
     await this.sql`
-      UPDATE resources SET deleted_at = ${now}, updated_at = ${now} WHERE id = ${id}
+      UPDATE resources SET deleted_at = ${now}, updated_at = ${now}
+      WHERE id = ${id} AND (${ownerId ?? null}::uuid IS NULL OR owner_id = ${ownerId ?? null})
     `
   }
 
@@ -130,9 +147,12 @@ export class PostgresResourceRepository {
     return toBinding(existing[0])
   }
 
-  async bindings(resourceId: string) {
+  async bindings(resourceId: string, ownerId?: string) {
     const rows = await this.sql`
-      SELECT * FROM resource_bindings WHERE resource_id = ${resourceId}
+      SELECT rb.* FROM resource_bindings rb
+      JOIN resources r ON r.id = rb.resource_id
+      WHERE rb.resource_id = ${resourceId}
+        AND (${ownerId ?? null}::uuid IS NULL OR r.owner_id = ${ownerId ?? null})
     `
     return rows.map(toBinding)
   }

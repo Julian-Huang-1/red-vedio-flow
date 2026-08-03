@@ -90,15 +90,49 @@ export class PostgresJobQueue implements JobQueue {
   }
 
   async recoverExpired(now = Date.now()) {
+    return (await this.recoverExpiredJobs(now)).length
+  }
+
+  async recoverExpiredJobs(now = Date.now()) {
     const rows = await this.sql`
       UPDATE jobs SET
-        status = 'queued', locked_by = NULL, locked_at = NULL,
-        lease_expires_at = NULL, updated_at = ${now}
+        status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
+        locked_by = NULL, locked_at = NULL,
+        lease_expires_at = NULL,
+        last_error = CASE
+          WHEN attempts < max_attempts THEN last_error
+          ELSE 'worker_lease_exhausted'
+        END,
+        updated_at = ${now}
       WHERE status = 'running' AND lease_expires_at <= ${now}
-      RETURNING id
+      RETURNING id, type, payload, status
     `
-    if (rows.length) await this.sql.notify('red_video_flow_jobs', 'recovered')
-    return rows.length
+    if (rows.some((row) => row.status === 'queued')) {
+      await this.sql.notify('red_video_flow_jobs', 'recovered')
+    }
+    const pendingFinalizations = await this.sql`
+      SELECT id, type, payload, status FROM jobs j
+      WHERE j.status = 'failed' AND j.last_error = 'worker_lease_exhausted'
+    `
+    const finalizationIds = new Set(pendingFinalizations.map((row) => String(row.id)))
+    const actionableRows = [
+      ...rows.filter((row) => row.status === 'queued' || !finalizationIds.has(String(row.id))),
+      ...pendingFinalizations,
+    ]
+    return actionableRows.map((row) => ({
+      id: String(row.id),
+      type: String(row.type) as QueueJobType,
+      payload: row.payload as Record<string, unknown>,
+      status: String(row.status) as 'queued' | 'failed',
+    }))
+  }
+
+  async completeExpiredFinalization(jobId: string) {
+    await this.sql`
+      UPDATE jobs SET last_error = NULL, updated_at = ${Date.now()}
+      WHERE id = ${jobId} AND status = 'failed'
+        AND last_error = 'worker_lease_exhausted'
+    `
   }
 
   async waitForWork(signal: AbortSignal) {

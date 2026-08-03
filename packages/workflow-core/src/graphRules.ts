@@ -4,6 +4,7 @@ export function canConnect(source: MaterialType, target: MaterialType) {
   if (source === 'text') return true
   if (source === 'image') return target === 'image' || target === 'video'
   if (source === 'video') return target === 'video'
+  if (source === 'audio') return target === 'audio' || target === 'video'
   return false
 }
 

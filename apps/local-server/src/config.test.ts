@@ -55,6 +55,7 @@ describe('Cowork server configuration', () => {
       APP_DEPLOYMENT_MODE: 'cowork',
       APP_PORT: '3001',
       APP_CREDENTIAL_ENCRYPTION_KEY: 'test-key',
+      RED_VIDEO_FLOW_MAAS_API_KEY: 'test-token',
     })
 
     expect(config.preferredPort).toBe(3001)

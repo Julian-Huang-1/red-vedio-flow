@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { extname, join, normalize } from 'node:path'
 import {
-  handleModelCredentialRoute,
   handleBlobAssetRoutes,
   handleChatRoutes as handleSharedChatRoutes,
   handleDurableAppRunRoutes,
@@ -62,9 +61,8 @@ export function createRequestHandler(runtime: CoworkRuntime) {
           await handleWorkflows(runtime, ctx, user.id)
           || await handlePiAgentRoutes(runtime, ctx, user.id)
           || await handleRuns(runtime, ctx, user.id)
-          || await handleCredentials(runtime, ctx, user.id)
           || await handleBlobs(runtime, ctx, user.id)
-          || await handleResources(runtime, ctx)
+          || await handleResources(runtime, ctx, user.id)
           || await handleChats(runtime, ctx, user.id)
           || await handleAppRuns(runtime, ctx, user.id)
           || await handlePublishedAppManagementRoutes(runtime, ctx, user.id)
@@ -88,30 +86,19 @@ export function createRequestHandler(runtime: CoworkRuntime) {
 
 async function handleWorkflows(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {
   const workflows = runtime.infrastructure.postgresWorkflows
-  const scope = ctx.url.searchParams.get('scope') ?? 'mine'
-  if (scope !== 'mine' && scope !== 'all') {
-    throw new HttpError(400, 'scope must be mine or all')
-  }
   const api: WorkflowApi = {
-    list: () => workflows.list(scope === 'mine' ? userId : undefined),
-    get: (id) => workflows.get(id),
+    list: () => workflows.list(userId),
+    get: (id) => workflows.get(id, userId),
     create: (input) => workflows.create(input, userId),
-    save: (input) => workflows.save(input),
-    patch: (input) => workflows.patch(input),
-    delete: (id) => workflows.delete(id),
+    save: (input) => workflows.save(input, userId),
+    patch: (input) => workflows.patch(input, userId),
+    delete: (id) => workflows.delete(id, userId),
   }
   return handleSharedWorkflowRoutes(ctx, api)
 }
 
 async function handleRuns(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {
   return handleDurableNodeRunRoutes(runtime, ctx, userId)
-}
-
-async function handleCredentials(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {
-  return handleModelCredentialRoute(ctx, {
-    userId,
-    credentials: runtime.infrastructure.credentials,
-  })
 }
 
 async function handleBlobs(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {
@@ -124,7 +111,7 @@ async function handleBlobs(runtime: CoworkRuntime, ctx: RequestContext, userId: 
       mimeType,
       cookie: ctx.req.headers.cookie,
     }),
-    requirePublishedAsset: ({ kind }) => kind === 'image' || kind === 'video',
+    requirePublishedAsset: ({ kind }) => kind === 'image' || kind === 'video' || kind === 'audio',
     onPublishAssetError: (error) => {
       console.error(
         '[asset upload] CDN publish failed:',
@@ -132,24 +119,24 @@ async function handleBlobs(runtime: CoworkRuntime, ctx: RequestContext, userId: 
       )
     },
     saveResource: (resource, blobId) => (
-      runtime.infrastructure.postgresResources.save(resource, blobId)
+      runtime.infrastructure.postgresResources.save(resource, blobId, userId)
     ),
   })
 }
 
-async function handleResources(runtime: CoworkRuntime, ctx: RequestContext) {
+async function handleResources(runtime: CoworkRuntime, ctx: RequestContext, userId: string) {
   const repository = runtime.infrastructure.postgresResources
   const api: ResourceApi = {
     list: async (input) => {
-      const resources = await repository.list(input)
+      const resources = await repository.list({ ...input, ownerId: userId })
       return Promise.all(resources.map((resource) => (
-        migrateLegacyMediaResource(runtime, resource, ctx.req.headers.cookie)
+        migrateLegacyMediaResource(runtime, resource, ctx.req.headers.cookie, userId)
       )))
     },
     get: async (id) => {
-      const resource = await repository.get(id)
+      const resource = await repository.get(id, userId)
       return resource
-        ? migrateLegacyMediaResource(runtime, resource, ctx.req.headers.cookie)
+        ? migrateLegacyMediaResource(runtime, resource, ctx.req.headers.cookie, userId)
         : undefined
     },
     createText: async (input) => {
@@ -161,7 +148,8 @@ async function handleResources(runtime: CoworkRuntime, ctx: RequestContext) {
         createdAt: now,
         updatedAt: now,
       }
-      await repository.save(resource)
+      await requireOwnedWorkflow(runtime, resource.workspaceId, userId)
+      await repository.save(resource, undefined, userId)
       return resource
     },
     createWorkflow: async (input) => {
@@ -173,39 +161,58 @@ async function handleResources(runtime: CoworkRuntime, ctx: RequestContext) {
         createdAt: now,
         updatedAt: now,
       }
-      await repository.save(resource)
+      await requireOwnedWorkflow(runtime, resource.workspaceId, userId)
+      await repository.save(resource, undefined, userId)
       return resource
     },
     rename: async (resource, name) => {
       const updated = { ...resource, name, updatedAt: Date.now() }
-      await repository.save(updated)
+      await repository.save(updated, undefined, userId)
       return updated
     },
-    softDelete: (id) => repository.softDelete(id),
-    bindings: (resourceId) => repository.bindings(resourceId),
-    bind: (input) => repository.bind(input),
+    softDelete: (id) => repository.softDelete(id, userId),
+    bindings: (resourceId) => repository.bindings(resourceId, userId),
+    bind: async (input) => {
+      if (!await repository.get(input.resourceId, userId)) throw new HttpError(404, 'resource not found')
+      await requireOwnedWorkflow(runtime, input.workflowId, userId)
+      return repository.bind(input)
+    },
   }
   return handleSharedResourceRoutes(ctx, api)
+}
+
+async function requireOwnedWorkflow(runtime: CoworkRuntime, workflowId: string, userId: string) {
+  const workflow = await runtime.infrastructure.postgresWorkflows.get(workflowId, userId)
+  if (!workflow) throw new HttpError(404, 'workflow not found')
+  return workflow
 }
 
 async function migrateLegacyMediaResource(
   runtime: CoworkRuntime,
   resource: Resource,
   cookie?: string,
+  ownerId?: string,
 ) {
   if (
-    (resource.kind !== 'image' && resource.kind !== 'video')
-    || !resource.url?.startsWith('/api/blobs/')
+    (resource.kind !== 'image' && resource.kind !== 'video' && resource.kind !== 'audio')
+    || isCompleteMediaUrl(resource.url)
   ) return resource
 
-  const blobId = decodeURIComponent(resource.url.slice('/api/blobs/'.length).split('/')[0])
+  const blobId = resource.url?.startsWith('/api/blobs/')
+    ? decodeURIComponent(resource.url.slice('/api/blobs/'.length).split('/')[0])
+    : await runtime.infrastructure.postgresResources.blobId(resource.id, ownerId)
   if (!blobId) return resource
 
   try {
-    const blob = await runtime.infrastructure.blobs.stat(blobId)
+    const blob = ownerId
+      ? await runtime.infrastructure.blobs.statForOwner(blobId, ownerId)
+      : await runtime.infrastructure.blobs.stat(blobId)
     if (!blob) throw new Error(`blob not found: ${blobId}`)
     const chunks: Buffer[] = []
-    for await (const chunk of await runtime.infrastructure.blobs.read(blobId)) {
+    const body = ownerId
+      ? await runtime.infrastructure.blobs.readForOwner(blobId, ownerId)
+      : await runtime.infrastructure.blobs.read(blobId)
+    for await (const chunk of body) {
       chunks.push(Buffer.from(chunk))
     }
     const publicUrl = await mediaUploader.upload({
@@ -216,7 +223,7 @@ async function migrateLegacyMediaResource(
     })
     if (!publicUrl) throw new Error('CDN upload did not return a public URL')
     const migrated = { ...resource, url: publicUrl, updatedAt: Date.now() }
-    await runtime.infrastructure.postgresResources.save(migrated, blobId)
+    await runtime.infrastructure.postgresResources.save(migrated, blobId, ownerId)
     return migrated
   } catch (error) {
     console.error(
@@ -224,6 +231,16 @@ async function migrateLegacyMediaResource(
       error,
     )
     return resource
+  }
+}
+
+function isCompleteMediaUrl(value?: string) {
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
   }
 }
 

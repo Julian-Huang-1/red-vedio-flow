@@ -6,7 +6,7 @@ import type {
   WorkflowInputFieldDefinition,
 } from '@red-video-flow/workflow-core'
 
-export type WorkflowNodeKind = 'text' | 'image' | 'video'
+export type WorkflowNodeKind = 'text' | 'image' | 'video' | 'audio'
 
 export type WorkflowNodeData = {
   [key: string]: unknown

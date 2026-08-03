@@ -45,13 +45,18 @@ export type CoworkAppRun = {
   cancelled: boolean
 }
 
-export async function executeWorkflowRun(runtime: DurableRuntime, runId: string) {
+export async function executeWorkflowRun(
+  runtime: DurableRuntime,
+  runId: string,
+  assertLease?: () => Promise<void>,
+) {
   const run = await runtime.infrastructure.postgresWorkflowAppRuns.get<CoworkAppRun>(runId)
   if (!run || !['queued', 'running'].includes(run.status)) return
   const workflow = run.graphSnapshot
   const values = new Map(workflow.graph.nodes.map((node) => [node.id, { ...node.data.value }]))
   const resultsByNode = new Map<string, NodeResult[]>()
   try {
+    applyComposerInputs(workflow, run.inputs)
     applyInputs(workflow, run.inputs, values)
     run.status = 'running'
     await addEvent(runtime, run, 'started', undefined, 'Workflow 开始运行')
@@ -90,7 +95,7 @@ export async function executeWorkflowRun(runtime: DurableRuntime, runId: string)
               id: `execute-node:${nodeRun.id}`,
               type: 'execute-node',
               payload: { runId: nodeRun.id },
-              maxAttempts: 1,
+              maxAttempts: 3,
             })
             const completed = await waitForNode(runtime, nodeRun.id, run)
             if (completed.status !== 'succeeded') {
@@ -131,13 +136,21 @@ export async function executeWorkflowRun(runtime: DurableRuntime, runId: string)
         }
       }
     }
-    run.outputs = Object.fromEntries(outputNodes(workflow).map((node) => [
-      node.data.serviceLabel?.trim() || node.id,
-      values.get(node.id) ?? {},
-    ]))
+    const capabilityOutputs = workflow.graph.subgraphs?.[0]?.capability?.outputs ?? []
+    run.outputs = capabilityOutputs.length
+      ? Object.fromEntries(capabilityOutputs.map((binding) => [
+          binding.label,
+          values.get(binding.target.nodeId) ?? {},
+        ]))
+      : Object.fromEntries(outputNodes(workflow).map((node) => [
+          node.data.serviceLabel?.trim() || node.id,
+          values.get(node.id) ?? {},
+        ]))
+    await assertLease?.()
     run.status = 'succeeded'
     await addEvent(runtime, run, 'completed', undefined, 'Workflow 运行完成')
   } catch (error) {
+    await assertLease?.()
     if (error instanceof CancelledError || run.cancelled) {
       run.status = 'cancelled'
       markRemaining(run, 'cancelled')
@@ -283,6 +296,18 @@ function applyInputs(
   }
 }
 
+function applyComposerInputs(workflow: WorkflowDocument, inputs: Record<string, unknown>) {
+  const bindings = workflow.graph.subgraphs?.[0]?.capability?.inputs ?? []
+  for (const binding of bindings) {
+    if (binding.target.kind !== 'composer' || !(binding.label in inputs)) continue
+    const raw = inputs[binding.label]
+    if (typeof raw !== 'string') throw new Error(`${binding.label} must be text`)
+    const node = workflow.graph.nodes.find((item) => item.id === binding.target.nodeId)
+    if (!node?.data.composer) throw new Error(`composer input target not found: ${binding.label}`)
+    node.data.composer = { ...node.data.composer, prompt: raw, updatedAt: Date.now() }
+  }
+}
+
 function inputValue(type: WorkflowInputValueType, input: unknown): MaterialValue {
   if (type === 'text' || type === 'number' || type === 'boolean') return { text: String(input) }
   const record = Array.isArray(input) ? input[0] : input
@@ -327,7 +352,7 @@ function materialAssets(appRunId: string, node: MaterialNode, value: MaterialVal
 function valueFromResult(result: NodeResult | undefined): MaterialValue | undefined {
   if (!result) return undefined
   if (result.type === 'text') return { text: result.text }
-  const asset = result.type === 'image' ? result.images[0] : result.video
+  const asset = result.type === 'image' ? result.images[0] : result.type === 'video' ? result.video : result.audio
   return asset ? { url: asset.url, fileName: asset.name, mimeType: asset.mimeType } : undefined
 }
 

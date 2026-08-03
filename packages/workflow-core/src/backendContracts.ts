@@ -45,6 +45,8 @@ export type ProviderExecutionContext = {
   nodeId: string
   userId: string
   token: string
+  providerTaskId?: string
+  beforeSubmit?: () => Promise<void>
   signal: AbortSignal
   emit: (event: ProviderExecutionEvent) => Promise<void> | void
   trace: {

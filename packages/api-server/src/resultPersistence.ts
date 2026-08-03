@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import type {
   NodeResult,
   Resource,
@@ -22,7 +22,7 @@ export async function persistGeneratedResultResources(input: {
     if (result.type === 'text') {
       const now = Date.now()
       const resource: Resource = {
-        id: randomUUID(),
+        id: stableResourceId(input.runId, result.id, 'text'),
         workspaceId: input.workflowId,
         kind: 'text',
         name: '生成文本',
@@ -50,15 +50,17 @@ export async function persistGeneratedResultResources(input: {
 
     const assets = result.type === 'image'
       ? result.images
-      : [result.video, ...(result.lastFrame ? [result.lastFrame] : [])]
-    for (const asset of assets) {
+      : result.type === 'video'
+        ? [result.video, ...(result.lastFrame ? [result.lastFrame] : [])]
+        : [result.audio]
+    for (const [assetIndex, asset] of assets.entries()) {
       const now = Date.now()
       const blobId = blobIdFromUrl(asset.url)
       const resource: Resource = {
-        id: randomUUID(),
+        id: stableResourceId(input.runId, result.id, String(assetIndex)),
         workspaceId: input.workflowId,
         kind: asset.kind,
-        name: asset.name ?? (asset.kind === 'image' ? '生成图片' : '生成视频'),
+        name: asset.name ?? (asset.kind === 'image' ? '生成图片' : asset.kind === 'video' ? '生成视频' : '生成音频'),
         mimeType: asset.mimeType,
         url: asset.url,
         fileName: asset.name,
@@ -86,6 +88,11 @@ export async function persistGeneratedResultResources(input: {
     }
   }
   return input.results
+}
+
+function stableResourceId(...parts: string[]) {
+  const hex = createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 32)
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20)}`
 }
 
 function blobIdFromUrl(url: string) {

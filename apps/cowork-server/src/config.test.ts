@@ -59,6 +59,7 @@ describe('Cowork configuration', () => {
     ].join('\n'))
     const config = resolveCoworkConfig(directory, {
       APP_PORT: '3001',
+      RED_VIDEO_FLOW_MAAS_API_KEY: 'test-token',
     })
     expect(config.host).toBe('0.0.0.0')
     expect(config.port).toBe(3001)
@@ -89,6 +90,7 @@ describe('Cowork configuration', () => {
       APP_TEXT_PROVIDER_URL: 'https://provider.example/text',
       APP_IMAGE_PROVIDER_URL: 'https://provider.example/image',
       APP_VIDEO_PROVIDER_URL: 'https://provider.example/video',
+      RED_VIDEO_FLOW_MAAS_API_KEY: 'test-token',
     })
     expect(config.textProviderUrl).toBe('https://provider.example/text')
     expect(config.imageProviderUrl).toBe('https://provider.example/image')

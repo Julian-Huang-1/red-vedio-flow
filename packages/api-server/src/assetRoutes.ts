@@ -48,6 +48,8 @@ export async function handleBlobAssetRoutes(
       ? 'video'
       : mimeType?.startsWith('image/')
         ? 'image'
+        : mimeType?.startsWith('audio/')
+          ? 'audio'
         : 'file'
     const publishRequired = api.requirePublishedAsset?.({ kind, mimeType }) ?? false
     let publicUrl: string | undefined
@@ -84,7 +86,16 @@ export async function handleBlobAssetRoutes(
     }
     await api.saveResource(resource, blob.id)
     await api.onResourceSaved?.(resource)
-    sendJson(res, 200, {
+    sendJson(res, 200, publishRequired ? {
+      id: resource.id,
+      resourceId: resource.id,
+      workflowId,
+      kind,
+      url: publicUrl,
+      fileName,
+      mimeType,
+      size: bytes.length,
+    } : {
       ...asset,
       id: resource.id,
       resourceId: resource.id,

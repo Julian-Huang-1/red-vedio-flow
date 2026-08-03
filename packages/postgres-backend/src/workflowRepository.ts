@@ -11,14 +11,31 @@ export class PostgresWorkflowRepository {
     return rows.map(toWorkflow)
   }
 
-  async get(id: string) {
-    const rows = await this.sql`SELECT * FROM workflows WHERE id = ${id} LIMIT 1`
+  async get(id: string, ownerId?: string) {
+    const rows = ownerId
+      ? await this.sql`SELECT * FROM workflows WHERE id = ${id} AND owner_id = ${ownerId} LIMIT 1`
+      : await this.sql`SELECT * FROM workflows WHERE id = ${id} LIMIT 1`
     return rows[0] ? toWorkflow(rows[0]) : undefined
   }
 
   async save(document: WorkflowDocument, expectedRevision?: number, ownerId?: string) {
     const rows = expectedRevision === undefined
-      ? await this.sql`
+      ? ownerId ? await this.sql`
+          INSERT INTO workflows (
+            id, owner_id, title, schema_version, revision, graph, created_at, updated_at
+          ) VALUES (
+            ${document.id}, ${ownerId}, ${document.title}, ${document.schemaVersion}, ${document.revision},
+            ${this.sql.json(document.graph as never)}, ${document.createdAt}, ${document.updatedAt}
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            title = EXCLUDED.title,
+            schema_version = EXCLUDED.schema_version,
+            revision = EXCLUDED.revision,
+            graph = EXCLUDED.graph,
+            updated_at = EXCLUDED.updated_at
+          WHERE workflows.owner_id = ${ownerId}
+          RETURNING *
+        ` : await this.sql`
           INSERT INTO workflows (
             id, owner_id, title, schema_version, revision, graph, created_at, updated_at
           ) VALUES (
@@ -33,7 +50,16 @@ export class PostgresWorkflowRepository {
             updated_at = EXCLUDED.updated_at
           RETURNING *
         `
-      : await this.sql`
+      : ownerId ? await this.sql`
+          UPDATE workflows SET
+            title = ${document.title},
+            schema_version = ${document.schemaVersion},
+            revision = ${document.revision},
+            graph = ${this.sql.json(document.graph as never)},
+            updated_at = ${document.updatedAt}
+          WHERE id = ${document.id} AND revision = ${expectedRevision} AND owner_id = ${ownerId}
+          RETURNING *
+        ` : await this.sql`
           UPDATE workflows SET
             title = ${document.title},
             schema_version = ${document.schemaVersion},
@@ -47,8 +73,10 @@ export class PostgresWorkflowRepository {
     return toWorkflow(rows[0])
   }
 
-  async delete(id: string) {
-    const rows = await this.sql`DELETE FROM workflows WHERE id = ${id} RETURNING id`
+  async delete(id: string, ownerId?: string) {
+    const rows = ownerId
+      ? await this.sql`DELETE FROM workflows WHERE id = ${id} AND owner_id = ${ownerId} RETURNING id`
+      : await this.sql`DELETE FROM workflows WHERE id = ${id} RETURNING id`
     return rows.length > 0
   }
 }

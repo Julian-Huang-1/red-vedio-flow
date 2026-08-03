@@ -10,7 +10,7 @@ import {
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { FileInput, FileText, Image, MousePointer2, Plus, Redo2, Undo2, Video } from 'lucide-react'
+import { AudioLines, FileInput, FileText, Image, MousePointer2, Plus, Redo2, Undo2, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createWorkflowResource } from '@red-video-flow/workflow-client'
 import { useQueryClient } from '@tanstack/react-query'
@@ -42,6 +42,7 @@ export function WorkflowCanvas() {
   const redo = useWorkflowStore((state) => state.redo)
   const selectNode = useWorkflowStore((state) => state.selectNode)
   const createSubgraph = useWorkflowStore((state) => state.createSubgraph)
+  const duplicateSubgraph = useWorkflowStore((state) => state.duplicateSubgraph)
   const moveSubgraph = useWorkflowStore((state) => state.moveSubgraph)
   const updateSubgraphLayout = useWorkflowStore((state) => state.updateSubgraphLayout)
   const renameSubgraph = useWorkflowStore((state) => state.renameSubgraph)
@@ -82,38 +83,40 @@ export function WorkflowCanvas() {
           status,
           onRun: () => void runSubgraph(subgraph.id),
           onPublish: async () => {
+            const capability = subgraph.capability ?? { inputs: [], outputs: [] }
+            if (!capability.outputs.length) throw new Error('至少需要点亮一个 OUT Label')
+            const document = useWorkflowStore.getState().toWorkflowDocument()
             const memberIds = new Set(subgraph.nodeIds)
-            const inputs = Object.fromEntries(members
-              .filter((node) => node.data.serviceRole === 'input' || node.data.workflowInput)
-              .map((node) => {
-                const input = node.data.workflowInput
-                return [input?.key || node.data.serviceLabel || node.id, {
-                  type: String(input?.valueType || node.data.materialType),
-                  required: input?.required ?? true,
-                  description: input?.description,
-                }]
-              }))
-            const outputs = Object.fromEntries(members
-              .filter((node) => node.data.serviceRole === 'output')
-              .map((node) => [node.data.serviceLabel || node.id, {
-                type: String(node.data.materialType),
-              }]))
+            const snapshot = {
+              ...document,
+              title: subgraph.name,
+              graph: {
+                nodes: document.graph.nodes.filter((node) => memberIds.has(node.id)),
+                edges: document.graph.edges.filter((edge) => memberIds.has(edge.source) && memberIds.has(edge.target)),
+                subgraphs: [{ ...subgraph, capability }],
+              },
+            }
             await createWorkflowResource({
               workspaceId: workflowId,
               name: subgraph.name,
               manifest: {
+                version: 1,
                 workflowId,
-                workflowRevision: useWorkflowStore.getState().revision,
+                workflowRevision: document.revision,
                 subgraphId: subgraph.id,
                 name: subgraph.name,
-                inputs,
-                outputs,
-                nodeIds: [...memberIds],
+                snapshot,
+                inputs: capability.inputs,
+                outputs: capability.outputs,
               },
             })
             await queryClient.invalidateQueries({ queryKey: ['resources'] })
           },
           onViewCode: () => setCodeSubgraphId(subgraph.id),
+          onDuplicate: () => {
+            const duplicateId = duplicateSubgraph(subgraph.id)
+            if (duplicateId) setSelectedSubgraphId(duplicateId)
+          },
           onRename: (name: string) => renameSubgraph(subgraph.id, name),
           onDissolve: () => dissolveSubgraph(subgraph.id),
           onDelete: () => {
@@ -130,7 +133,7 @@ export function WorkflowCanvas() {
         zIndex: node.parentId ? 1 : 0,
       })),
     ] as Node[]
-  }, [deleteSubgraph, dissolveSubgraph, nodes, queryClient, renameSubgraph, runSubgraph, selectedSubgraphId, subgraphs, workflowId])
+  }, [deleteSubgraph, dissolveSubgraph, duplicateSubgraph, nodes, queryClient, renameSubgraph, runSubgraph, selectedSubgraphId, subgraphs, workflowId])
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
@@ -160,6 +163,7 @@ export function WorkflowCanvas() {
         <NodeButton label="文本" icon={FileText} onClick={() => addNode('text')} />
         <NodeButton label="图片" icon={Image} onClick={() => addNode('image')} />
         <NodeButton label="视频" icon={Video} onClick={() => addNode('video')} />
+        <NodeButton label="音频" icon={AudioLines} onClick={() => addNode('audio', 'input')} />
         <NodeButton label="输入" icon={FileInput} onClick={() => addNode('text', 'input')} />
       </div>
       <div
@@ -280,6 +284,7 @@ export function WorkflowCanvas() {
         panOnDrag={!selectionMode}
         panOnScroll
         zoomOnScroll={false}
+        minZoom={0.1}
         proOptions={{ hideAttribution: true }}
         fitView
         fitViewOptions={{ padding: 0.2 }}
@@ -299,6 +304,7 @@ export function WorkflowCanvas() {
             const kind = (node.data as WorkflowNodeData).kind
             if (kind === 'image') return '#8b5cf6'
             if (kind === 'video') return '#f97316'
+            if (kind === 'audio') return '#10b981'
             return '#3b82f6'
           }}
         />

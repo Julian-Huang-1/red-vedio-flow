@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NodeRunInput } from '@red-video-flow/workflow-core'
 import { buildProviderRequest, unwrapProviderPayload } from './providers.js'
+import {
+  NetworkBoundaryProvider,
+  resolveBlobInputs,
+} from '@red-video-flow/workflow-runtime/network-provider'
+import { seedanceTaskStatus } from '@red-video-flow/workflow-runtime'
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('Cowork provider protocol conversion', () => {
   it('sends the same OpenAI Responses body as local text execution', () => {
@@ -107,6 +117,36 @@ describe('Cowork provider protocol conversion', () => {
     ])
   })
 
+  it('downloads a complete image URL as a data URL immediately before image editing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      Buffer.from('image-bytes'),
+      { status: 200, headers: { 'Content-Type': 'image/jpeg' } },
+    )))
+    const input: NodeRunInput = {
+      model: { modelId: 'gpt-image-2', providerId: 'builtin.visual-gpt-image' },
+      prompt: '编辑图片',
+      attachments: [{
+        id: 'image-remote',
+        kind: 'image',
+        url: 'https://sns-img.xhscdn.com/source.jpeg',
+        name: 'source.jpeg',
+      }],
+      upstreamResults: [],
+      generationConfig: { type: 'openai-image', version: 1 },
+    }
+
+    const resolved = await resolveBlobInputs(input, 'user-1', undefined, true)
+
+    expect(resolved.attachments[0]).toMatchObject({
+      url: `data:image/jpeg;base64,${Buffer.from('image-bytes').toString('base64')}`,
+      mimeType: 'image/jpeg',
+    })
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://sns-img.xhscdn.com/source.jpeg'),
+      { signal: undefined },
+    )
+  })
+
   it('unwraps MaaS image responses before extracting image data', () => {
     expect(unwrapProviderPayload({
       response: {
@@ -145,5 +185,85 @@ describe('Cowork provider protocol conversion', () => {
       duration: 5,
       generate_audio: true,
     })
+  })
+
+  it('treats an explicit failed Seedance status as terminal even when an id exists', () => {
+    expect(seedanceTaskStatus({ id: 'task-failed', status: 'failed' })).toBe('failed')
+    expect(seedanceTaskStatus({ id: 'task-cancelled', status: 'cancelled' })).toBe('failed')
+  })
+
+  it('resumes an existing Seedance task without creating a duplicate task', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      if (String(url).endsWith('/task-existing')) {
+        return new Response(JSON.stringify({
+          id: 'task-existing',
+          status: 'succeeded',
+          content: { video_url: 'https://cdn.example.com/result.mp4' },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (String(url) === 'https://cdn.example.com/result.mp4') {
+        return new Response(Buffer.from('video-bytes'), {
+          status: 200,
+          headers: { 'Content-Type': 'video/mp4' },
+        })
+      }
+      throw new Error(`unexpected fetch: ${String(url)} ${init?.method ?? 'GET'}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const provider = new NetworkBoundaryProvider(
+      'builtin.visual-seedance',
+      'video',
+      'https://provider.example.com/tasks',
+    )
+    const execution = provider.execute({
+      model: { providerId: 'builtin.visual-seedance', modelId: 'doubao-seedance-2' },
+      prompt: '生成视频',
+      attachments: [],
+      upstreamResults: [],
+      generationConfig: { type: 'volc-video', version: 1 },
+    }, {
+      runId: 'run-1',
+      workflowId: 'workflow-1',
+      nodeId: 'node-1',
+      userId: 'user-1',
+      token: 'secret',
+      providerTaskId: 'task-existing',
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      trace: {
+        recordProviderInput: vi.fn(),
+        recordNetworkRequest: vi.fn(),
+        recordResponse: vi.fn(),
+      },
+      blobs: {
+        put: vi.fn(async (input) => ({
+          id: 'blob-video',
+          fileName: input.fileName,
+          contentType: input.contentType,
+          size: input.size ?? 0,
+          createdAt: Date.now(),
+        })),
+        toAssetReference: vi.fn((blob, kind) => ({
+          id: blob.id,
+          kind,
+          url: `/api/blobs/${blob.id}`,
+          name: blob.fileName,
+          mimeType: blob.contentType,
+          size: blob.size,
+        })),
+      } as any,
+    })
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    const result = await execution
+
+    expect(result.providerTaskId).toBe('task-existing')
+    expect(result.results[0]).toMatchObject({ type: 'video' })
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://provider.example.com/tasks/task-existing',
+      expect.objectContaining({ method: 'GET' }),
+    )
   })
 })

@@ -64,11 +64,13 @@ const defaultNodeSizes: Record<MaterialType, NodeSize> = {
   text: { width: 360, height: 220 },
   image: { width: 560, height: 280 },
   video: { width: 560, height: 280 },
+  audio: { width: 560, height: 220 },
 }
 const materialTypeLabels: Record<MaterialType, string> = {
   text: '文本节点',
   image: '图片节点',
   video: '视频节点',
+  audio: '音频节点',
 }
 const defaultPollIntervalMs = 5_000
 const defaultVisualTimeoutMs = 10 * 60_000

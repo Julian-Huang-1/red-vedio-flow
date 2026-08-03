@@ -20,6 +20,7 @@ import {
   type UpstreamResultReference,
   type WorkflowDocument,
   type WorkflowSubgraph,
+  type WorkflowSubgraphCapability,
 } from '@red-video-flow/workflow-core'
 import type {
   WorkflowFlowNode,
@@ -42,12 +43,22 @@ type WorkflowStore = {
   onEdgesChange: (changes: EdgeChange[]) => void
   connectNodes: (connection: Connection) => void
   addNode: (kind: WorkflowNodeKind, executionMode?: 'input' | 'generate') => void
+  duplicateNode: (nodeId: string) => string | undefined
   setWorkflowTitle: (title: string) => void
   undo: () => void
   redo: () => void
   selectNode: (nodeId?: string) => void
   createSubgraph: (nodeIds: string[]) => WorkflowSubgraph | undefined
+  duplicateSubgraph: (id: string) => string | undefined
   renameSubgraph: (id: string, name: string) => void
+  setSubgraphCapability: (id: string, capability: WorkflowSubgraphCapability) => void
+  toggleSubgraphCapabilityLabel: (
+    subgraphId: string,
+    nodeId: string,
+    targetKind: 'node' | 'composer',
+    direction: 'input' | 'output',
+    valueType: WorkflowNodeKind,
+  ) => void
   moveSubgraph: (id: string, position: { x: number; y: number }) => void
   updateSubgraphLayout: (
     id: string,
@@ -104,6 +115,12 @@ const nodeDefinitions: Record<
     title: '视频节点',
     description: '将画面与描述转化为视频',
     promptPlaceholder: '描述运动、镜头和时长…',
+  },
+  audio: {
+    kind: 'audio',
+    title: '音频节点',
+    description: '上传音频并作为多媒体工作流素材',
+    promptPlaceholder: '音频生成能力接入后可在这里描述声音…',
   },
 }
 
@@ -177,6 +194,61 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         ),
       ],
     }))
+  },
+  duplicateNode: (nodeId) => {
+    const source = get().nodes.find((node) => node.id === nodeId)
+    if (!source) return undefined
+    const duplicateId = `${source.data.kind}-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+    const duplicate = structuredClone(source)
+    duplicate.id = duplicateId
+    duplicate.position = { x: source.position.x + 40, y: source.position.y + 40 }
+    duplicate.selected = true
+    duplicate.dragging = false
+    if (duplicate.data.workflowInput) {
+      duplicate.data.workflowInput.key = uniqueBoundaryLabel(
+        duplicate.data.workflowInput.key,
+        get().nodes.map((node) => node.data.workflowInput?.key).filter((key): key is string => Boolean(key)),
+      )
+    }
+    if (duplicate.data.serviceLabel) {
+      duplicate.data.serviceLabel = uniqueBoundaryLabel(
+        duplicate.data.serviceLabel,
+        get().nodes.map((node) => node.data.serviceLabel).filter((label): label is string => Boolean(label)),
+      )
+    }
+    const subgraphs = get().subgraphs.map((subgraph) => {
+      if (!subgraph.nodeIds.includes(nodeId)) return subgraph
+      const capability = structuredClone(subgraph.capability ?? { inputs: [], outputs: [] })
+      for (const input of capability.inputs.filter((item) => item.target.nodeId === nodeId)) {
+        capability.inputs.push({
+          ...structuredClone(input),
+          label: nextCapabilityLabel('input', capability.inputs.map((item) => item.label)),
+          target: { ...input.target, nodeId: duplicateId },
+        })
+      }
+      for (const output of capability.outputs.filter((item) => item.target.nodeId === nodeId)) {
+        capability.outputs.push({
+          ...structuredClone(output),
+          label: nextCapabilityLabel('output', capability.outputs.map((item) => item.label)),
+          target: { ...output.target, nodeId: duplicateId },
+        })
+      }
+      return {
+        ...subgraph,
+        nodeIds: [...subgraph.nodeIds, duplicateId],
+        capability,
+        updatedAt: Date.now(),
+      }
+    })
+    set(commitHistory(get(), {
+      nodes: [
+        ...get().nodes.map((node) => ({ ...node, selected: false })),
+        duplicate,
+      ],
+      subgraphs,
+      selectedNodeId: duplicateId,
+    }))
+    return duplicateId
   },
   setWorkflowTitle: (title) => {
     const nextTitle = title.trim()
@@ -262,6 +334,84 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     }))
     return subgraph
   },
+  duplicateSubgraph: (id) => {
+    const source = get().subgraphs.find((item) => item.id === id)
+    if (!source) return undefined
+    const nonce = `${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+    const duplicateId = `subgraph-${nonce}`
+    const memberIds = new Set(source.nodeIds)
+    const sourceNodes = get().nodes.filter((node) => memberIds.has(node.id))
+    if (!sourceNodes.length) return undefined
+
+    const nodeIdMap = new Map(sourceNodes.map((node) => [node.id, `${node.data.kind}-${nonce}-${node.id}`]))
+    const sourceEdges = get().edges.filter((edge) => memberIds.has(edge.source) && memberIds.has(edge.target))
+    const edgeIdMap = new Map(sourceEdges.map((edge, index) => [edge.id, `edge-copy-${nonce}-${index}`]))
+    const resultIdMap = new Map(sourceNodes.flatMap((node) => (
+      node.data.results.map((result, index) => [result.id, `result-copy-${nonce}-${index}-${node.id}`] as const)
+    )))
+    const duplicateNodes = sourceNodes.map((sourceNode) => {
+      const node = structuredClone(sourceNode)
+      node.id = nodeIdMap.get(sourceNode.id)!
+      node.parentId = duplicateId
+      node.selected = false
+      node.dragging = false
+      node.data.results = node.data.results.map((result) => ({
+        ...result,
+        id: resultIdMap.get(result.id) ?? result.id,
+      }))
+      node.data.currentResultId = node.data.currentResultId
+        ? resultIdMap.get(node.data.currentResultId) ?? node.data.currentResultId
+        : undefined
+      node.data.latestRunId = undefined
+      node.data.composer.upstreamResults = (node.data.composer.upstreamResults ?? []).map((upstream) => ({
+        ...upstream,
+        nodeId: nodeIdMap.get(upstream.nodeId) ?? upstream.nodeId,
+        edgeId: edgeIdMap.get(upstream.edgeId) ?? upstream.edgeId,
+        resultId: resultIdMap.get(upstream.resultId) ?? upstream.resultId,
+      }))
+      return node
+    })
+    const duplicateEdges = sourceEdges.map((edge, index) => ({
+      ...structuredClone(edge),
+      id: edgeIdMap.get(edge.id) ?? `edge-copy-${nonce}-${index}`,
+      source: nodeIdMap.get(edge.source)!,
+      target: nodeIdMap.get(edge.target)!,
+    }))
+    const capability = source.capability
+      ? structuredClone(source.capability)
+      : undefined
+    if (capability) {
+      capability.inputs = capability.inputs.map((input) => ({
+        ...input,
+        target: { ...input.target, nodeId: nodeIdMap.get(input.target.nodeId) ?? input.target.nodeId },
+      }))
+      capability.outputs = capability.outputs.map((output) => ({
+        ...output,
+        target: { ...output.target, nodeId: nodeIdMap.get(output.target.nodeId) ?? output.target.nodeId },
+      }))
+    }
+    const now = Date.now()
+    const duplicate: WorkflowSubgraph = {
+      ...structuredClone(source),
+      id: duplicateId,
+      name: uniqueSubgraphCopyName(source.name, get().subgraphs.map((item) => item.name)),
+      nodeIds: source.nodeIds.map((nodeId) => nodeIdMap.get(nodeId)!).filter(Boolean),
+      position: {
+        x: (source.position?.x ?? 0) + 48,
+        y: (source.position?.y ?? 0) + 48,
+      },
+      capability,
+      createdAt: now,
+      updatedAt: now,
+    }
+    set(commitHistory(get(), {
+      nodes: [...get().nodes.map((node) => ({ ...node, selected: false })), ...duplicateNodes],
+      edges: [...get().edges, ...duplicateEdges],
+      subgraphs: [...get().subgraphs, duplicate],
+      selectedNodeId: undefined,
+    }))
+    return duplicateId
+  },
   renameSubgraph: (id, name) => {
     const nextName = name.trim()
     if (!nextName) return
@@ -270,6 +420,41 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         ? { ...item, name: nextName, updatedAt: Date.now() }
         : item),
     }))
+  },
+  setSubgraphCapability: (id, capability) => {
+    set(commitHistory(get(), {
+      subgraphs: get().subgraphs.map((item) => item.id === id
+        ? { ...item, capability, updatedAt: Date.now() }
+        : item),
+    }))
+  },
+  toggleSubgraphCapabilityLabel: (subgraphId, nodeId, targetKind, direction, valueType) => {
+    const subgraph = get().subgraphs.find((item) => item.id === subgraphId)
+    if (!subgraph) return
+    const capability = structuredClone(subgraph.capability ?? { inputs: [], outputs: [] })
+    const collection = direction === 'input' ? capability.inputs : capability.outputs
+    const existingIndex = collection.findIndex((item) => (
+      item.target.nodeId === nodeId && item.target.kind === targetKind
+    ))
+    if (existingIndex >= 0) collection.splice(existingIndex, 1)
+    else {
+      if (direction === 'input') {
+        capability.inputs = capability.inputs.filter((item) => item.target.nodeId !== nodeId)
+        capability.inputs.push({
+          label: nextCapabilityLabel('input', capability.inputs.map((item) => item.label)),
+          target: { nodeId, kind: targetKind },
+          valueType: targetKind === 'composer' ? 'text' : valueType,
+          required: true,
+        })
+      } else {
+        capability.outputs.push({
+          label: nextCapabilityLabel('output', capability.outputs.map((item) => item.label)),
+          target: { nodeId, kind: targetKind },
+          valueType,
+        })
+      }
+    }
+    get().setSubgraphCapability(subgraphId, capability)
   },
   moveSubgraph: (id, position) => {
     set(commitHistory(get(), {
@@ -490,6 +675,30 @@ function snapshot(state: Pick<WorkflowStore, 'nodes' | 'edges' | 'subgraphs' | '
   })
 }
 
+function nextCapabilityLabel(prefix: 'input' | 'output', labels: string[]) {
+  let index = 1
+  while (labels.includes(`${prefix}_${index}`)) index += 1
+  return `${prefix}_${index}`
+}
+
+function uniqueBoundaryLabel(source: string, labels: string[]) {
+  let index = 2
+  let candidate = `${source}_copy`
+  while (labels.includes(candidate)) {
+    candidate = `${source}_copy_${index}`
+    index += 1
+  }
+  return candidate
+}
+
+function uniqueSubgraphCopyName(source: string, names: string[]) {
+  const base = `${source} 副本`
+  if (!names.includes(base)) return base
+  let index = 2
+  while (names.includes(`${base} ${index}`)) index += 1
+  return `${base} ${index}`
+}
+
 function cloneSnapshot(value: WorkflowSnapshot): WorkflowSnapshot {
   return structuredClone(value)
 }
@@ -534,7 +743,7 @@ function createWorkflowNode(
       results: [],
       executionMode,
       ...(executionMode === 'input' ? {
-        title: '工作流输入',
+        title: kind === 'audio' ? '音频输入' : '工作流输入',
         workflowInput: {
           key: `input_${inputIndex}`,
           title: `输入 ${inputIndex}`,

@@ -313,7 +313,7 @@ async function requireRuntimeSession(runtime: LocalServerRuntime, token: string,
 }
 
 function injectRuntimeConfig(html: string, appId: string, token: string) {
-  const script = `<script>window.RUNTIME_CONFIG=${safeJson({ appId, token })};</script>`
+  const script = `<script>window.RUNTIME_CONFIG=${safeJson({ appId, token })};console.info('[RuntimeConfig] appId:',window.RUNTIME_CONFIG.appId);console.info('[RuntimeConfig] token:',window.RUNTIME_CONFIG.token);</script>`
   return /<head(?:\s[^>]*)?>/i.test(html)
     ? html.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${script}`)
     : `${script}${html}`

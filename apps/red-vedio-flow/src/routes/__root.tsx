@@ -4,8 +4,8 @@ import {
   Outlet,
   useRouterState,
 } from '@tanstack/react-router'
-import { Home, KeyRound, Sparkles } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Home, Sparkles } from 'lucide-react'
+import { useEffect } from 'react'
 import {
   AgentBoxDrawer,
   AgentBoxPanel,
@@ -14,7 +14,6 @@ import {
 import { WorkspaceManager } from '@/components/workflow'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ModelSettingsDialog } from '@/components/model-settings'
 import { useResourceLibraryStore } from '@/stores/resourceLibraryStore'
 
 const WORKSPACE_TABS = [
@@ -49,7 +48,6 @@ function WorkspaceTabs() {
 }
 
 function RootLayout() {
-  const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const isPublishedApp = pathname.startsWith('/published-app/')
   const isAppBuilder = pathname === '/app-builder'
@@ -87,15 +85,6 @@ function RootLayout() {
           <WorkspaceTabs />
         </div>
         <div className="pointer-events-auto flex h-12 shrink-0 items-center gap-2 rounded-xl border bg-card p-1 shadow-sm">
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-9"
-              onClick={() => setModelSettingsOpen(true)}
-            >
-              <KeyRound size={16} />
-              <span className="hidden sm:inline">设置key</span>
-            </Button>
             {isAppBuilder ? (
               <Button className="relative" onClick={openDrawer}>
                 <Sparkles size={16} />
@@ -124,10 +113,6 @@ function RootLayout() {
           <AgentBoxPanel />
         </AgentBoxDrawer>
       ) : null}
-      <ModelSettingsDialog
-        open={modelSettingsOpen}
-        onOpenChange={setModelSettingsOpen}
-      />
     </div>
   )
 }

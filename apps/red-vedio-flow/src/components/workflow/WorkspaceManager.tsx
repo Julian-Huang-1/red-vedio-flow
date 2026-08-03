@@ -29,13 +29,12 @@ export function WorkspaceManager() {
   const workflowTitle = useWorkflowStore((state) => state.workflowTitle)
   const setWorkflowTitle = useWorkflowStore((state) => state.setWorkflowTitle)
   const [switching, setSwitching] = useState(false)
-  const [scope, setScope] = useState<'mine' | 'all'>('mine')
   const openLibrary = useResourceLibraryStore((state) => state.openLibrary)
   const restoreWorkflowRuns = useTaskStore((state) => state.restoreWorkflowRuns)
 
   const workflowsQuery = useQuery({
-    queryKey: ['workflows', scope],
-    queryFn: () => fetchWorkflows(scope),
+    queryKey: ['workflows', 'mine'],
+    queryFn: () => fetchWorkflows(),
   })
   const workflowQuery = useQuery({
     queryKey: ['workflow', currentWorkspaceId],
@@ -104,15 +103,6 @@ export function WorkspaceManager() {
       data-loading={loading ? '' : undefined}
     >
       <>
-          <Select value={scope} onValueChange={(value) => setScope(value as 'mine' | 'all')}>
-            <SelectTrigger className="h-7 w-[72px] border-0 bg-transparent px-2 text-xs shadow-none">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mine">自己</SelectItem>
-              <SelectItem value="all">全部</SelectItem>
-            </SelectContent>
-          </Select>
           <Select
             value={currentWorkspaceId}
             disabled={loading || workflows.length === 0}

@@ -24,9 +24,11 @@ export function parseSsoUser(value: string | string[] | undefined): Authenticate
 }
 
 export async function requireUser(runtime: CoworkRuntime, req: IncomingMessage): Promise<AppUser> {
-  return runtime.infrastructure.users.upsertFromSso(
+  const user = await runtime.infrastructure.users.upsertFromSso(
     parseSsoUser(req.headers['decrypted-userinfo']),
   )
+  await runtime.claimConfiguredOwnership(user)
+  return user
 }
 
 function text(value: unknown) {

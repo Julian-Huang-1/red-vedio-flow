@@ -5,6 +5,8 @@ release
 .data
 .DS_Store
 *.local
+.env.*
+!.env.example
 db.properties
 ai.properties
 .cowork-release

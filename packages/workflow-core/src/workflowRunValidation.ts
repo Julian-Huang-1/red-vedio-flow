@@ -83,6 +83,11 @@ function validateGenerateNode(
   hasUpstream: boolean,
   issues: WorkflowRunValidationIssue[],
 ) {
+  if (node.data.materialType === 'audio') {
+    if (node.data.results?.some((result) => result.type === 'audio')) return
+    issues.push(nodeIssue(node, 'audio_source_missing', '音频节点需要先上传音频', 'results'))
+    return
+  }
   const composer = node.data.composer
   if (!composer || typeof composer !== 'object') {
     if (node.data.serviceRole === 'output' && hasUpstream) return
@@ -99,6 +104,7 @@ function validateGenerateNode(
     text: 'openai-text',
     image: 'openai-image',
     video: 'volc-video',
+    audio: 'openai-text',
   }[node.data.materialType]
   if (!composer.generationConfig?.type) {
     issues.push(nodeIssue(node, 'composer_generation_config_missing', 'Composer 缺少生成参数', 'composer.generationConfig'))

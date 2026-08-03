@@ -7,6 +7,7 @@ import type {
 export type DurableRuntime = {
   config: {
     workerConcurrency: number
+    maasApiKey?: string
   }
   infrastructure: ReturnType<typeof createPostgresInfrastructure>
   providers: {

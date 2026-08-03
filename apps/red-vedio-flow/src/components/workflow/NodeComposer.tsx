@@ -9,7 +9,9 @@ import type {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { NodeComposerSettings } from './NodeComposerSettings'
+import { CapabilityLabelButton } from './CapabilityLabelButton'
 import type { WorkflowNodeKind } from './workflowTypes'
+import { VoiceInputButton } from '@/components/voice-input'
 
 type NodeComposerProps = {
   value: string
@@ -27,6 +29,8 @@ type NodeComposerProps = {
   onSubmit: () => void
   executionStatus?: NodeRunStatus
   onCancel?: () => void
+  capabilityLabels?: { input: boolean; output: boolean }
+  onCapabilityLabelToggle?: (direction: 'input' | 'output') => void
 }
 
 export function NodeComposer({
@@ -45,9 +49,12 @@ export function NodeComposer({
   onSubmit,
   executionStatus,
   onCancel,
+  capabilityLabels,
+  onCapabilityLabelToggle,
 }: NodeComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isComposingRef = useRef(false)
+  const lastLocalValueRef = useRef(value)
   const [draft, setDraft] = useState(value)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const isRunning = executionStatus === 'queued' || executionStatus === 'running'
@@ -55,13 +62,15 @@ export function NodeComposer({
     ? 'image/*'
     : kind === 'video'
       ? 'video/*'
+      : kind === 'audio'
+        ? 'audio/*'
       : 'image/*,video/*'
 
   useEffect(() => {
-    if (!isComposingRef.current && value !== draft) {
-      setDraft(value)
-    }
-  }, [draft, value])
+    if (isComposingRef.current || value === lastLocalValueRef.current) return
+    lastLocalValueRef.current = value
+    setDraft(value)
+  }, [value])
 
   return (
     <div
@@ -98,6 +107,7 @@ export function NodeComposer({
         placeholder={placeholder}
         onChange={(event) => {
           const nextValue = event.target.value
+          lastLocalValueRef.current = nextValue
           setDraft(nextValue)
           if (!isComposingRef.current) {
             onValueChange(nextValue)
@@ -109,6 +119,7 @@ export function NodeComposer({
         onCompositionEnd={(event) => {
           isComposingRef.current = false
           const nextValue = event.currentTarget.value
+          lastLocalValueRef.current = nextValue
           setDraft(nextValue)
           onValueChange(nextValue)
         }}
@@ -128,6 +139,12 @@ export function NodeComposer({
       />
       <div className="mt-1 flex items-center justify-between">
         <div className="flex items-center gap-2">
+          {capabilityLabels && onCapabilityLabelToggle ? (
+            <>
+              <CapabilityLabelButton direction="input" target="composer" active={capabilityLabels.input} onClick={() => onCapabilityLabelToggle('input')} />
+              <CapabilityLabelButton direction="output" target="composer" active={capabilityLabels.output} onClick={() => onCapabilityLabelToggle('output')} />
+            </>
+          ) : null}
           <input
             ref={fileInputRef}
             className="hidden"
@@ -149,6 +166,18 @@ export function NodeComposer({
           >
             <Paperclip size={13} />
           </Button>
+          <VoiceInputButton
+            className="size-6"
+            disabled={isRunning}
+            onTranscript={(text) => {
+              setDraft((current) => {
+                const nextValue = appendTranscript(current, text)
+                lastLocalValueRef.current = nextValue
+                onValueChange(nextValue)
+                return nextValue
+              })
+            }}
+          />
           <span className="max-w-52 truncate text-[10px] text-muted-foreground">
             {model.modelId}
           </span>
@@ -186,4 +215,11 @@ export function NodeComposer({
       ) : null}
     </div>
   )
+}
+
+function appendTranscript(current: string, transcript: string) {
+  const text = transcript.trim()
+  if (!text) return current
+  if (!current || /\s$/.test(current)) return `${current}${text}`
+  return `${current} ${text}`
 }

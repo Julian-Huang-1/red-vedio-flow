@@ -1,4 +1,5 @@
 import { chmod, cp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { build } from 'esbuild'
 
@@ -38,6 +39,8 @@ await build({
   outfile: resolve(outputDir, 'init-db.js'),
 })
 await cp(frontendDist, resolve(outputDir, 'public'), { recursive: true })
+const envFile = resolve(workspaceRoot, '.env')
+if (existsSync(envFile)) await cp(envFile, resolve(outputDir, '.env'))
 
 await writeFile(resolve(outputDir, 'package.json'), `${JSON.stringify({
   name: 'red-video-flow-cowork',

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, File, FileText, Image, LoaderCircle, Play, Plus, Trash2, Video, Workflow, X } from 'lucide-react'
+import { AudioLines, Check, File, FileText, Image, LoaderCircle, Play, Plus, Trash2, Video, Workflow, X } from 'lucide-react'
 import type { Resource, ResourceKind } from '@red-video-flow/workflow-core'
 import { createResourceBinding } from '@red-video-flow/workflow-client'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ const kinds: Array<{
   { label: '全部' },
   { value: 'image', label: '图片', icon: Image },
   { value: 'video', label: '视频', icon: Video },
+  { value: 'audio', label: '音频', icon: AudioLines },
   { value: 'text', label: '文本', icon: FileText },
   { value: 'file', label: '文件', icon: File },
   { value: 'workflow', label: '工作流', icon: Workflow },
@@ -152,6 +153,22 @@ export function ResourceLibrary({
           provider: { providerId: 'resource-library' },
           createdAt: timestamp,
         })
+      } else if (resource.kind === 'audio') {
+        appendResult(target.nodeId, {
+          id: resultId,
+          runId,
+          type: 'audio',
+          audio: {
+            id: resource.id,
+            kind: 'audio',
+            url: resource.url!,
+            name: resource.name,
+            mimeType: resource.mimeType,
+            duration: resource.duration,
+          },
+          provider: { providerId: 'resource-library' },
+          createdAt: timestamp,
+        })
       }
       setLatestRun(target.nodeId, undefined)
       setNodeStatus(target.nodeId, 'done')
@@ -177,7 +194,7 @@ export function ResourceLibrary({
     } else if (resource.url) {
       addAttachment(nodeId, {
         id: resource.id,
-        kind: resource.kind === 'image' || resource.kind === 'video' ? resource.kind : 'file',
+        kind: resource.kind === 'image' || resource.kind === 'video' || resource.kind === 'audio' ? resource.kind : 'file',
         url: resource.url,
         name: resource.name,
         mimeType: resource.mimeType,
@@ -197,8 +214,7 @@ export function ResourceLibrary({
   return (
     <aside
       className={cn(
-        'absolute right-0 z-30 flex w-full max-w-[440px] flex-col border-l bg-background shadow-xl',
-        variant === 'workflow' && 'inset-y-0',
+        'fixed inset-y-0 right-0 z-30 flex h-screen h-dvh w-full max-w-[440px] flex-col overflow-hidden rounded-2xl border bg-background shadow-xl',
         className,
       )}
       data-resource-library=""
@@ -324,7 +340,7 @@ export function ResourceLibrary({
 
 function canUseAsNodeResult(
   resource: Resource,
-  nodeKind: 'text' | 'image' | 'video',
+  nodeKind: 'text' | 'image' | 'video' | 'audio',
 ) {
   if (resource.kind !== nodeKind) return false
   return resource.kind === 'text' ? resource.text !== undefined : Boolean(resource.url)
@@ -332,7 +348,7 @@ function canUseAsNodeResult(
 
 function canAddResource(
   resource: Resource,
-  nodeKind?: 'text' | 'image' | 'video',
+  nodeKind?: 'text' | 'image' | 'video' | 'audio',
   targetType?: 'node-result' | 'composer-attachment',
 ) {
   if (!nodeKind || !targetType) return false
@@ -342,12 +358,12 @@ function canAddResource(
 
 function getAddDisabledReason(
   resource: Resource,
-  nodeKind?: 'text' | 'image' | 'video',
+  nodeKind?: 'text' | 'image' | 'video' | 'audio',
   targetType?: 'node-result' | 'composer-attachment',
 ) {
   if (!nodeKind || !targetType) return '请先选择节点或 Composer'
   if (targetType === 'node-result' && resource.kind !== nodeKind) {
-    const labels = { text: '文本', image: '图片', video: '视频' }
+    const labels = { text: '文本', image: '图片', video: '视频', audio: '音频' }
     return `只能将${labels[nodeKind]}资源加入该节点的当前结果`
   }
   if (resource.kind === 'text' ? resource.text === undefined : !resource.url) {
@@ -468,6 +484,7 @@ function defaultMimeType(kind: ResourceKind) {
   if (kind === 'workflow') return 'application/vnd.red-video-flow.workflow+json'
   if (kind === 'image') return 'image/*'
   if (kind === 'video') return 'video/*'
+  if (kind === 'audio') return 'audio/*'
   return 'application/octet-stream'
 }
 
@@ -477,6 +494,9 @@ function ResourcePreview({ resource }: { resource: Resource }) {
   }
   if (resource.kind === 'video' && resource.url) {
     return <video className="h-24 w-full bg-black object-cover" src={resource.url} muted preload="metadata" />
+  }
+  if (resource.kind === 'audio' && resource.url) {
+    return <div className="flex h-24 items-center bg-muted/40 px-2"><audio className="w-full" src={resource.url} controls preload="metadata" /></div>
   }
   if (resource.kind === 'text') {
     return (
@@ -489,6 +509,8 @@ function ResourcePreview({ resource }: { resource: Resource }) {
       ? Image
       : resource.kind === 'video'
         ? Video
+        : resource.kind === 'audio'
+          ? AudioLines
         : resource.kind === 'workflow'
           ? Workflow
           : File

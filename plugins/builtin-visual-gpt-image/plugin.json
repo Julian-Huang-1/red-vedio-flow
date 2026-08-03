@@ -36,7 +36,6 @@
     ]
   },
   "secrets": {
-    "GPT_IMAGE_API_KEY": "MAASfd018690923149bc890e003129024aee",
     "GPT_IMAGE_API_BASE_URL": "https://maas.devops.rednote.life/hackson/openai"
   }
 }

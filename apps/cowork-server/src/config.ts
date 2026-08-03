@@ -27,6 +27,8 @@ export type CoworkConfig = {
   runtimePublicOrigin?: string
   runtimeHost?: string
   mainAppOrigin?: string
+  maasApiKey: string
+  dataOwnerEmail?: string
 }
 
 const dbKeys = [
@@ -42,6 +44,7 @@ export function resolveCoworkConfig(
   cwd = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
 ): CoworkConfig {
+  env = withDotEnv(cwd, env)
   const database = readCoworkDatabase(join(cwd, 'db.properties'))
   return {
     host: '0.0.0.0',
@@ -57,7 +60,39 @@ export function resolveCoworkConfig(
     runtimePublicOrigin: optionalOrigin(env.APP_RUNTIME_PUBLIC_ORIGIN),
     runtimeHost: env.APP_RUNTIME_HOST?.trim().toLowerCase() || undefined,
     mainAppOrigin: optionalOrigin(env.APP_MAIN_ORIGIN),
+    maasApiKey: required(env.RED_VIDEO_FLOW_MAAS_API_KEY, 'RED_VIDEO_FLOW_MAAS_API_KEY'),
+    dataOwnerEmail: env.RED_VIDEO_FLOW_DATA_OWNER_EMAIL?.trim().toLowerCase() || undefined,
   }
+}
+
+function withDotEnv(cwd: string, env: NodeJS.ProcessEnv) {
+  const path = join(cwd, '.env')
+  if (!existsSync(path)) return env
+  const fileEnv: NodeJS.ProcessEnv = {}
+  for (const source of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const line = source.trim()
+    if (!line || line.startsWith('#')) continue
+    const separator = line.indexOf('=')
+    if (separator < 1) continue
+    const key = line.slice(0, separator).trim()
+    let value = line.slice(separator + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    fileEnv[key] = value
+  }
+  if (env === process.env) {
+    for (const [key, value] of Object.entries(fileEnv)) {
+      if (process.env[key] === undefined) process.env[key] = value
+    }
+  }
+  return { ...fileEnv, ...env }
+}
+
+function required(value: string | undefined, name: string) {
+  const resolved = value?.trim()
+  if (!resolved) throw new Error(`${name} is required; configure it in .env`)
+  return resolved
 }
 
 function optionalOrigin(value: string | undefined) {

@@ -291,7 +291,7 @@ async function pollWorkflowAppRun(
   }
 }
 
-function projectRunEvent(
+export function projectRunEvent(
   set: (state: Partial<TaskStore>) => void,
   get: () => TaskStore,
   event: WorkflowNodeRunEvent,
@@ -314,6 +314,16 @@ function projectRunEvent(
         ...get().progress,
         [event.runId]: { ...current, text: current.text + event.delta },
       },
+    })
+    return
+  }
+  if (event.type === 'provider-task') {
+    const run = get().runs[event.runId]
+    if (!run) return
+    useWorkflowStore.getState().setNodeStatus(run.nodeId, 'running')
+    get().markRunning(event.runId, {
+      providerId: run.inputSnapshot.model.providerId,
+      taskId: event.taskId,
     })
     return
   }

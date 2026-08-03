@@ -36,7 +36,37 @@ export class NetworkBoundaryProvider implements Provider {
   ) {}
 
   async execute(input: NodeRunInput, context: ProviderExecutionContext): Promise<ProviderExecutionResult> {
-    const resolvedInput = await resolveBlobInputs(input, context.userId, context.blobs)
+    if (this.modality === 'video' && context.providerTaskId) {
+      const headers = {
+        Authorization: `Bearer ${context.token}`,
+        'Content-Type': 'application/json',
+      }
+      await context.emit({ type: 'provider-task', taskId: context.providerTaskId })
+      const payload = await pollSeedanceTask(this.url, context.providerTaskId, headers, context)
+      const record = unwrapProviderPayload(payload)
+      const providerResponseId = string(record.id) ?? string(record.responseId)
+      const results = await normalizeResults(
+        this.modality,
+        record,
+        input,
+        context,
+        providerResponseId,
+        context.providerTaskId,
+      )
+      return {
+        results,
+        providerResponseId,
+        providerTaskId: context.providerTaskId,
+        raw: record,
+      }
+    }
+    const resolvedInput = await resolveBlobInputs(
+      input,
+      context.userId,
+      context.blobs,
+      this.modality === 'image' && input.generationConfig.type === 'openai-image',
+      context.signal,
+    )
     const body = buildProviderRequest(this.modality, resolvedInput)
     const multipart = body instanceof FormData
     const requestUrl = multipart && this.modality === 'image'
@@ -56,6 +86,7 @@ export class NetworkBoundaryProvider implements Provider {
       body: tracedBody,
       recordedAt: Date.now(),
     })
+    await context.beforeSubmit?.()
     const response = await fetch(requestUrl, {
       method: 'POST',
       headers,
@@ -63,7 +94,6 @@ export class NetworkBoundaryProvider implements Provider {
       signal: context.signal,
     })
     let payload = await readProviderResponse(response, this.modality, resolvedInput, context)
-    await context.trace.recordResponse(sanitizeProviderPayload(payload))
     if (!response.ok) {
       const message = providerErrorMessage(payload, response.status)
       throw new ProviderBoundaryError(`provider_http_${response.status}`, message, response.status >= 500)
@@ -83,6 +113,7 @@ export class NetworkBoundaryProvider implements Provider {
       )
       record = unwrapProviderPayload(payload)
     }
+    await context.trace.recordResponse(sanitizeProviderPayload(payload))
     const results = await normalizeResults(
       this.modality,
       record,
@@ -109,7 +140,8 @@ async function pollSeedanceTask(
 ) {
   const url = taskUrl(createUrl, taskId)
   let consecutiveFailures = 0
-  while (!context.signal.aborted) {
+  const deadline = Date.now() + 2 * 60 * 60 * 1_000
+  while (!context.signal.aborted && Date.now() < deadline) {
     await abortableDelay(2_000, context.signal)
     await context.trace.recordNetworkRequest({
       transport: 'http',
@@ -172,6 +204,13 @@ async function pollSeedanceTask(
       )
     }
   }
+  if (!context.signal.aborted) {
+    throw new ProviderBoundaryError(
+      'seedance_poll_timeout',
+      'Seedance task did not finish within 2 hours',
+      true,
+    )
+  }
   throw new DOMException('Seedance task aborted', 'AbortError')
 }
 
@@ -183,11 +222,15 @@ function taskUrl(createUrl: string, taskId: string) {
 
 function abortableDelay(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener('abort', () => {
+    const onAbort = () => {
       clearTimeout(timer)
       reject(new DOMException('Aborted', 'AbortError'))
-    }, { once: true })
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -431,21 +474,42 @@ async function persistCandidate(
   return context.blobs.toAssetReference(blob, kind)
 }
 
-async function resolveBlobInputs(
+export async function resolveBlobInputs(
   input: NodeRunInput,
   ownerId: string,
   blobs?: BlobStorage,
+  imageEdit = false,
+  signal?: AbortSignal,
 ): Promise<NodeRunInput> {
-  if (!blobs) return input
   const resolveAsset = async (asset: AssetReference) => {
-    if (!asset.url.startsWith('/api/blobs/')) return asset
-    const id = decodeURIComponent(asset.url.slice('/api/blobs/'.length))
-    const stat = await blobs.statForOwner(id, ownerId)
-    if (!stat) throw new Error(`blob not found: ${id}`)
-    const chunks: Buffer[] = []
-    for await (const chunk of await blobs.readForOwner(id, ownerId)) chunks.push(Buffer.from(chunk))
-    const mimeType = asset.mimeType ?? stat.contentType ?? 'application/octet-stream'
-    return { ...asset, url: `data:${mimeType};base64,${Buffer.concat(chunks).toString('base64')}` }
+    if (asset.url.startsWith('/api/blobs/')) {
+      if (!blobs) throw new Error(`blob storage is required to resolve image input: ${asset.name ?? asset.id}`)
+      const id = decodeURIComponent(asset.url.slice('/api/blobs/'.length))
+      const stat = await blobs.statForOwner(id, ownerId)
+      if (!stat) throw new Error(`blob not found: ${id}`)
+      const chunks: Buffer[] = []
+      for await (const chunk of await blobs.readForOwner(id, ownerId)) chunks.push(Buffer.from(chunk))
+      const mimeType = asset.mimeType ?? stat.contentType ?? 'application/octet-stream'
+      return { ...asset, url: dataUrl(Buffer.concat(chunks), mimeType) }
+    }
+    if (!imageEdit || asset.kind !== 'image' || asset.url.startsWith('data:')) return asset
+    let url: URL
+    try {
+      url = new URL(asset.url)
+    } catch {
+      throw new Error(`image edit input URL is invalid: ${asset.name ?? asset.id}`)
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new Error(`image edit input URL must use HTTP(S): ${asset.name ?? asset.id}`)
+    }
+    const response = await fetch(url, { signal })
+    if (!response.ok) {
+      throw new Error(`image edit input download failed with ${response.status}: ${asset.name ?? asset.id}`)
+    }
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (!bytes.length) throw new Error(`image edit input is empty: ${asset.name ?? asset.id}`)
+    const mimeType = asset.mimeType ?? response.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg'
+    return { ...asset, url: dataUrl(bytes, mimeType), mimeType }
   }
   return {
     ...input,
@@ -455,6 +519,10 @@ async function resolveBlobInputs(
       assets: await Promise.all(result.assets.map(resolveAsset)),
     }))),
   }
+}
+
+function dataUrl(bytes: Buffer, mimeType: string) {
+  return `data:${mimeType};base64,${bytes.toString('base64')}`
 }
 
 function extractText(payload: Record<string, any>) {

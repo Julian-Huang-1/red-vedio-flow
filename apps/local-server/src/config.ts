@@ -71,6 +71,7 @@ export function resolveLocalServerConfig(
   options: LocalServerOptions = {},
   env: NodeJS.ProcessEnv = process.env,
 ): LocalServerConfig {
+  env = withDotEnv(options.cwd ?? process.cwd(), env)
   const workspaceRoot = defaultWorkspaceRoot
   const deploymentMode = env.APP_DEPLOYMENT_MODE === 'cowork' ? 'cowork' : 'local'
   const database = options.database
@@ -128,7 +129,7 @@ export function resolveLocalServerConfig(
     distribution: options.distribution ?? 'source',
     maasApiKey: options.maasApiKey
       ?? env.RED_VIDEO_FLOW_MAAS_API_KEY
-      ?? 'MAASfd018690923149bc890e003129024aee',
+      ?? required('RED_VIDEO_FLOW_MAAS_API_KEY'),
     textModelBaseUrl: trimTrailingSlash(
       env.RED_VIDEO_FLOW_TEXT_MODEL_BASE_URL
         ?? 'https://maas.devops.rednote.life/hackson/v1',
@@ -169,6 +170,34 @@ export function resolveLocalServerConfig(
     ),
     pluginDirs: pluginDirs.map((item) => resolve(item)),
   }
+}
+
+function withDotEnv(cwd: string, env: NodeJS.ProcessEnv) {
+  const path = join(cwd, '.env')
+  if (!existsSync(path)) return env
+  const fileEnv: NodeJS.ProcessEnv = {}
+  for (const source of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const line = source.trim()
+    if (!line || line.startsWith('#')) continue
+    const separator = line.indexOf('=')
+    if (separator < 1) continue
+    const key = line.slice(0, separator).trim()
+    let value = line.slice(separator + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    fileEnv[key] = value
+  }
+  if (env === process.env) {
+    for (const [key, value] of Object.entries(fileEnv)) {
+      if (process.env[key] === undefined) process.env[key] = value
+    }
+  }
+  return { ...fileEnv, ...env }
+}
+
+function required(name: string): never {
+  throw new Error(`${name} is required; configure it in .env`)
 }
 
 function trimOptionalOrigin(value: string | undefined) {

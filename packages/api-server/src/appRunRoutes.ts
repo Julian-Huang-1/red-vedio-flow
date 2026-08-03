@@ -54,6 +54,8 @@ export async function handleDurableAppRunRoutes(
   const route = pathParts(ctx.pathname, '/api/workflows/')
   if (!route || route.length !== 2 || route[1] !== 'runs') return false
   const workflowId = route[0]
+  const ownedWorkflow = await runtime.infrastructure.postgresWorkflows.get(workflowId, userId)
+  if (!ownedWorkflow) throw new HttpError(404, `workflow not found: ${workflowId}`)
   if (ctx.req.method === 'GET') {
     const runs = await runtime.infrastructure.postgresWorkflowAppRuns
       .listByWorkflow<CoworkAppRun>(workflowId)
@@ -63,8 +65,7 @@ export async function handleDurableAppRunRoutes(
     return true
   }
   if (ctx.req.method === 'POST') {
-    const workflow = await runtime.infrastructure.postgresWorkflows.get(workflowId)
-    if (!workflow) throw new HttpError(404, `workflow not found: ${workflowId}`)
+    const workflow = ownedWorkflow
     const body = await readJson(ctx.req)
     if (
       typeof body.revision === 'number'

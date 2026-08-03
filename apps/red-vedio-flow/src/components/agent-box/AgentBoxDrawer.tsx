@@ -51,7 +51,7 @@ export function AgentBoxDrawer({
       />
       <ResourceLibrary
         variant="agent"
-        className="bottom-0 right-[440px] top-auto z-20 h-[70%] animate-in rounded-2xl border-t fade-in slide-in-from-bottom-6 duration-300 max-[820px]:right-0 max-[820px]:z-40 mr-[2px]"
+        className="right-[440px] z-20 mr-[2px] animate-in rounded-2xl fade-in slide-in-from-bottom-6 duration-300 max-[820px]:right-0 max-[820px]:z-40"
       />
       <aside
         className={cn(

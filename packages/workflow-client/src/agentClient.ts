@@ -62,7 +62,7 @@ export type UploadedAsset = {
   workflowId: string
   kind: string
   url: string
-  localPath: string
+  localPath?: string
   fileName: string
   mimeType?: string
   provider?: string

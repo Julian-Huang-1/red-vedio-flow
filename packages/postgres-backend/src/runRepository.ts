@@ -21,7 +21,7 @@ export type PostgresWorkflowRun = {
     | 'timed_out'
     | 'interrupted'
   prompt: string
-  kind?: 'text' | 'image' | 'video'
+  kind?: 'text' | 'image' | 'video' | 'audio'
   inputSnapshot?: NodeRunInput
   providerId?: string
   providerTaskId?: string

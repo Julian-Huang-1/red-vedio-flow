@@ -1,4 +1,4 @@
-export type MaterialType = 'text' | 'image' | 'video'
+export type MaterialType = 'text' | 'image' | 'video' | 'audio'
 
 export type NodeStatus = 'empty' | 'ready' | 'running' | 'done' | 'error'
 
@@ -45,6 +45,7 @@ export type WorkflowInputValueType =
   | 'image'
   | 'image[]'
   | 'video'
+  | 'audio'
   | 'file'
 
 export type WorkflowInputFieldDefinition = {
@@ -97,6 +98,41 @@ export type WorkflowSubgraph = {
   height?: number
   createdAt: number
   updatedAt: number
+  capability?: WorkflowSubgraphCapability
+}
+
+export type CapabilityLabelTarget = {
+  nodeId: string
+  kind: 'node' | 'composer'
+}
+
+export type WorkflowCapabilityInput = {
+  label: string
+  target: CapabilityLabelTarget
+  valueType: WorkflowInputValueType | MaterialType
+  required?: boolean
+}
+
+export type WorkflowCapabilityOutput = {
+  label: string
+  target: CapabilityLabelTarget
+  valueType: MaterialType
+}
+
+export type WorkflowSubgraphCapability = {
+  inputs: WorkflowCapabilityInput[]
+  outputs: WorkflowCapabilityOutput[]
+}
+
+export type SubgraphCapabilityManifest = {
+  version: 1
+  name: string
+  workflowId: string
+  workflowRevision: number
+  subgraphId: string
+  snapshot: WorkflowDocument
+  inputs: WorkflowCapabilityInput[]
+  outputs: WorkflowCapabilityOutput[]
 }
 
 export type WorkflowDocument = {

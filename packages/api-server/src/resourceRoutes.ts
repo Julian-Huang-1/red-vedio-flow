@@ -152,7 +152,7 @@ export async function handleResourceRoutes(
 }
 
 export function resourceKind(value: unknown): ResourceKind | undefined {
-  return value === 'text' || value === 'image' || value === 'video' || value === 'file' || value === 'workflow'
+  return value === 'text' || value === 'image' || value === 'video' || value === 'audio' || value === 'file' || value === 'workflow'
     ? value
     : undefined
 }
